@@ -1,0 +1,526 @@
+<!doctype html>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>對戰畫面編輯器</title>
+<meta name="description" content="即時調整牌桌的牌面大小、主公像、間距，調好貼回 src/layout.js">
+<meta name="launcher-icon" content="📐">
+<meta name="launcher-cat" content="美術">
+<!-- 這支必須走開發伺服器：file:// 底下同源政策會擋掉 iframe 存取。
+     啟動台看到這個就會用 http:// 連過來，而不是相對路徑。 -->
+<meta name="launcher-needs-server" content="1">
+
+<!--
+  對戰畫面編輯器
+  ────────────────────────────────────────────────────────────
+  為什麼要這支：牌桌的尺寸不是寫死的，是每次重畫時**量**出來的
+  （手牌受「14 張排得下」與「不能吃掉整個牌桌高度」雙重限制，
+  牌河受「上下放得下幾列」與「左右塞得進中央區」限制）。
+  所以改一個數字的效果沒辦法用想的，得看。
+
+  ⚠️ 右邊是 <iframe> 載**真正的 mj4.html**（加 #preview），不是另外畫一套版面。
+
+  #preview 是必要的：不加的話會從標題畫面把整個遊戲載起來，而
+  quickStart() 會把戰役進度設成 null 再開新局 → saveCampaign()
+  **把玩家的存檔清掉**。預覽模式不讀不寫存檔、不開音效、直接進牌桌，
+  版面卻還是同一份。
+
+  第一版是把 mj4.html 的牌桌 CSS 抄一份過來自己畫 —— 錯了。
+  抄的結構跟遊戲對不上（遊戲是 #table 三欄包住 #mid，抄過來變成
+  #mid 自己一格一格排），結果同樣條件下編輯器量到別家的牌 16px、
+  遊戲裡卻是 55px。編輯器騙人比沒有編輯器更糟。
+
+  用 iframe 之後：版面永遠是遊戲的版面，vw/vmin 也自動對到模擬的視窗大小。
+-->
+
+<!-- 這一頁自己不載任何遊戲模組 —— 右邊的 iframe 就是 mj4.html 本人，
+     要什麼都從 iframe.contentWindow 取。少一份載入清單，也少一個會走樣的地方。 -->
+
+<style>
+:root{
+  --gold:#d4af37; --ink:#e8dcc0; --panel:#141a17; --line:rgba(255,255,255,.12);
+}
+*{box-sizing:border-box;}
+body{
+  margin:0;height:100vh;display:flex;overflow:hidden;
+  /* 跟 mj4.html 同一組字型。不用 Google Fonts —— 這個專案要能離線雙擊開，
+     'Songti TC' 是 macOS 內建的襯線備援。舊版標題另外用了
+     'ZCOOL QingKe HuangYou'，那支要連網，工具頁不值得為它多一個外部依賴。 */
+  font:15px/1.6 'Noto Serif TC','Songti TC',serif;
+  background:#0b100e;color:var(--ink);
+}
+
+/* ── 左邊：控制面板 ── */
+#panel{
+  width:370px;flex:0 0 370px;height:100vh;overflow-y:auto;
+  background:var(--panel);border-right:1px solid var(--line);padding:14px 14px 40px;
+}
+#panel h1{font-size:19px;margin:0 0 2px;color:var(--gold);letter-spacing:.06em;}
+#panel .sub{font-size:12.5px;opacity:.6;margin-bottom:14px;}
+fieldset{border:1px solid var(--line);border-radius:8px;margin:0 0 12px;padding:8px 10px 10px;}
+legend{font-size:14px;color:var(--gold);padding:0 5px;letter-spacing:.08em;}
+.row{display:grid;grid-template-columns:1fr 62px;gap:6px;align-items:center;margin:7px 0;}
+.row label{font-size:13.5px;opacity:.85;}
+.row .hint{grid-column:1/-1;font-size:12px;opacity:.45;margin:-4px 0 2px;line-height:1.35;}
+input[type=range]{width:100%;accent-color:var(--gold);}
+input[type=number]{
+  width:100%;background:#0b100e;color:var(--ink);border:1px solid var(--line);
+  border-radius:4px;padding:3px 5px;font:inherit;font-size:13px;text-align:right;
+}
+button{
+  font:inherit;font-size:14px;padding:7px 12px;border-radius:6px;cursor:pointer;
+  background:rgba(255,255,255,.08);color:var(--ink);border:1px solid var(--line);
+}
+button.primary{background:var(--gold);color:#1a1409;border-color:var(--gold);font-weight:700;}
+button:hover{filter:brightness(1.15);}
+.btns{display:flex;gap:6px;flex-wrap:wrap;margin-top:10px;}
+#out{
+  width:100%;height:230px;margin-top:10px;font:12.5px/1.5 ui-monospace,Menlo,monospace;
+  background:#07100c;color:#bfe3cf;border:1px solid var(--line);border-radius:6px;padding:8px;
+  display:none;resize:vertical;
+}
+#measured{font-size:12.5px;opacity:.55;margin-top:8px;line-height:1.6;}
+#sweepout{
+  position:absolute;inset:0;overflow:auto;background:rgba(6,12,9,.97);padding:14px;
+  font:13.5px/1.7 'Noto Serif TC','Songti TC',serif;display:none;z-index:5;
+}
+#sweepout table{border-collapse:collapse;width:100%;}
+#sweepout th,#sweepout td{padding:5px 10px;text-align:right;border-bottom:1px solid rgba(255,255,255,.07);}
+#sweepout th:first-child,#sweepout td:first-child{text-align:left;}
+#sweepout th{color:var(--gold);font-weight:600;position:sticky;top:0;background:#060c09;}
+#sweepout .bad{color:#ff8b6b;}
+#sweepout .warn{color:#e8c46a;}
+#sweepout .ok{color:#7fd6a0;}
+#sweepout .close{position:sticky;top:0;float:right;}
+
+/* ── 右邊：真的牌桌 ── */
+#stage-wrap{flex:1;display:flex;flex-direction:column;min-width:0;}
+#bar{
+  display:flex;align-items:center;gap:10px;padding:7px 12px;
+  border-bottom:1px solid var(--line);background:var(--panel);font-size:13.5px;
+}
+#bar select,#bar button{font-size:13.5px;padding:4px 9px;font-family:inherit;}
+#frame{
+  flex:1;min-height:0;position:relative;overflow:hidden;
+  background:#123024;
+}
+
+/* 預覽用的 iframe。整個牌桌都在裡面，這裡只負責把它擺好、縮到看得完。 */
+#frame{display:flex;align-items:center;justify-content:center;padding:10px;}
+#game{
+  border:0;background:#0b100e;box-shadow:0 0 0 1px var(--line), 0 10px 40px rgba(0,0,0,.5);
+  transform-origin:center center;
+  /* ⚠️ 一定要 flex:0 0 auto。#frame 是 flex 容器，預設 flex-shrink:1 會把
+     iframe 壓小 —— 設成 1920px 寬，裡面的 innerWidth 卻量到 1150，
+     等於「模擬 Full HD」看到的其實是別的尺寸。 */
+  flex:0 0 auto;
+}
+</style>
+
+<div id="panel">
+  <h1>對戰畫面編輯器</h1>
+  <div class="sub">改的是 <code>src/layout.js</code> 的 TUNE。右邊是真的 render.js 畫的。</div>
+
+  <fieldset>
+    <legend>自己的手牌</legend>
+    <div class="hint">小螢幕由「14 張排得下」決定，碰不到上限；上限只在大螢幕看得出來。</div>
+    <div class="row" data-k="own.min"   data-min="14" data-max="60"></div>
+    <div class="row" data-k="own.max"   data-min="30" data-max="160"></div>
+    <div class="row" data-k="own.maxHeightPct" data-min="0.08" data-max="0.40" data-step="0.005"></div>
+    <div class="hint">手牌最多吃掉牌桌高度的幾成。調太大，牌河會被擠到溢出。</div>
+    <div class="row" data-k="own.meldOfHand" data-min="0.3" data-max="1" data-step="0.01"></div>
+  </fieldset>
+
+  <fieldset>
+    <legend>牌河</legend>
+    <div class="row" data-k="river.min" data-min="8"  data-max="40"></div>
+    <div class="row" data-k="river.max" data-min="16" data-max="90"></div>
+    <div class="row" data-k="river.perRow"  data-min="4" data-max="9"></div>
+    <div class="row" data-k="river.maxRows" data-min="2" data-max="4"></div>
+  </fieldset>
+
+  <fieldset>
+    <legend>別家（上／左／右）</legend>
+    <div class="row" data-k="opp.min" data-min="10" data-max="40"></div>
+    <div class="row" data-k="opp.max" data-min="20" data-max="110"></div>
+    <div class="row" data-k="opp.ofOwn" data-min="0.3" data-max="1" data-step="0.01"></div>
+    <div class="row" data-k="opp.meldOfHand" data-min="0.6" data-max="1.2" data-step="0.01"></div>
+    <div class="hint">副露比 &gt; 1 會變成「吃碰的牌比手上的大」，看起來像 bug。</div>
+  </fieldset>
+
+  <fieldset>
+    <legend>牌桌外框</legend>
+    <div class="hint">高 ≤ 寬 × 比例上限。調小會把桌子壓扁（iPad 直式靠它），調大則填滿寬螢幕。</div>
+    <div class="row" data-k="table.arCap" data-min="0.3" data-max="1.2" data-step="0.01"></div>
+    <div class="row" data-k="table.maxW" data-min="600" data-max="3000"></div>
+    <div class="row" data-k="table.maxH" data-min="400" data-max="2000"></div>
+  </fieldset>
+
+  <fieldset>
+    <legend>四家牌河那一圈</legend>
+    <div class="hint">調小＝四家的河擠成中央一圈；調大＝各自靠回自己的手牌，中間讓給主公像。</div>
+    <div class="row" data-k="center.maxW" data-min="360" data-max="2000"></div>
+  </fieldset>
+
+  <fieldset>
+    <legend>中央舞台（留給動畫）</legend>
+    <div class="hint">它變大，四家牌河就變小。</div>
+    <div class="row" data-k="stage.minW" data-min="40" data-max="200"></div>
+    <div class="row" data-k="stage.vw"   data-min="4"  data-max="40"></div>
+    <div class="row" data-k="stage.maxW" data-min="80" data-max="420"></div>
+    <div class="row" data-k="stage.minH" data-min="16" data-max="140"></div>
+    <div class="row" data-k="stage.vh"   data-min="3"  data-max="30"></div>
+    <div class="row" data-k="stage.maxH" data-min="30" data-max="260"></div>
+  </fieldset>
+
+  <fieldset>
+    <legend>主公像</legend>
+    <div class="row" data-k="lord.minW" data-min="40"  data-max="240"></div>
+    <div class="row" data-k="lord.vmin" data-min="8"   data-max="60"></div>
+    <div class="row" data-k="lord.maxW" data-min="100" data-max="900"></div>
+    <div class="row" data-k="lord.opacity" data-min="0" data-max="1" data-step="0.01"></div>
+    <div class="row" data-k="lord.capSize" data-min="8" data-max="26"></div>
+  </fieldset>
+
+  <fieldset>
+    <legend>間距</legend>
+    <div class="row" data-k="gap.hand"  data-min="0" data-max="14"></div>
+    <div class="row" data-k="gap.river" data-min="0" data-max="10"></div>
+    <div class="row" data-k="gap.zone"  data-min="0" data-max="30"></div>
+  </fieldset>
+
+  <div class="btns">
+    <button class="primary" id="save">💾 存回 src/layout.js</button>
+    <button id="gen">產生原始碼 ▾</button>
+    <button id="copy">複製</button>
+    <button id="reset">還原預設</button>
+  </div>
+  <textarea id="out" spellcheck="false" readonly></textarea>
+  <div id="measured"></div>
+</div>
+
+<div id="stage-wrap">
+  <div id="bar">
+    <span style="color:var(--gold)">畫面</span>
+    <select id="vp">
+      <option value="0">跟著視窗</option>
+      <optgroup label="手機（橫置）">
+        <option value="667x375">iPhone SE / 8　667×375</option>
+        <option value="740x360">Android 中階　740×360</option>
+        <option value="844x390">iPhone 13 / 14 / 15　844×390</option>
+        <option value="915x412">Galaxy S 系列　915×412</option>
+        <option value="932x430">iPhone Pro Max　932×430</option>
+      </optgroup>
+      <optgroup label="手機（直式 — 應該出現「請橫置」）">
+        <option value="375x667">iPhone SE 直　375×667</option>
+        <option value="390x844">iPhone 14 直　390×844</option>
+      </optgroup>
+      <optgroup label="平板（橫置）">
+        <option value="1024x768">iPad 9.7 / 10.2　1024×768</option>
+        <option value="1133x744">iPad mini　1133×744</option>
+        <option value="1194x834">iPad Air / Pro 11"　1194×834</option>
+        <option value="1366x1024">iPad Pro 12.9"　1366×1024</option>
+      </optgroup>
+      <optgroup label="平板（直式）">
+        <option value="768x1024">iPad 直　768×1024</option>
+        <option value="834x1194">iPad Pro 11" 直　834×1194</option>
+      </optgroup>
+      <optgroup label="電腦">
+        <option value="1280x800">MacBook Air 13　1280×800</option>
+        <option value="1440x900">1440×900</option>
+        <option value="1512x982" selected>MacBook Pro 14　1512×982</option>
+        <option value="1728x1117">MacBook Pro 16　1728×1117</option>
+        <option value="1920x1080">Full HD　1920×1080</option>
+        <option value="2560x1440">2K　2560×1440</option>
+      </optgroup>
+    </select>
+    <span style="color:var(--gold);margin-left:8px">牌況</span>
+    <select id="scene">
+      <optgroup label="一般">
+        <option value="start">開局　牌河空</option>
+        <option value="mid" selected>中盤　各家一副露、8 張棄牌</option>
+        <option value="late">終盤　兩副露、16 張棄牌</option>
+      </optgroup>
+      <optgroup label="最糟情況">
+        <option value="rivers">棄牌塞滿　四家各 18 張（牌河三列全滿）</option>
+        <option value="melds">副露塞滿　四家各 4 組（含一個槓，最寬）</option>
+        <option value="both">兩邊都滿　4 副露 ＋ 18 張棄牌</option>
+        <option value="longname">長名字　暱稱與分數都很長</option>
+      </optgroup>
+    </select>
+    <button id="shot">重新發牌</button>
+    <button id="sweep">檢查所有裝置</button>
+    <span id="vpinfo" style="margin-left:auto;opacity:.55"></span>
+  </div>
+  <div id="frame">
+    <div id="sweepout"></div>
+    <iframe id="game" src="about:blank"></iframe>
+    <!-- 載哪一版由 ../latest.json 決定（遊戲檔名帶版號，每次改版另存新檔） -->
+  </div>
+</div>
+
+<script>
+'use strict';
+/* 這一頁自己**不載**遊戲模組 —— 全部透過 iframe 取用，
+   這樣「編輯器看到的」與「遊戲看到的」永遠是同一份物件。 */
+const byId = id => document.getElementById(id);
+const GAME = byId('game');
+let W = null, L = null, RD = null;          // iframe 裡的 window / MJLayout / MJRender
+
+const LABEL = {
+  'own.min': '最小', 'own.max': '最大', 'own.maxHeightPct': '高度上限（佔牌桌）',
+  'own.meldOfHand': '副露／手牌',
+  'river.min': '最小', 'river.max': '最大', 'river.perRow': '一列幾張', 'river.maxRows': '最多幾列',
+  'opp.min': '最小', 'opp.max': '最大', 'opp.ofOwn': '相對自己手牌', 'opp.meldOfHand': '副露／手牌背',
+  'table.arCap': '高/寬 比例上限', 'table.maxW': '最大寬', 'table.maxH': '最大高',
+  'center.maxW': '牌河圈最大寬',
+  'stage.minW': '最小寬', 'stage.vw': '寬 vw', 'stage.maxW': '最大寬',
+  'stage.minH': '最小高', 'stage.vh': '高 vh', 'stage.maxH': '最大高',
+  'lord.minW': '最小寬', 'lord.vmin': '寬 vmin', 'lord.maxW': '最大寬',
+  'lord.opacity': '透明度', 'lord.capSize': '名字字級',
+  'gap.hand': '手牌', 'gap.river': '牌河', 'gap.zone': '區塊',
+};
+
+const get = (o, k) => k.split('.').reduce((a, p) => a[p], o);
+const put = (o, k, v) => { const ps = k.split('.'); const last = ps.pop();
+  ps.reduce((a, p) => a[p], o)[last] = v; };
+let DEFAULTS = null;
+
+/* ── 控制項 ────────────────────────────────────────────── */
+const ROWS = [];
+document.querySelectorAll('.row[data-k]').forEach(row => {
+  const k = row.dataset.k;
+  const step = row.dataset.step ? +row.dataset.step : 1;
+  const lab = document.createElement('label');
+  lab.textContent = LABEL[k] || k;
+  const rng = document.createElement('input');
+  rng.type = 'range'; rng.min = row.dataset.min; rng.max = row.dataset.max; rng.step = step;
+  const num = document.createElement('input');
+  num.type = 'number'; num.min = row.dataset.min; num.max = row.dataset.max; num.step = step;
+
+  const apply = v => {
+    const val = step < 1 ? +(+v).toFixed(3) : Math.round(+v);
+    rng.value = val; num.value = val;
+    /* ⚠️ 沒接上就**再試一次**，不要無聲放棄。
+       原本是 `if (!L) return;` —— 而 L 只在 iframe 的 load 事件裡設，
+       iframe 有快取時會在這支腳本掛上監聽之前就載完，load 不再觸發，
+       於是 L 永遠是 null、每一次拉滑桿都靜靜地什麼都沒做。
+       玩家看到的就是「編輯器調整沒反應」，而且畫面上完全沒有線索。 */
+    if (!L && !connect()) return;
+    put(L.TUNE, k, val);
+    L.applyCSS(L.TUNE, W.document.documentElement);
+    W.MJDev.redraw();
+    measure();
+  };
+  rng.addEventListener('input', e => apply(e.target.value));
+  num.addEventListener('input', e => apply(e.target.value));
+  num.addEventListener('change', e => apply(e.target.value));
+  row.appendChild(lab); row.appendChild(num);
+  const wrap = document.createElement('div');
+  wrap.style.gridColumn = '1 / -1'; wrap.appendChild(rng);
+  row.appendChild(wrap);
+  ROWS.push({ k, set: v => { rng.value = v; num.value = v; } });
+});
+function syncControls() { if (L) ROWS.forEach(r => r.set(get(L.TUNE, r.k))); }
+
+/* ── 量測 ──────────────────────────────────────────────── */
+function measure() {
+  if (!RD) return null;
+  const z = RD.SIZE;
+  const d = W.document;
+  const over = ['center', 'mid', 'table'].reduce((mx, id) => {
+    const e = d.getElementById(id); if (!e) return mx;
+    return Math.max(mx, e.scrollWidth - e.clientWidth, e.scrollHeight - e.clientHeight);
+  }, 0);
+  byId('measured').innerHTML =
+    '量出來的尺寸（真的 render.js）：<br>'
+    + `　自己手牌 ${z.own.w}×${z.own.h}　副露 ${z.ownMeld.w}×${z.ownMeld.h}<br>`
+    + `　牌河 ${z.river.w}×${z.river.h}　別家 ${z.oppHand.w}×${z.oppHand.h}　`
+    + `別家副露 ${z.oppMeld.w}×${z.oppMeld.h}<br>`
+    + (over > 1 ? `　<span style="color:#ff8b6b">⚠ 版面溢出 ${over}px</span>` : '　<span style="color:#7fd6a0">✓ 沒有溢出</span>');
+  return { z, over };
+}
+
+/* ── 畫面尺寸 ───────────────────────────────────────────
+   iframe 直接設成裝置的像素大小；比預覽區大就整個縮小顯示
+   （縮的是外觀，裡面的 innerWidth 仍是裝置尺寸，所以 vw/vmin 都對）。 */
+function setViewport(w, h) {
+  const frame = byId('frame');
+  if (!w) { w = frame.clientWidth - 20; h = frame.clientHeight - 20; }
+  GAME.style.width = w + 'px'; GAME.style.height = h + 'px';
+  const k = Math.min(1, (frame.clientWidth - 20) / w, (frame.clientHeight - 20) / h);
+  GAME.style.transform = k < 1 ? `scale(${k})` : '';
+  byId('vpinfo').textContent = w + ' × ' + h + (k < 1 ? `（顯示 ${Math.round(k * 100)}%）` : '');
+  return new Promise(r => setTimeout(() => { if (W) W.MJDev.redraw(); measure(); r(); }, 90));
+}
+byId('vp').addEventListener('change', e => {
+  const v = e.target.value;
+  if (!v) setViewport(0);
+  else { const [w, h] = v.split('x').map(Number); setViewport(w, h); }
+});
+
+/* ── 牌況 ──────────────────────────────────────────────────
+   包含幾種**最糟情況**。這些真的會發生，但隨機玩很難碰到
+   （四家都四副露又各打滿 18 張，玩到天亮也不見得遇得到一次），
+   所以由 MJDev.scenario 直接造出來看版面撐不撐得住。 */
+function reload(kingdom) {
+  W.MJDev.scenario(byId('scene').value, kingdom || 'qi');
+  measure();
+}
+byId('scene').addEventListener('change', () => reload());
+byId('shot').addEventListener('click', () => reload());
+
+/* ── 掃描所有裝置 ───────────────────────────────────────
+   一台一台點太慢，而且很容易漏掉某個尺寸壞掉。
+   判斷：#table / #mid / #center 任何一個 scroll 超出可視就是溢出（牌會互壓）；
+   自己的手牌 < 30px 實測就看不清花色。                        */
+const SWEEP = [...document.querySelectorAll('#vp option')]
+  .filter(o => o.value !== '0')
+  .map(o => ({ label: o.textContent.trim(), w: +o.value.split('x')[0], h: +o.value.split('x')[1],
+               group: o.parentNode.label || '' }));
+
+byId('sweep').addEventListener('click', async () => {
+  const box = byId('sweepout');
+  box.style.display = 'block';
+  box.innerHTML = '<div style="color:var(--gold)">檢查中…</div>';
+  const rows = [];
+  let lastGroup = null;
+  const keep = byId('vp').value;
+  for (const d of SWEEP) {
+    await setViewport(d.w, d.h);
+    const m = measure();
+    const rotate = W.document.getElementById('rotate-hint');
+    const rotating = rotate && rotate.getClientRects().length > 0;
+    const small = m.z.own.w < 30;
+    const cls = rotating ? 'ok' : m.over > 1 ? 'bad' : small ? 'warn' : 'ok';
+    const note = rotating ? '請橫置（正確）' : m.over > 1 ? '溢出 ' + m.over + 'px' : small ? '牌偏小' : '✓';
+    if (d.group !== lastGroup) {
+      rows.push('<tr><td colspan="6" style="color:var(--gold);padding-top:10px">' + d.group + '</td></tr>');
+      lastGroup = d.group;
+    }
+    rows.push('<tr class="' + cls + '"><td>' + d.label + '</td>'
+      + '<td>' + m.z.own.w + '</td><td>' + m.z.ownMeld.w + '</td>'
+      + '<td>' + m.z.oppHand.w + '</td><td>' + m.z.river.w + '</td>'
+      + '<td>' + note + '</td></tr>');
+  }
+  box.innerHTML = '<button class="close" id="sweepclose">關閉</button>'
+    + '<div style="color:var(--gold);margin-bottom:8px">各裝置實測（牌況：'
+    + byId('scene').selectedOptions[0].textContent + '）</div>'
+    + '<table><tr><th>裝置</th><th>手牌</th><th>副露</th><th>別家</th><th>牌河</th><th></th></tr>'
+    + rows.join('') + '</table>';
+  byId('sweepclose').addEventListener('click', () => { box.style.display = 'none'; });
+  byId('vp').value = keep;
+  byId('vp').dispatchEvent(new Event('change'));
+});
+
+/* ── 存回 src/layout.js ──────────────────────────────────
+   開發伺服器收到之後**只換數字**，TUNE 裡的註解一個字都不動 ——
+   那些「原本 44，2000px 寬的螢幕整桌很空」之類的說明是這個專案最貴的東西，
+   用產生器重吐一份會全部洗掉。 */
+byId('save').addEventListener('click', async () => {
+  const btn = byId('save');
+  if (!L) { btn.textContent = '⚠ 沒接上預覽'; setTimeout(() => { btn.textContent = '💾 存回 src/layout.js'; }, 2200); return; }
+  btn.disabled = true; btn.textContent = '存檔中…';
+  try {
+    const res = await fetch('/api/layout', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(L.TUNE),
+    });
+    const j = await res.json();
+    if (!j.ok) throw new Error(j.error || '未知錯誤');
+    btn.textContent = j.changed.length ? `✓ 已存 ${j.changed.length} 項` : '✓ 沒有變動';
+    byId('measured').innerHTML += j.changed.length
+      ? '<br><span style="color:#7fd6a0">已寫回 src/layout.js：' + j.changed.join('、') + '</span>'
+      : '';
+  } catch (e) {
+    btn.textContent = '✗ 存檔失敗';
+    byId('measured').innerHTML +=
+      '<br><span style="color:#ff8b6b">存檔失敗：' + e.message + '</span>';
+  }
+  setTimeout(() => { btn.disabled = false; btn.textContent = '💾 存回 src/layout.js'; }, 2600);
+});
+
+/* ── 匯出 ───────────────────────────────────────────────── */
+byId('gen').addEventListener('click', () => {
+  const out = byId('out');
+  out.style.display = out.style.display === 'block' ? 'none' : 'block';
+  out.value = L.toSource(L.TUNE);
+});
+byId('copy').addEventListener('click', async () => {
+  const src = L.toSource(L.TUNE);
+  try { await navigator.clipboard.writeText(src); byId('copy').textContent = '已複製 ✓'; }
+  catch (e) { const out = byId('out'); out.style.display = 'block'; out.value = src; out.select();
+              byId('copy').textContent = '請手動複製'; }
+  setTimeout(() => { byId('copy').textContent = '複製'; }, 1600);
+});
+byId('reset').addEventListener('click', () => {
+  L.set(L.clone(DEFAULTS));
+  L.applyCSS(L.TUNE, W.document.documentElement);
+  W.MJDev.redraw();
+  syncControls(); measure();
+});
+
+/* ── 接上 iframe ─────────────────────────────────────────
+   ⚠️ 不能只靠 load 事件。iframe 的 src 寫在 HTML 裡，有快取時會在
+   這支腳本執行之前就載完 —— load 不會再觸發，整個面板就變成裝飾品。
+   所以：load 時接、腳本起動時也試著接、拉滑桿時發現沒接上再接一次。 */
+/* ⚠️ 這支工具**必須走開發伺服器**，不能雙擊開。
+
+   file:// 底下瀏覽器把每個檔案當成各自獨立的來源，
+   所以讀不到 iframe 裡的 MJLayout／MJRender（同源政策擋下），
+   整個面板會變成裝飾品。這跟遊戲本體不一樣 ——
+   mj4.html 雙擊得開，但它不需要跨 iframe 存取任何東西。
+
+   ⚠️ 判斷條件是「**不是** http(s)」而不是「是 file:」——
+   有些環境（例如把檔案轉成快照的預覽器）會用 data: 或 blob:，
+   那些一樣讀不到 iframe，但比對 'file:' 抓不到，會退回一句
+   看不出所以然的「還沒接上」。 */
+const FROM_SERVER = /^https?:$/.test(location.protocol);
+
+function fileProtocolNotice() {
+  byId('measured').innerHTML =
+    '<span style="color:#ff8b6b">⚠ 這支工具不能用雙擊開啟</span><br>'
+    + '　<code>file://</code> 底下瀏覽器不允許讀取 iframe 內容（同源政策），<br>'
+    + '　滑桿會完全沒有作用。<br><br>'
+    + '　目前是 <code>' + location.protocol + '</code><br><br>'
+    + '　請改從<b>啟動台</b>點進來，或直接開：<br>'
+    + '　<code>http://localhost:9987/devtools/</code><br><br>'
+    + '　（雙擊 <b>啟動戰國麻將.command</b> 會把伺服器叫起來）';
+}
+
+function connect() {
+  if (!FROM_SERVER) { fileProtocolNotice(); return false; }
+  W = GAME.contentWindow;
+  try { L = W && W.MJLayout; RD = W && W.MJRender; }
+  catch (e) { fileProtocolNotice(); return false; }   // 跨來源存取被擋
+  if (!L || !RD || !W.MJDev) {
+    L = RD = null;
+    byId('measured').innerHTML =
+      '<span style="color:#e8c46a">⚠ 還沒接上預覽畫面</span><br>'
+      + '　右邊的遊戲頁若有錯誤，這裡的滑桿不會有作用。';
+    return false;
+  }
+  if (!DEFAULTS) DEFAULTS = L.clone();
+  syncControls();
+  byId('vp').dispatchEvent(new Event('change'));
+  setTimeout(reload, 200);
+  return true;
+}
+
+if (!FROM_SERVER) {
+  fileProtocolNotice();
+  byId('game').style.cssText = 'width:560px;height:360px;flex:0 0 auto;opacity:.35';
+} else {
+  GAME.addEventListener('load', () => { if (GAME.src !== 'about:blank') connect(); });
+  /* 遊戲檔名帶版號（戰國麻將線上v1.00.html…），每次改版另存新檔 ——
+     載哪一版問 ../latest.json，跟 GitHub Pages 的入口頁同一套。 */
+  fetch('../latest.json?t=' + Date.now(), { cache: 'no-store' })
+    .then(r => r.json())
+    .then(d => { GAME.src = '../' + encodeURIComponent(d.file) + '#preview'; })
+    .catch(() => {
+      byId('measured').innerHTML = '<span style="color:#e8c46a">⚠ 讀不到 ../latest.json，不知道該載哪一版</span>';
+    });
+  setTimeout(() => { if (!L) connect(); }, 2500);   // load 事件沒接到時的保險
+}
+window.addEventListener('resize', () => byId('vp').dispatchEvent(new Event('change')));
+</script>

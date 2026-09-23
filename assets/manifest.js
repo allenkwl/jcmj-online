@@ -1,0 +1,460 @@
+/* 由 tools/extract-assets.py 產生，不要手改。
+   跟 manifest.json 是同一份資料 —— 這一份是給瀏覽器直接 <script> 載的，
+   因為 fetch() 在 file:// 底下會被 CORS 擋。 */
+window.MJ_ASSET_MANIFEST = {
+  "asset_l1194": {
+    "actualType": "jpg",
+    "bytes": 413491,
+    "declaredType": "image/png",
+    "file": "asset_l1194.jpg",
+    "line": 1194
+  },
+  "chu": {
+    "actualType": "jpg",
+    "bytes": 558133,
+    "declaredType": "image/png",
+    "file": "chu.jpg",
+    "line": 2370
+  },
+  "chu_2": {
+    "actualType": "jpg",
+    "bytes": 211172,
+    "declaredType": "image/png",
+    "file": "chu_2.jpg",
+    "line": 7373
+  },
+  "chu_3": {
+    "actualType": "png",
+    "bytes": 159135,
+    "declaredType": "image/png",
+    "file": "chu_3.png",
+    "line": 7384
+  },
+  "han": {
+    "actualType": "jpg",
+    "bytes": 479150,
+    "declaredType": "image/png",
+    "file": "han.jpg",
+    "line": 2373
+  },
+  "han_2": {
+    "actualType": "jpg",
+    "bytes": 156788,
+    "declaredType": "image/png",
+    "file": "han_2.jpg",
+    "line": 7375
+  },
+  "han_3": {
+    "actualType": "png",
+    "bytes": 96216,
+    "declaredType": "image/png",
+    "file": "han_3.png",
+    "line": 7387
+  },
+  "honor_中": {
+    "actualType": "jpg",
+    "bytes": 9029,
+    "declaredType": null,
+    "file": "honor_中.jpg",
+    "line": 1682
+  },
+  "honor_北": {
+    "actualType": "jpg",
+    "bytes": 9788,
+    "declaredType": null,
+    "file": "honor_北.jpg",
+    "line": 1681
+  },
+  "honor_南": {
+    "actualType": "jpg",
+    "bytes": 10966,
+    "declaredType": null,
+    "file": "honor_南.jpg",
+    "line": 1679
+  },
+  "honor_東": {
+    "actualType": "jpg",
+    "bytes": 11208,
+    "declaredType": null,
+    "file": "honor_東.jpg",
+    "line": 1678
+  },
+  "honor_發": {
+    "actualType": "jpg",
+    "bytes": 12010,
+    "declaredType": null,
+    "file": "honor_發.jpg",
+    "line": 1683
+  },
+  "honor_白": {
+    "actualType": "jpg",
+    "bytes": 14658,
+    "declaredType": null,
+    "file": "honor_白.jpg",
+    "line": 1684
+  },
+  "honor_西": {
+    "actualType": "jpg",
+    "bytes": 9787,
+    "declaredType": null,
+    "file": "honor_西.jpg",
+    "line": 1680
+  },
+  "qi": {
+    "actualType": "jpg",
+    "bytes": 530495,
+    "declaredType": "image/png",
+    "file": "qi.jpg",
+    "line": 2371
+  },
+  "qi_2": {
+    "actualType": "jpg",
+    "bytes": 183056,
+    "declaredType": "image/png",
+    "file": "qi_2.jpg",
+    "line": 7372
+  },
+  "qi_3": {
+    "actualType": "png",
+    "bytes": 139989,
+    "declaredType": "image/png",
+    "file": "qi_3.png",
+    "line": 7385
+  },
+  "qin": {
+    "actualType": "jpg",
+    "bytes": 483971,
+    "declaredType": "image/png",
+    "file": "qin.jpg",
+    "line": 2368
+  },
+  "qin_2": {
+    "actualType": "jpg",
+    "bytes": 154007,
+    "declaredType": "image/png",
+    "file": "qin_2.jpg",
+    "line": 7378
+  },
+  "qin_3": {
+    "actualType": "png",
+    "bytes": 133994,
+    "declaredType": "image/png",
+    "file": "qin_3.png",
+    "line": 7383
+  },
+  "sel-bg-img": {
+    "actualType": "jpg",
+    "bytes": 480739,
+    "declaredType": "image/png",
+    "file": "sel-bg-img.jpg",
+    "line": 951
+  },
+  "tiao1": {
+    "actualType": "jpg",
+    "bytes": 6068,
+    "declaredType": null,
+    "file": "tiao1.jpg",
+    "line": 1668
+  },
+  "tiao2": {
+    "actualType": "jpg",
+    "bytes": 3219,
+    "declaredType": null,
+    "file": "tiao2.jpg",
+    "line": 1669
+  },
+  "tiao3": {
+    "actualType": "jpg",
+    "bytes": 3662,
+    "declaredType": null,
+    "file": "tiao3.jpg",
+    "line": 1670
+  },
+  "tiao4": {
+    "actualType": "jpg",
+    "bytes": 4390,
+    "declaredType": null,
+    "file": "tiao4.jpg",
+    "line": 1671
+  },
+  "tiao5": {
+    "actualType": "jpg",
+    "bytes": 5408,
+    "declaredType": null,
+    "file": "tiao5.jpg",
+    "line": 1672
+  },
+  "tiao6": {
+    "actualType": "jpg",
+    "bytes": 5696,
+    "declaredType": null,
+    "file": "tiao6.jpg",
+    "line": 1673
+  },
+  "tiao7": {
+    "actualType": "jpg",
+    "bytes": 5226,
+    "declaredType": null,
+    "file": "tiao7.jpg",
+    "line": 1674
+  },
+  "tiao8": {
+    "actualType": "jpg",
+    "bytes": 5485,
+    "declaredType": null,
+    "file": "tiao8.jpg",
+    "line": 1675
+  },
+  "tiao9": {
+    "actualType": "jpg",
+    "bytes": 6001,
+    "declaredType": null,
+    "file": "tiao9.jpg",
+    "line": 1676
+  },
+  "title-bg-img": {
+    "actualType": "jpg",
+    "bytes": 462126,
+    "declaredType": "image/png",
+    "file": "title-bg-img.jpg",
+    "line": 927
+  },
+  "tong1": {
+    "actualType": "jpg",
+    "bytes": 4981,
+    "declaredType": null,
+    "file": "tong1.jpg",
+    "line": 1658
+  },
+  "tong2": {
+    "actualType": "jpg",
+    "bytes": 4237,
+    "declaredType": null,
+    "file": "tong2.jpg",
+    "line": 1659
+  },
+  "tong3": {
+    "actualType": "jpg",
+    "bytes": 4609,
+    "declaredType": null,
+    "file": "tong3.jpg",
+    "line": 1660
+  },
+  "tong4": {
+    "actualType": "jpg",
+    "bytes": 4363,
+    "declaredType": null,
+    "file": "tong4.jpg",
+    "line": 1661
+  },
+  "tong5": {
+    "actualType": "jpg",
+    "bytes": 5285,
+    "declaredType": null,
+    "file": "tong5.jpg",
+    "line": 1662
+  },
+  "tong6": {
+    "actualType": "jpg",
+    "bytes": 5751,
+    "declaredType": null,
+    "file": "tong6.jpg",
+    "line": 1663
+  },
+  "tong7": {
+    "actualType": "jpg",
+    "bytes": 6212,
+    "declaredType": null,
+    "file": "tong7.jpg",
+    "line": 1664
+  },
+  "tong8": {
+    "actualType": "jpg",
+    "bytes": 6047,
+    "declaredType": null,
+    "file": "tong8.jpg",
+    "line": 1665
+  },
+  "tong9": {
+    "actualType": "jpg",
+    "bytes": 7209,
+    "declaredType": null,
+    "file": "tong9.jpg",
+    "line": 1666
+  },
+  "vic-bg-chu": {
+    "actualType": "jpg",
+    "bytes": 216948,
+    "declaredType": "image/jpeg",
+    "file": "vic-bg-chu.jpg",
+    "line": 1152
+  },
+  "vic-bg-han": {
+    "actualType": "jpg",
+    "bytes": 224585,
+    "declaredType": "image/jpeg",
+    "file": "vic-bg-han.jpg",
+    "line": 1155
+  },
+  "vic-bg-qi": {
+    "actualType": "jpg",
+    "bytes": 229959,
+    "declaredType": "image/jpeg",
+    "file": "vic-bg-qi.jpg",
+    "line": 1157
+  },
+  "vic-bg-qin": {
+    "actualType": "jpg",
+    "bytes": 247920,
+    "declaredType": "image/jpeg",
+    "file": "vic-bg-qin.jpg",
+    "line": 1151
+  },
+  "vic-bg-wei": {
+    "actualType": "jpg",
+    "bytes": 227211,
+    "declaredType": "image/jpeg",
+    "file": "vic-bg-wei.jpg",
+    "line": 1156
+  },
+  "vic-bg-yan": {
+    "actualType": "jpg",
+    "bytes": 234079,
+    "declaredType": "image/jpeg",
+    "file": "vic-bg-yan.jpg",
+    "line": 1153
+  },
+  "vic-bg-zhao": {
+    "actualType": "jpg",
+    "bytes": 214879,
+    "declaredType": "image/jpeg",
+    "file": "vic-bg-zhao.jpg",
+    "line": 1154
+  },
+  "wan1": {
+    "actualType": "jpg",
+    "bytes": 4360,
+    "declaredType": null,
+    "file": "wan1.jpg",
+    "line": 1686
+  },
+  "wan2": {
+    "actualType": "jpg",
+    "bytes": 4779,
+    "declaredType": null,
+    "file": "wan2.jpg",
+    "line": 1687
+  },
+  "wan3": {
+    "actualType": "jpg",
+    "bytes": 4910,
+    "declaredType": null,
+    "file": "wan3.jpg",
+    "line": 1688
+  },
+  "wan4": {
+    "actualType": "jpg",
+    "bytes": 4985,
+    "declaredType": null,
+    "file": "wan4.jpg",
+    "line": 1689
+  },
+  "wan5": {
+    "actualType": "jpg",
+    "bytes": 5146,
+    "declaredType": null,
+    "file": "wan5.jpg",
+    "line": 1690
+  },
+  "wan6": {
+    "actualType": "jpg",
+    "bytes": 4821,
+    "declaredType": null,
+    "file": "wan6.jpg",
+    "line": 1691
+  },
+  "wan7": {
+    "actualType": "jpg",
+    "bytes": 4567,
+    "declaredType": null,
+    "file": "wan7.jpg",
+    "line": 1692
+  },
+  "wan8": {
+    "actualType": "jpg",
+    "bytes": 4668,
+    "declaredType": null,
+    "file": "wan8.jpg",
+    "line": 1693
+  },
+  "wan9": {
+    "actualType": "jpg",
+    "bytes": 4967,
+    "declaredType": null,
+    "file": "wan9.jpg",
+    "line": 1694
+  },
+  "wei": {
+    "actualType": "jpg",
+    "bytes": 480226,
+    "declaredType": "image/png",
+    "file": "wei.jpg",
+    "line": 2374
+  },
+  "wei_2": {
+    "actualType": "jpg",
+    "bytes": 194439,
+    "declaredType": "image/png",
+    "file": "wei_2.jpg",
+    "line": 7376
+  },
+  "wei_3": {
+    "actualType": "png",
+    "bytes": 155327,
+    "declaredType": "image/png",
+    "file": "wei_3.png",
+    "line": 7382
+  },
+  "yan": {
+    "actualType": "jpg",
+    "bytes": 488296,
+    "declaredType": "image/png",
+    "file": "yan.jpg",
+    "line": 2372
+  },
+  "yan_2": {
+    "actualType": "jpg",
+    "bytes": 187302,
+    "declaredType": "image/png",
+    "file": "yan_2.jpg",
+    "line": 7374
+  },
+  "yan_3": {
+    "actualType": "png",
+    "bytes": 131024,
+    "declaredType": "image/png",
+    "file": "yan_3.png",
+    "line": 7386
+  },
+  "zhao": {
+    "actualType": "jpg",
+    "bytes": 546030,
+    "declaredType": "image/png",
+    "file": "zhao.jpg",
+    "line": 2369
+  },
+  "zhao_2": {
+    "actualType": "jpg",
+    "bytes": 209203,
+    "declaredType": "image/png",
+    "file": "zhao_2.jpg",
+    "line": 7377
+  },
+  "zhao_3": {
+    "actualType": "png",
+    "bytes": 129824,
+    "declaredType": "image/png",
+    "file": "zhao_3.png",
+    "line": 7388
+  }
+};

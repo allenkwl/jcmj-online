@@ -1,0 +1,53 @@
+# ── 系統與編輯器 ──
+.DS_Store
+__pycache__/
+*.pyc
+
+# ── 人物原圖（約 98MB）：遊戲執行時用的是壓好的 assets/avatar/，原圖只留在本機 ──
+# 重新產生執行用的圖：python3 tools/build-avatars.py
+assets/portraits/
+
+# ── 本機開發用 ──
+CLAUDE.md
+啟動台.html
+啟動戰國麻將.command
+開場動畫測試.html
+第一版對戰畫面.jpg
+
+# ── 從舊版抽出、但新版已不再使用的素材（2026-09-24 逐一確認沒有被引用）──
+# 牌面（萬筒條字）由 assets/manifest.js 列出、src/assets.js 開局載入，一定要留；
+# 開場只直接用到 vic-bg-chu.jpg。其餘是舊君主頭像與舊背景。
+assets/asset_l1194.jpg
+assets/chu.jpg
+assets/chu_2.jpg
+assets/chu_3.png
+assets/han.jpg
+assets/han_2.jpg
+assets/han_3.png
+assets/qi.jpg
+assets/qi_2.jpg
+assets/qi_3.png
+assets/qin.jpg
+assets/qin_2.jpg
+assets/qin_3.png
+assets/sel-bg-img.jpg
+assets/title-bg-img.jpg
+assets/vic-bg-han.jpg
+assets/vic-bg-qi.jpg
+assets/vic-bg-qin.jpg
+assets/vic-bg-wei.jpg
+assets/vic-bg-yan.jpg
+assets/vic-bg-zhao.jpg
+assets/wei.jpg
+assets/wei_2.jpg
+assets/wei_3.png
+assets/yan.jpg
+assets/yan_2.jpg
+assets/yan_3.png
+assets/zhao.jpg
+assets/zhao_2.jpg
+assets/zhao_3.png
+
+# ── 開場音樂的原始檔：遊戲只載 intro-bgm.mp3 ──
+assets/audio/intro-bgm.wav
+assets/audio/intro-bgm.mid

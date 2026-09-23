@@ -1,0 +1,24 @@
+{
+  "name": "戰國麻將列傳 線上版",
+  "short_name": "戰國麻將線上",
+  "description": "四人日式麻將，打的是戰國 —— 征服六國、統一天下",
+  "lang": "zh-Hant",
+  "start_url": "./",
+  "scope": "./",
+  "display": "fullscreen",
+  "orientation": "landscape",
+  "background_color": "#0d3b2e",
+  "theme_color": "#0d3b2e",
+  "icons": [
+    {
+      "src": "assets/icons/icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png"
+    },
+    {
+      "src": "assets/icons/icon-512.webp",
+      "sizes": "512x512",
+      "type": "image/webp"
+    }
+  ]
+}

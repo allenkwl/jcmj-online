@@ -1,0 +1,79 @@
+{
+  "rules": {
+    "groups": {
+      ".read": "auth != null",
+      "$g": {
+        ".write": "auth != null",
+        ".validate": "$g.length <= 64",
+        "$a": { ".validate": "!newData.isString() || newData.val().length <= 4096",
+          "$b": { ".validate": "!newData.isString() || newData.val().length <= 4096",
+            "$c": { ".validate": "!newData.isString() || newData.val().length <= 4096" } } }
+      }
+    },
+    "states": {
+      ".read": "auth != null",
+      "$g": { ".write": "auth != null", ".validate": "$g.length <= 64" }
+    },
+    "live": {
+      ".read": "auth != null",
+      "$g": { ".write": "auth != null", ".validate": "$g.length <= 64" }
+    },
+    "claims": {
+      ".read": "auth != null",
+      "$g": { ".write": "auth != null", ".validate": "$g.length <= 64" }
+    },
+    "ready": {
+      ".read": "auth != null",
+      "$g": { ".write": "auth != null", ".validate": "$g.length <= 64" }
+    },
+    "bots": {
+      ".read": "auth != null",
+      "$g": { ".write": "auth != null", ".validate": "$g.length <= 64" }
+    },
+    "token": {
+      ".read": "auth != null",
+      "$g": { ".write": "auth != null", ".validate": "$g.length <= 64" }
+    },
+    "cmds": {
+      ".read": "auth != null",
+      "$g": { ".write": "auth != null", ".validate": "$g.length <= 64" }
+    },
+    "beat": {
+      ".read": "auth != null",
+      "$g": { ".write": "auth != null", ".validate": "$g.length <= 64" }
+    },
+    "pause": {
+      ".read": "auth != null",
+      "$g": { ".write": "auth != null", ".validate": "$g.length <= 64" }
+    },
+    "nudges": {
+      ".read": "auth != null",
+      "$g": { ".write": "auth != null", ".validate": "$g.length <= 64" }
+    },
+    "pings": {
+      ".read": "auth != null",
+      "$g": { ".write": "auth != null", ".validate": "$g.length <= 64" }
+    },
+    "pongs": {
+      ".read": "auth != null",
+      "$g": { ".write": "auth != null", ".validate": "$g.length <= 64" }
+    },
+    "claimwin": {
+      ".read": "auth != null",
+      "$g": { ".write": "auth != null", ".validate": "$g.length <= 64" }
+    },
+    "hands": {
+      "$g": {
+        ".validate": "$g.length <= 64",
+        "$uid": {
+          ".read": "auth != null && auth.uid === $uid",
+          ".write": "auth != null"
+        }
+      }
+    },
+    "debug": {
+      ".read": "auth != null",
+      "$g": { ".write": "auth != null", ".validate": "$g.length <= 64" }
+    }
+  }
+}

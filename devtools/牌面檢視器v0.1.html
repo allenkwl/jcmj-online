@@ -1,0 +1,240 @@
+<!DOCTYPE html>
+<!--
+  牌面檢視器 — 開發小工具
+
+  ── 怎麼被啟動台掃到 ──
+  丟在 devtools/ 底下就會自己出現，不用回頭改啟動台。
+  名字、說明、圖示、分類都從下面這幾行讀：
+
+      <title>…</title>
+      <meta name="description" …>
+      <meta name="launcher-icon" …>
+      <meta name="launcher-cat"  …>
+
+  檔名帶版號（v0.1）的話，啟動台會把同名的舊版收進「舊版」摺疊區，
+  永遠指向版號最大的那一支。要做 v0.2 就複製一份改檔名，舊的留著。
+-->
+<html lang="zh-Hant">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>牌面檢視器</title>
+<meta name="description" content="一次看完 34 張牌面，可調尺寸、旋轉、比對程序繪製與圖片">
+<meta name="launcher-icon" content="🀄">
+<meta name="launcher-cat" content="美術">
+<style>
+:root{
+  --bg:#0c1512; --panel:#14261f; --rim:#2c4a3c;
+  --gold:#c9a44c; --ink:#e8dcc0; --lo:#7d9686;
+  --ui:system-ui,-apple-system,'PingFang TC','Noto Serif TC',sans-serif;
+}
+*{box-sizing:border-box;}
+body{margin:0;padding:22px;background:var(--bg);color:var(--ink);
+     font-family:var(--ui);font-size:14px;}
+.wrap{max-width:1100px;margin:0 auto;}
+h1{font-size:20px;margin:0 0 4px;color:var(--gold);}
+.lead{color:var(--lo);font-size:12.5px;margin-bottom:18px;line-height:1.7;}
+a.back{color:var(--lo);text-decoration:none;font-size:12px;}
+a.back:hover{color:var(--gold);}
+
+.bar{display:flex;gap:16px;flex-wrap:wrap;align-items:center;
+     background:var(--panel);border:1px solid var(--rim);border-radius:10px;
+     padding:11px 14px;margin-bottom:18px;font-size:12.5px;}
+.bar label{display:flex;gap:7px;align-items:center;color:var(--lo);}
+.bar input[type=range]{width:130px;}
+.bar output{color:var(--gold);font-variant-numeric:tabular-nums;min-width:34px;}
+.bar .seg{display:flex;border:1px solid var(--rim);border-radius:6px;overflow:hidden;}
+.bar .seg button{background:transparent;border:0;color:var(--lo);font:inherit;
+                 padding:4px 10px;cursor:pointer;}
+.bar .seg button.on{background:var(--gold);color:#20160a;font-weight:700;}
+.bar .note{color:var(--lo);}
+
+h2{font-size:12.5px;color:var(--lo);font-weight:400;margin:22px 0 9px;
+   padding-bottom:5px;border-bottom:1px solid var(--rim);letter-spacing:1px;}
+.row{display:flex;flex-wrap:wrap;gap:9px;align-items:flex-end;}
+.cell{display:flex;flex-direction:column;align-items:center;gap:4px;}
+.cell .lbl{font-size:10.5px;color:var(--lo);font-variant-numeric:tabular-nums;}
+.cell.miss .lbl{color:#ff9a9a;}
+canvas{display:block;}
+.warn{background:#251f10;border:1px solid #6b5a2a;border-radius:9px;
+      padding:10px 13px;font-size:12.5px;line-height:1.75;color:#e9dcb4;margin-bottom:16px;}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <a class="back" href="../啟動台.html">← 回啟動台</a>
+  <h1>🀄 牌面檢視器</h1>
+  <div class="lead">
+    一次看完全部 34 張牌面。改尺寸、轉角度、比對<b>程序繪製</b>與<b>舊版圖片</b>，
+    不用開遊戲、不用打到那張牌。
+  </div>
+
+  <div id="warn" class="warn" style="display:none"></div>
+
+  <div class="bar">
+    <label>尺寸
+      <input id="size" type="range" min="16" max="96" value="44">
+      <output id="sizeOut">44</output>
+    </label>
+    <label>旋轉
+      <span class="seg" id="rot">
+        <button data-v="0" class="on">0°</button>
+        <button data-v="90">90°</button>
+        <button data-v="180">180°</button>
+        <button data-v="270">270°</button>
+      </span>
+    </label>
+    <label>來源
+      <span class="seg" id="src">
+        <button data-v="img" class="on">圖片</button>
+        <button data-v="proc">程序繪製</button>
+        <button data-v="both">並排比對</button>
+      </span>
+    </label>
+    <label><input id="thin" type="checkbox"> 薄版（牌河／副露用）</label>
+    <label><input id="back" type="checkbox"> 牌背</label>
+    <span class="note" id="stat"></span>
+  </div>
+
+  <div id="out"></div>
+</div>
+
+<script src="../assets/manifest.js"></script>
+<script src="../src/tiles.js"></script>
+<script>
+(function () {
+'use strict';
+const T = window.MJTiles;
+const SUITS = ['萬', '筒', '條'];
+const HONORS = ['東', '南', '西', '北', '中', '發', '白'];
+
+const state = { size: 44, rot: 0, src: 'img', thin: false, back: false };
+let faceImages = null;          // display → Image（載好才有）
+
+function tile(d) {
+  const m = d.match(/^(\d)(.)$/);
+  return m
+    ? { suit: m[2], num: +m[1], display: d, isHonor: false, uid: 0 }
+    : { suit: d, num: 0, display: d, isHonor: true, uid: 0 };
+}
+function allDisplays() {
+  const out = [];
+  SUITS.forEach(s => { for (let n = 1; n <= 9; n++) out.push(n + s); });
+  return out.concat(HONORS);
+}
+
+/* manifest 的 key ←→ 牌面。跟 src/assets.js 同一套規則。 */
+function keyFor(d) {
+  const m = d.match(/^(\d)(.)$/);
+  if (m) {
+    const n = m[1], s = m[2];
+    return s === '筒' ? 'tong' + n : s === '條' ? 'tiao' + n : s === '萬' ? 'wan' + n : null;
+  }
+  return HONORS.indexOf(d) >= 0 ? 'honor_' + d : null;
+}
+
+function loadImages(done) {
+  const man = window.MJ_ASSET_MANIFEST;
+  if (!man) { done(null, '找不到 assets/manifest.js —— 先跑 tools/extract-assets.py'); return; }
+  const map = {};
+  const ds = allDisplays();
+  let pending = 0, fin = 0, missing = [];
+  ds.forEach(d => {
+    const k = keyFor(d), rec = k && man[k];
+    if (!rec) { missing.push(d); return; }
+    const img = new Image();
+    pending++;
+    const tick = () => { if (++fin === pending) done(map, missing.length ? '缺圖：' + missing.join('、') : ''); };
+    img.onload = () => { map[d] = img; tick(); };
+    img.onerror = () => { missing.push(d); tick(); };
+    img.src = '../assets/' + rec.file;
+  });
+  if (!pending) done(map, '缺圖：' + missing.join('、'));
+}
+
+function cell(d, useImg) {
+  const wrap = document.createElement('div');
+  wrap.className = 'cell' + (useImg && faceImages && !faceImages[d] ? ' miss' : '');
+  T.setFaceImages(useImg ? faceImages : null);
+  const w = state.size, h = Math.round(w * 56 / 40);
+  wrap.appendChild(T.makeTile(tile(d), {
+    w, h, rotate: state.rot, thin: state.thin, faceDown: state.back,
+  }));
+  const lbl = document.createElement('div');
+  lbl.className = 'lbl';
+  lbl.textContent = d;
+  wrap.appendChild(lbl);
+  return wrap;
+}
+
+function render() {
+  const out = document.getElementById('out');
+  out.innerHTML = '';
+  const groups = [
+    ['萬子', SUITS[0]], ['筒子', SUITS[1]], ['條子', SUITS[2]], ['字牌', null],
+  ];
+  groups.forEach(([name, suit]) => {
+    const ds = suit
+      ? Array.from({ length: 9 }, (_, i) => (i + 1) + suit)
+      : HONORS;
+    const h2 = document.createElement('h2');
+    h2.textContent = name;
+    out.appendChild(h2);
+    const row = document.createElement('div');
+    row.className = 'row';
+    ds.forEach(d => {
+      if (state.src === 'both') {
+        row.appendChild(cell(d, true));
+        row.appendChild(cell(d, false));
+      } else {
+        row.appendChild(cell(d, state.src === 'img'));
+      }
+    });
+    out.appendChild(row);
+  });
+
+  const n = faceImages ? Object.keys(faceImages).length : 0;
+  document.getElementById('stat').textContent =
+    `${state.size}px　圖片 ${n}/34 張`;
+}
+
+/* ── 控制項 ── */
+const sz = document.getElementById('size');
+sz.addEventListener('input', () => {
+  state.size = +sz.value;
+  document.getElementById('sizeOut').textContent = sz.value;
+  render();
+});
+function seg(id, key) {
+  const box = document.getElementById(id);
+  box.addEventListener('click', e => {
+    const b = e.target.closest('button');
+    if (!b) return;
+    [...box.children].forEach(x => x.classList.toggle('on', x === b));
+    state[key] = isNaN(+b.dataset.v) ? b.dataset.v : +b.dataset.v;
+    render();
+  });
+}
+seg('rot', 'rot');
+seg('src', 'src');
+['thin', 'back'].forEach(k => {
+  document.getElementById(k).addEventListener('change', e => {
+    state[k] = e.target.checked;
+    render();
+  });
+});
+
+loadImages((map, warn) => {
+  faceImages = map;
+  if (warn) {
+    const w = document.getElementById('warn');
+    w.style.display = 'block';
+    w.innerHTML = warn + '<br>沒有圖也能用 —— 會退回 <code>tiles.js</code> 的程序繪製。';
+  }
+  render();
+});
+render();
+})();
+</script>
+</body>
+</html>

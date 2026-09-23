@@ -1,0 +1,42 @@
+<!doctype html>
+<html lang="zh-Hant">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no,viewport-fit=cover">
+<title>戰國麻將線上</title>
+<link rel="icon" type="image/png" sizes="32x32" href="assets/icons/favicon-32.png">
+<link rel="apple-touch-icon" href="assets/icons/icon-180.png">
+<link rel="manifest" href="manifest.webmanifest?v=1">
+<meta name="apple-mobile-web-app-title" content="戰國麻將線上">
+<meta name="application-name" content="戰國麻將線上">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="theme-color" content="#0d3b2e">
+<style>
+  html,body{height:100%;margin:0;display:grid;place-items:center;
+            background:#0d3b2e;color:#f2e6c8;font-family:"Noto Serif TC","Songti TC",serif}
+  a{color:#c9a44c}
+</style>
+</head>
+<body>
+<p id="msg">正在載入戰國麻將……</p>
+<script>
+/* GitHub Pages 的入口，也是「加到主畫面」開啟的地方（manifest 的 start_url 指這裡）。
+   比照小球貓電鐵：這一頁**不寫死版號**（除了下面那個備援）。
+   Safari 會把固定網址的入口頁快取起來 —— 版號寫死在這裡的話，改版後玩家怎麼重整都被送到舊版。
+   改成每次載入時去問 latest.json 現在最新是哪一版，那個請求帶時間戳，一定拿得到新的。
+   ⚠️ 遊戲檔不要命名成「戰國麻將列傳.html」—— 那個檔名會觸發舊兩人版的自動部署。 */
+(function () {
+  var fallback = '戰國麻將線上v1.00.html';
+  var tail = location.search + location.hash;
+  function go(f) { location.replace(encodeURIComponent(f) + tail); }
+  fetch('latest.json?t=' + Date.now(), { cache: 'no-store' })
+    .then(function (r) { return r.json(); })
+    .then(function (d) { go(d.file); })
+    .catch(function () { go(fallback); });   // 抓不到就走備援，至少進得去
+})();
+</script>
+<noscript><a href="戰國麻將線上v1.00.html">請點這裡進入遊戲</a></noscript>
+</body>
+</html>
