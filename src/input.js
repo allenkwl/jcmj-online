@@ -186,6 +186,14 @@ function pollPads() {
 function init(options) {
   cfg = Object.assign(cfg, options || {});
   document.addEventListener('keydown', onKey);
+  /* 滑鼠／手指點了哪一個，鍵盤焦點就跟到那一個。
+     不跟的話焦點框留在原地 —— 選國畫面點了趙國，黃框還框著齊國（2026-09-24 使用者回報），
+     看起來像選了兩國。用 capture 在 click 之前先對齊，點擊處理裡的 refresh() 就會保住這一個。 */
+  document.addEventListener('pointerdown', e => {
+    const t = e.target;
+    const hit = items.find(el => el === t || (el && el.contains && el.contains(t)));
+    if (hit) { idx = items.indexOf(hit); paint(); }
+  }, true);
   window.addEventListener('gamepadconnected', () => { padOn = true; document.body.classList.add('has-pad'); });
   if (!rafId) pollPads();
   refresh();
