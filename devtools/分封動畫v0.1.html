@@ -20,10 +20,11 @@ html,body{height:100%;margin:0;background:#050c09;color:#e8dcc0;font-family:'Not
 .ctl button{font:inherit;color:#e8dcc0;background:rgba(20,40,30,.9);border:1px solid rgba(201,164,76,.45);border-radius:6px;padding:4px 12px;cursor:pointer;}
 .ctl button.on{background:#c9a44c;color:#23180a;}
 .idle{position:fixed;inset:0;display:flex;align-items:center;justify-content:center;color:rgba(232,220,192,.5);}
+.gobtn{font:inherit;font-size:18px;color:#23180a;background:#c9a44c;border:0;border-radius:10px;padding:12px 26px;cursor:pointer;}
 </style>
 </head>
 <body>
-<div class="idle">播完了 —— 選一組情境再播一次</div>
+<div class="idle"><button id="go" class="gobtn">▶ 點一下開始播放（有聲音）</button></div>
 <div class="ctl" id="ctl"></div>
 <script src="src/kingdoms.js"></script>
 <script src="src/enfeoff.js"></script>
@@ -74,8 +75,14 @@ function buildCtl() {
   r.onclick = play;
   c.appendChild(r);
 }
+/* ⚠️ 不要一打開就自動播：瀏覽器規定網頁被點過之前不准出聲（AudioContext 會停在 suspended），
+   自動播的那一次一定是靜音的（2026-09-25 使用者：「啟動台的分封動畫沒有聲音」）。
+   遊戲裡沒有這個問題 —— 打到一場結束之前一定點過畫面。 */
 buildCtl();
-play();
+document.getElementById('go').onclick = () => {
+  document.querySelector('.idle').innerHTML = '播完了 —— 選一組情境再播一次';
+  play();
+};
 </script>
 </body>
 </html>
