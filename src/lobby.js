@@ -115,10 +115,33 @@ function renderLobby() {
   list.forEach(sl => {
     const names = toArr(sl.roster).map(m => esc(m.name || '?')).join('、');
     const n = (sl.me && sl.me.conquered || []).length;
-    rbox.appendChild(row('net-row',
-      `<b>${esc(sl.table || '?')}</b><span>${names || '只有你'}　你已征服 ${n} 國</span>`,
-      () => doResume(sl)));
+    // 統一天下的那一段：記錄留著（系統不主動刪），但已經打完了，不能再開
+    const done = sl.finished === 'unified';
+    rbox.appendChild(row('net-row' + (done ? ' full' : ''),
+      `<b>${esc(sl.table || '?')}${done ? '　🏆 已統一' : ''}</b><span>${names || '只有你'}　你已征服 ${n} 國</span>`,
+      done ? null : () => doResume(sl)));
+    // 刪除只有玩家自己按才刪，而且要按兩下
+    const del = document.createElement('button');
+    del.type = 'button';
+    del.className = 'net-del';
+    del.textContent = '刪除';
+    del.title = '刪除這一格存檔';
+    del.addEventListener('click', () => {
+      if (!del.dataset.armed) {
+        del.dataset.armed = '1';
+        del.textContent = '確定刪除？';
+        setTimeout(() => { delete del.dataset.armed; del.textContent = '刪除'; }, 3000);
+        return;
+      }
+      slotsSave(OC().dropSlot(slots(), sl.id));
+      toast('已刪除「' + (sl.table || '') + '」的存檔');
+      renderLobby();
+    });
+    rbox.appendChild(del);
   });
+  const full = list.length >= (OC() ? OC().MAX_SLOTS : 10);
+  byId('lobby-recent-wrap').querySelector('.net-label').textContent =
+    '繼續之前的牌桌（連線存檔 ' + list.length + ' / ' + (OC() ? OC().MAX_SLOTS : 10) + '）' + (full ? '　已滿，要開新桌請先刪一格' : '');
 
   // 現有群組（由 watchGroups 持續更新）
   byId('lobby-groups-empty').textContent = '搜尋中⋯';
@@ -171,9 +194,14 @@ function doResume(sl) {
   return openTable(sl.table, { aiLevel: aiLevelNow(), campaign: { id: sl.id, roster: toArr(sl.roster) } });
 }
 
+function slotsFullMsg() { toast('連線存檔已滿 ' + (OC() ? OC().MAX_SLOTS : 10) + ' 格，要開新的一段請先在「繼續之前的牌桌」刪掉一格'); }
+
 function finishCreate(name) {
-  // 新開的桌＝新的一段戰役：給一個唯一序號，名冊開局時才填
-  return openTable(name, { aiLevel: aiLevelNow(), campaign: { id: OC() ? OC().newId() : String(Date.now()), roster: [] } });
+  // 新開的桌＝新的一段戰役：給一個唯一序號，名冊開局時才填。
+  // 存檔滿了就先擋下來（系統不會自己擠掉舊的存檔）
+  const id = OC() ? OC().newId() : String(Date.now());
+  if (OC() && OC().isFull(slots(), id)) { slotsFullMsg(); return Promise.resolve(); }
+  return openTable(name, { aiLevel: aiLevelNow(), campaign: { id, roster: [] } });
 }
 
 function openTable(name, extra) {
@@ -216,6 +244,12 @@ function syncMyCamp(g) {
   const c = g.campaign;
   if (!c || !c.id) return true;
   const roster = rosterOf(g);
+  // 加入別人的一段戰役、我這邊還沒有它的存檔格，而十格都滿了 → 先擋下來
+  if (OC() && OC().isFull(slots(), c.id)) {
+    slotsFullMsg();
+    leave(false);
+    return false;
+  }
   if (OC() && !OC().canJoin(roster, Net.uid)) {
     toast('這一桌的名冊滿了（四位主公），要等有人退出才能加入');
     leave(false);

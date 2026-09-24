@@ -37,14 +37,21 @@ function loadSlots(store) {
     return Array.isArray(a) ? a.filter(s => s && s.id) : [];
   } catch (_) { return []; }
 }
+/* ⚠️ 不裁切、不擠掉任何一格 —— 系統不主動刪記錄，只有玩家自己按刪除才刪（使用者 2026-09-25）。
+   滿了就擋在「開新桌／加入新的戰役」那一步（isFull），不是事後偷偷丟掉最舊的。 */
 function saveSlots(store, slots) {
-  try { store && store.setItem(KEY, JSON.stringify((slots || []).slice(0, MAX_SLOTS))); } catch (_) {}
+  try { store && store.setItem(KEY, JSON.stringify(slots || [])); } catch (_) {}
 }
 function findSlot(slots, id) { return (slots || []).find(s => s.id === id) || null; }
-/* 放到最前面（最近玩的排第一）。超過十格就把最舊的擠掉 */
+/* 放到最前面（最近玩的排第一）。不會擠掉任何一格 */
 function putSlot(slots, slot, now) {
   const s = Object.assign({}, slot, { updatedAt: now != null ? now : Date.now() });
-  return [s].concat((slots || []).filter(x => x.id !== slot.id)).slice(0, MAX_SLOTS);
+  return [s].concat((slots || []).filter(x => x.id !== slot.id));
+}
+/* 這一段戰役還沒有存檔格、而且十格都滿了 → 要玩家先刪一格 */
+function isFull(slots, id) {
+  const list = slots || [];
+  return !list.some(x => x.id === id) && list.length >= MAX_SLOTS;
 }
 function dropSlot(slots, id) { return (slots || []).filter(x => x.id !== id); }
 
@@ -184,7 +191,7 @@ function makeRNG(seed) {
 
 return {
   KEY, MAX_SLOTS,
-  loadSlots, saveSlots, findSlot, putSlot, dropSlot, newId, makeSlot,
+  loadSlots, saveSlots, findSlot, putSlot, dropSlot, isFull, newId, makeSlot,
   snapshot, mergeRoster, canJoin, removeMember, assignKingdoms, buildSeats, settle, makeRNG,
 };
 });
