@@ -159,7 +159,15 @@ const Net = {
     const forced = (() => {
       try { return new URLSearchParams(location.search).get('cid'); } catch (_) { return null; }
     })();
-    this._signInPromise = firebase.auth().signInAnonymously()
+    /* ?tab=1：這個分頁的登入只存在分頁自己（sessionStorage），每個分頁拿到不同的 uid。
+       同一個瀏覽器開四個分頁模擬四個人時要用 —— 手牌的讀取權是用 auth.uid 鎖的，
+       分頁共用 uid 的話誰都讀得到誰的手牌，測不出權限對不對。
+       跟 ?cid= 不同：?cid= 只改遊戲裡的身分、uid 不變，這裡是真的換一個登入身分。 */
+    const perTab = (() => { try { return new URLSearchParams(location.search).has('tab'); } catch (_) { return false; } })();
+    const ready = perTab
+      ? firebase.auth().setPersistence(firebase.auth.Auth.Persistence.SESSION)
+      : Promise.resolve();
+    this._signInPromise = ready.then(() => firebase.auth().signInAnonymously())
       .then(res => {
         const uid = (res && res.user && res.user.uid) || (firebase.auth().currentUser || {}).uid;
         if (!uid) throw new Error('NOUID');
@@ -400,7 +408,10 @@ const Net = {
     // 一定要先掛 onDisconnect 再寫資料：反過來的話，如果剛寫完就斷線，
     // onDisconnect 還沒註冊上去，這個人就會永遠留在群組裡變成幽靈成員。
     return this._meRef.onDisconnect().remove()
-      .then(() => this._meRef.set({name: playerName, isHost: this.isHost}))
+      // uid：群主要知道每個人的手牌寫到哪裡（/hands/{群}/{uid}）
+      // kingdom：這個人想用的國（本機戰役的本國）；撞國由群主開局時調整
+      .then(() => this._meRef.set(stripUndefined({name: playerName, isHost: this.isHost,
+                                                  uid: this.uid, kingdom: this.prefKingdom || null})))
       .then(() => { this._watchPings(key); return true; });
   },
 
@@ -417,12 +428,14 @@ const Net = {
         id,
         name: members[id].name || '玩家',
         isHost: !!members[id].isHost,
+        uid: members[id].uid || id,
+        kingdom: members[id].kingdom || null,
         me: id === this.clientId,
       }));
       list.sort((a, b) => (b.isHost ? 1 : 0) - (a.isHost ? 1 : 0));
       this.hostId = g.host || null;   // token 要交給電腦回合的代跑者時會用到（見 rules 的 handOffToken）
       cb({status: g.status, name: g.displayName || this.groupKey, members: list,
-          host: g.host || null, aiLevel: g.aiLevel || 2});   // aiLevel 是建房時定案的，房間畫面要顯示
+          host: g.host || null, aiLevel: g.aiLevel || 2, gameId: g.gameId || null});   // aiLevel 是建房時定案的，房間畫面要顯示
     };
     this._roomRef.on('value', this._roomCb);
   },
@@ -460,6 +473,13 @@ const Net = {
     if (!this._groupRef) return Promise.resolve();
     return this._groupRef.child('status').set(status);
   },
+  /* 開局：狀態改 started，同時給這一局一個編號。
+     ⚠️ /states、/hands 在群組解散後不一定清得乾淨（非群主沒有刪除權），
+     同名再開一桌時可能讀到上一局的殘留 —— 用 gameId 比對，不是這一局的就不理。 */
+  startGame() {
+    if (!this._groupRef) return Promise.resolve();
+    return this._groupRef.update({status: 'started', gameId: Date.now()});
+  },
 
   // ────────────────────────────────────────────────
   //  即時同步（階段二）
@@ -492,6 +512,48 @@ const Net = {
   unwatchLive() {
     if (this._liveRef && this._liveCb) this._liveRef.off('value', this._liveCb);
     this._liveRef = null; this._liveCb = null;
+  },
+
+  /* ── 連線牌局（階段三第 16 項，docs/net-turn-model.md）─────────
+     三層，權限寫在 database.rules.json：
+       /states/{群}        公開的牌局（牌河、副露、輪到誰、剩幾張）—— 同桌全體讀
+       /hands/{群}/{uid}   那一家的手牌與過水 —— 只有本人與群主讀得到，只有群主寫
+       /secret/{群}        完整牌局（含牌山）—— 只有群主讀寫；換群主時新群主從這裡接手
+     一次 update 寫完三層：Firebase 的多路徑 update 是原子的，
+     不會有人先收到新的公開狀態、手牌卻還是舊的。                        */
+  prefKingdom: null,
+  setPreferredKingdom(k) { this.prefKingdom = k || null; },
+  publishGame(payload) {
+    if (!this.groupKey) return Promise.reject(new Error('NOGROUP'));
+    const g = this.groupKey, up = {};
+    up['states/' + g] = stripUndefined(payload.state);
+    if (payload.secret) up['secret/' + g] = stripUndefined(payload.secret);
+    Object.keys(payload.hands || {}).forEach(uid => {
+      up['hands/' + g + '/' + uid] = stripUndefined(payload.hands[uid]);
+    });
+    return this.db.ref().update(up).catch(e => {
+      /* /secret 的規則還沒部署時，整筆原子寫入會一起被拒 —— 連公開狀態都發不出去，
+         牌局直接卡死。secret 只有換群主時才用得到，先拿掉它重寫一次，別讓它拖垮整桌。 */
+      if (!up['secret/' + g] || !/permission/i.test(String(e && (e.code || e.message)))) throw e;
+      if (!this._secretWarned) { this._secretWarned = true; console.warn('[net] /secret 沒有寫入權限（規則還沒部署？），先略過'); }
+      delete up['secret/' + g];
+      return this.db.ref().update(up);
+    });
+  },
+  readSecret() {
+    if (!this.groupKey) return Promise.reject(new Error('NOGROUP'));
+    return this.db.ref('secret/' + this.groupKey).once('value').then(s => s.val());
+  },
+  watchMyHand(cb) {
+    this.unwatchMyHand();
+    if (!this.groupKey || !this.uid) return;
+    this._handRef = this.db.ref('hands/' + this.groupKey + '/' + this.uid);
+    this._handCb = s => cb(s.val());
+    this._handRef.on('value', this._handCb);
+  },
+  unwatchMyHand() {
+    if (this._handRef && this._handCb) this._handRef.off('value', this._handCb);
+    this._handRef = null; this._handCb = null;
   },
 
   watchState(cb) {
@@ -928,6 +990,7 @@ const Net = {
   leaveGroup() {
     this.unwatchRoom();
     this.unwatchState();
+    this.unwatchMyHand();
     this.unwatchLive();
     this.unwatchClaims();
     this._unwatchPings();

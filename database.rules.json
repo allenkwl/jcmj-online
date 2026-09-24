@@ -71,6 +71,13 @@
         }
       }
     },
+    "secret": {
+      "$g": {
+        ".validate": "$g.length <= 64",
+        ".read": "auth != null && auth.uid === root.child('groups').child($g).child('host').val()",
+        ".write": "auth != null && auth.uid === root.child('groups').child($g).child('host').val()"
+      }
+    },
     "debug": {
       ".read": "auth != null",
       "$g": { ".write": "auth != null", ".validate": "$g.length <= 64" }

@@ -17,9 +17,11 @@
    結束時再交還 —— 兩套同時響會很亂。
    靜音狀態沿用遊戲的設定（MJAudio.SFX.isEnabled）。
 
-   ── ⚠️ 只在「開始征途」按下去之後播一次 ──
-   不是每次回到標題都播。30 秒的東西看第二次就是折磨，
-   而玩家一場打完會回標題好幾次。
+   ── 每次按「開始征途」都播，隨時可以跳過 ──
+   2026-09-24 使用者改的：原本只播第一次（看過就記在 localStorage），
+   結果看過一次之後就再也看不到，像是動畫不見了。
+   改成每次都播，右下角的「跳過序章（Enter / A）」一按就進選國。
+   只有回標題不會播 —— 播放點是「開始征途」，不是標題畫面。
    ═══════════════════════════════════════════════════════════════ */
 (function (root, factory) {
   const api = factory();
@@ -47,7 +49,7 @@ function play(opts) {
   if (!stage) return Promise.resolve('skip:nodom');
   if (running) return Promise.resolve('skip:running');
   if (!o.force && reduced()) return Promise.resolve('skip:reduced-motion');
-  if (!o.force && seen()) return Promise.resolve('skip:seen');
+  // 不再檢查 seen()：每次都播，想跳過按跳過鈕（2026-09-24）。markSeen 仍會記，留著給之後需要時用
 
   running = true;
   const scenes = [...stage.querySelectorAll('.scene')];

@@ -205,13 +205,16 @@ function startWatching() {
   watching = true;
   Net.watchRoom(g => {
     if (!g) { leave(true); return; }          // 群組沒了
-    if (g.status === 'started') { enterGame(g); return; }
+    // 開局只進一次 —— 房間資料之後每變一次（有人斷線、改名）都會再觸發，不擋就會重複開局
+    if (g.status === 'started') { if (!cur.entered) enterGame(g); return; }
     renderRoom(g);
   });
 }
 
 function enterGame(g) {
+  cur.entered = true;
   const ctx = {
+    gameId: g.gameId || null,
     groupKey: cur.key,
     groupName: cur.displayName,
     isHost: g.host === Net.clientId,
@@ -250,7 +253,7 @@ function init(options) {
   byId('lobby-back').addEventListener('click', () => { Net.unwatchGroups(); if (cfg.onBack) cfg.onBack(); });
   byId('room-start').addEventListener('click', () => {
     if (!cur || !cur.isHost) return;
-    Net.setStatus('started').catch(e => toast('開始失敗：' + (e && e.message)));
+    Net.startGame().catch(e => toast('開始失敗：' + (e && e.message)));
   });
   byId('room-leave').addEventListener('click', () => leave(false));
 }
@@ -273,5 +276,21 @@ function close() {
   screen(null);
 }
 
-return { init, open, close, get myName() { return myName; }, get current() { return cur; } };
+/* 只收起大廳畫面、**不退桌**。進入連線牌局時用這個。
+   ⚠️ 不要用 close() —— 它會 leave()，玩家一進牌局就從桌上消失了。 */
+function hide() {
+  Net.unwatchGroups();
+  screen(null);
+}
+
+/* 從牌局裡退桌：跟房間裡按「離開」一樣退出群組，但不回大廳畫面（呼叫端自己決定去哪） */
+function quit() {
+  Net.unwatchRoom();
+  watching = false;
+  Net.leaveGroup().catch(() => {});
+  cur = null;
+  screen(null);
+}
+
+return { init, open, close, hide, leave: quit, get myName() { return myName; }, get current() { return cur; } };
 });
