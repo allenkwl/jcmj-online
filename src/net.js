@@ -607,6 +607,13 @@ const Net = {
      成員資料的 camp：{ id, conquered, matches, unified } —— 我在這段戰役的記錄，
      開局時群主拿它排座位、算技能成長、畫地圖；大家的名冊也以在場本人的這份為準更新。
      群組的 campaign：{ id, roster } —— 這一桌是哪一段戰役、名冊有誰。 */
+  /* 連線擇國而立：改我的本國（房間裡還沒開打時） */
+  updateMyKingdom(k) {
+    this.prefKingdom = k || null;
+    if (this._meData) this._meData.kingdom = k || null;
+    if (!this._meRef) return Promise.resolve();
+    return this._meRef.child('kingdom').set(k || null).catch(() => {});
+  },
   updateMyCamp(camp) {
     if (this._meData) this._meData.camp = camp ? stripUndefined(camp) : null;
     if (!this._meRef) return Promise.resolve();
