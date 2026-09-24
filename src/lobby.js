@@ -189,14 +189,14 @@ function renderRoom(g) {
   const n = members.length;
   cur.isHost = g.host === Net.clientId;
 
-  byId('room-role').textContent = cur.isHost ? '你是群主' : '';
+  byId('room-role').textContent = cur.isHost ? '你開的桌' : '';   // 畫面上不說「群主」
   byId('room-count').textContent = `${n}/${SEATS} 人` + (n < SEATS ? `　不足的 ${SEATS - n} 家由電腦補上` : '');
   byId('room-ai').textContent = '電腦強度：' + (LEVEL_NAME[g.aiLevel] || '普通');
 
   const box = byId('room-members');
   clear(box);
   members.forEach(m => box.appendChild(row('net-row',
-    `<b>${esc(m.name || '?')}</b><span>${m.me ? '（你）' : ''}${m.isHost ? '　群主' : ''}</span>`)));
+    `<b>${esc(m.name || '?')}</b><span>${m.me ? '（你）' : ''}${m.isHost ? '　開桌' : ''}</span>`)));
 
   show('room-start', cur.isHost);
   show('room-wait', !cur.isHost);
