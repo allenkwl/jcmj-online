@@ -33,7 +33,7 @@ const RECENT_KEY = 'jcmj_recent_groups';
 const NAME_KEY = 'jcmj_my_name';
 const SEATS = 4;
 
-let cfg = { onEnterGame: null, onBack: null, onRoom: null, onPickKingdom: null };
+let cfg = { onEnterGame: null, onBack: null, onRoom: null, onPickKingdom: null, onPickTaken: null };
 let myName = '';
 let cur = null;          // { key, displayName, isHost }
 let watching = false;
@@ -231,20 +231,45 @@ function syncMyCamp(g) {
   return true;
 }
 
-/* 連線擇國而立：別人已經用掉的國鎖起來（名冊上其他人的、房間裡其他人選好的） */
+/* 別人已經用掉的國：名冊上其他人的、房間裡其他人**選好的**（還在選國畫面的人沒選定，不算） */
+function takenKingdoms(g) {
+  const roster = rosterOf(g);
+  return roster.filter(r => r.uid !== Net.uid).map(r => r.kingdom)
+    .concat((g.members || []).filter(m => !m.me && (m.picked || roster.some(r => r.uid === m.uid))).map(m => m.kingdom))
+    .filter(Boolean);
+}
+
+/* 連線擇國而立 */
 function pickKingdom() {
   const g = cur && cur.last;
   if (!g || !cfg.onPickKingdom) return;
   const roster = rosterOf(g);
   if (roster.some(r => r.uid === Net.uid)) return;       // 老成員本國固定
-  const taken = roster.map(r => r.kingdom)
-    .concat((g.members || []).filter(m => !m.me).map(m => m.kingdom))
-    .filter(Boolean);
   screen(null);                                          // 選國畫面在大廳底下，先把房間收起來
+  cur.picking = true;
+  if (cur.ready) setReady(false);                        // 改選國就要重新確認
   cfg.onPickKingdom({
-    taken, current: Net.prefKingdom,
-    done: k => { Net.updateMyKingdom(k); },
+    taken: takenKingdoms(g), current: Net.prefKingdom,
+    done: k => {
+      cur.picking = false;
+      if (!k) return;
+      cur.picked = true;
+      Net.updateMyKingdom(k);
+      Net.updateMyPicked && Net.updateMyPicked(true);
+    },
   });
+}
+
+/* 準備好了（每個人都確認，開桌的人才能按開始） */
+function setReady(on) {
+  if (!cur) return;
+  cur.ready = !!on;
+  Net.updateMyReady(!!on);
+  if (cur.last) renderRoom(cur.last);
+}
+/* 我可以按「準備好了」嗎：老成員隨時可以；新成員要先擇國而立 */
+function canReady(g) {
+  return rosterOf(g).some(r => r.uid === Net.uid) || !!cur.picked;
 }
 
 /* 退出此牌局（只能在大廳）：從名冊拿掉、刪掉這一格存檔，空出來的位子讓新人加入 */
@@ -294,17 +319,38 @@ function renderRoom(g) {
     // 老成員的本國以名冊為準（他的戰役）；新成員用他剛選的
     const r = roster.find(x => x.uid === m.uid);
     const k = kname((r && r.kingdom) || m.kingdom);
+    const rd = m.isHost ? '' : (m.ready ? '　✔ 已準備' : '　⋯ 準備中');
     box.appendChild(row('net-row',
-      `<b>${esc(m.name || '?')}${k ? '　' + k : ''}</b><span>${m.me ? '（你）' : ''}${m.isHost ? '　開桌' : ''}${conq(m.camp && m.camp.conquered)}</span>`));
+      `<b>${esc(m.name || '?')}${k ? '　' + k : ''}</b><span>${m.me ? '（你）' : ''}${m.isHost ? '　開桌' : ''}${rd}${conq(m.camp && m.camp.conquered)}</span>`));
   });
   // 名冊裡有、現在不在的人：這一場由他那一國的武將代打，他的進度不動
   roster.filter(r => !members.some(m => m.uid === r.uid)).forEach(r => box.appendChild(row('net-row absent',
     `<b>${esc(r.name || '?')}</b><span>缺席　由武將代打${conq(r.conquered)}</span>`)));
   show('room-quit', roster.some(r => r.uid === Net.uid));
   show('room-pick', !roster.some(r => r.uid === Net.uid) && !!cfg.onPickKingdom);
+  // 還在選國畫面：別人剛選走的國要馬上鎖起來
+  if (cur.picking && cfg.onPickTaken) cfg.onPickTaken(takenKingdoms(g));
+
+  /* 每個人都確認才開局（使用者 2026-09-24）：
+     成員按「準備好了」；開桌的人要等其他人都準備好，而且自己也選好國，「開始牌局」才按得下去 */
+  const others = members.filter(m => !m.me);
+  const notReady = others.filter(m => !m.ready).length;
+  const rb = byId('room-ready');
+  if (rb) {
+    const ok = canReady(g);
+    rb.disabled = !ok;
+    rb.textContent = !ok ? '先擇國而立，才能準備' : (cur.ready ? '✔ 已準備（再按取消）' : '準備好了');
+  }
+  const sb = byId('room-start');
+  if (sb) {
+    const mineOk = canReady(g);
+    sb.disabled = !mineOk || notReady > 0;
+    sb.textContent = !mineOk ? '先擇國而立' : (notReady ? `等 ${notReady} 位主公準備⋯` : '開始牌局');
+  }
 
   show('room-start', cur.isHost);
-  show('room-wait', !cur.isHost);
+  show('room-ready', !cur.isHost);
+  show('room-wait', !cur.isHost && !!cur.ready);
   if (window.MJInput) setTimeout(() => window.MJInput.refresh(), 0);
 }
 
@@ -323,6 +369,8 @@ function startWatching() {
 
 function enterGame(g) {
   cur.entered = true;
+  cur.ready = false;
+  Net.updateMyReady(false);
   const ctx = {
     gameId: g.gameId || null,
     groupKey: cur.key,
@@ -363,7 +411,7 @@ function init(options) {
   byId('lobby-create').addEventListener('click', () => doCreate(null));
   byId('lobby-back').addEventListener('click', () => { Net.unwatchGroups(); if (cfg.onBack) cfg.onBack(); });
   byId('room-start').addEventListener('click', () => {
-    if (!cur || !cur.isHost) return;
+    if (!cur || !cur.isHost || byId('room-start').disabled) return;
     Net.startGame().catch(e => toast('開始失敗：' + (e && e.message)));
   });
   byId('room-leave').addEventListener('click', () => leave(false));
@@ -371,6 +419,8 @@ function init(options) {
   if (q) q.addEventListener('click', quitCampaign);
   const pk = byId('room-pick');
   if (pk) pk.addEventListener('click', pickKingdom);
+  const rd = byId('room-ready');
+  if (rd) rd.addEventListener('click', () => { if (cur && !rd.disabled) setReady(!cur.ready); });
 }
 
 /* 進大廳。回傳 Promise —— 連線／登入可能失敗，呼叫端要能據此退回單機。 */
@@ -411,6 +461,8 @@ function quit() {
 function backToRoom() {
   if (!cur) return;
   cur.entered = false;
+  cur.ready = false;
+  Net.updateMyReady(false);           // 下一場要重新確認
   cur.campSynced = false;           // 記錄剛更新過，重新放上成員資料
   screen('net-room');
   if (cur.last) renderRoom(cur.last);

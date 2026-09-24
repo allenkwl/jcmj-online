@@ -508,6 +508,8 @@ const Net = {
         kingdom: members[id].kingdom || null,
         joinedAt: members[id].joinedAt || 0,
         camp: members[id].camp || null,
+        ready: !!members[id].ready,
+        picked: !!members[id].picked,
         me: id === this.clientId,
       }));
       list.sort((a, b) => (b.isHost ? 1 : 0) - (a.isHost ? 1 : 0));
@@ -607,6 +609,18 @@ const Net = {
      成員資料的 camp：{ id, conquered, matches, unified } —— 我在這段戰役的記錄，
      開局時群主拿它排座位、算技能成長、畫地圖；大家的名冊也以在場本人的這份為準更新。
      群組的 campaign：{ id, roster } —— 這一桌是哪一段戰役、名冊有誰。 */
+  /* 房間裡的「準備好了」（使用者：每個人都確認才開局，免得有人還沒選好國就被開打） */
+  updateMyReady(on) {
+    if (this._meData) this._meData.ready = !!on;
+    if (!this._meRef) return Promise.resolve();
+    return this._meRef.child('ready').set(!!on).catch(() => {});
+  },
+  /* 新成員在擇國畫面按下「以此國出戰」了（別人的選國畫面才會把這一國鎖起來） */
+  updateMyPicked(on) {
+    if (this._meData) this._meData.picked = !!on;
+    if (!this._meRef) return Promise.resolve();
+    return this._meRef.child('picked').set(!!on).catch(() => {});
+  },
   /* 連線擇國而立：改我的本國（房間裡還沒開打時） */
   updateMyKingdom(k) {
     this.prefKingdom = k || null;
