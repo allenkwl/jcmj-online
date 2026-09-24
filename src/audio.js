@@ -925,7 +925,18 @@ const BGM = (() => {
 
   // ── TRACK CONTROL ──────────────────────────────────────────
 
+  /* ⚠️ 換曲子時新曲子是「排定稍後才建」（等舊的淡出），currentScene 要等建好那一刻才設。
+     原本在那段空檔裡再叫一次 play() —— 例如開場動畫結束叫一次 play('title')、
+     showScreen('title-screen') 緊接著又叫一次 —— 兩次都看到 currentScene 是 null，
+     於是**建了兩份主畫面音樂**；之後切畫面只停得掉被記住的那一份，另一份一直響，
+     回主畫面再疊一份（2026-09-24 使用者回報：擇國畫面還在放主畫面 BGM、回主畫面兩首重疊）。
+     所以「排定中」的那首也要記（pendingScene），而且每次排定都帶一個序號，
+     被後來的 play()／stop() 取代的排定，時間到了就不建。 */
+  let pendingScene = null, playSeq = 0;
+
   function stopCurrent(fadeDur=1.5) {
+    playSeq++;                    // 還在排定中的那首也一起取消
+    pendingScene = null;
     if(!currentTrack) return;
     const t = currentTrack;
     stopScheduled = true;
@@ -951,9 +962,15 @@ const BGM = (() => {
 
   function play(scene, fadeDur=1.5) {
     if(!enabled) return;
-    if(scene === currentScene) return;
+    if(scene === currentScene && !pendingScene) return;
+    if(scene === pendingScene) return;          // 已經排定要播這首了
+    const wait = currentScene ? fadeDur*1000+100 : 0;
     stopCurrent(fadeDur);
+    const seq = ++playSeq;
+    pendingScene = scene;
     setTimeout(() => {
+      if(seq !== playSeq) return;               // 被後來的 play()／stop() 取代了
+      pendingScene = null;
       if(!enabled) return;
       stopScheduled = false;
       const _trackState = { stopped: false };
@@ -991,7 +1008,7 @@ const BGM = (() => {
         currentTrack = track;
         currentScene = scene;
       } catch(e){ console.warn('BGM error:', e); }
-    }, currentScene ? fadeDur*1000+100 : 0);
+    }, wait);
   }
 
   function stop(fadeDur=1.5) {
