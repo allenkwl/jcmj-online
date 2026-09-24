@@ -388,6 +388,43 @@ const Net = {
     });
   },
 
+  /* ── 麻將版的「用這個名字開桌」──（大廳的「開一桌」與「再開一次」都走這裡）
+     openOrReclaim 是電鐵的版本，中途回來要認領座位（claims），麻將沒有那套，所以另寫一支。
+     同名的桌子可能是：
+       ‧ 不存在                   → 開新的
+       ‧ 空殼（成員全走光了）       → 清掉重開。玩家關分頁、重新整理時只有自己的成員節點
+                                     被 onDisconnect 刪掉，桌子本身會留著（狀態常停在 started），
+                                     不處理的話這個名字就永遠「已經有人用了」（2026-09-24 使用者撞到）
+       ‧ 等人中、有人在             → 加入
+       ‧ 開打中、有人在             → ping 一下：沒人回應是幽靈成員（onDisconnect 沒觸發），
+                                     一樣清掉重開；有人回應就是真的在打，擋掉
+     回傳 { key, displayName, isHost, group }                                         */
+  reopenGroup(groupName, playerName, extra) {
+    const key = this.keyOf(groupName);
+    if (!key) return Promise.reject(new Error('EMPTY'));
+    const name = String(groupName).trim();
+    const create = () => this.createGroup(name, playerName, extra)
+      .then(() => ({ key, displayName: name, isHost: true }));
+    const join = () => this.joinGroup(key, playerName)
+      .then(g => ({ key, displayName: (g && g.displayName) || name, isHost: g && g.host === this.clientId, group: g }));
+    const fresh = () => this.purgeGroup(key).then(create).catch(err => {
+      // 兩台同時重開同一個空殼：慢的那台改成加入快的那台剛開好的
+      if (err && err.message === 'EXISTS') return join();
+      throw err;
+    });
+    return this.db.ref('groups/' + key).once('value').then(snap => {
+      const cur = snap.val();
+      if (cur === null) return create();
+      const n = Object.keys(cur.members || {}).length;
+      if (!n) return fresh();
+      if (cur.status === 'waiting') return join();
+      return this.pingGroup(key).then(alive => {
+        if (!alive) return fresh();
+        throw new Error('STARTED');
+      });
+    });
+  },
+
   joinGroup(key, playerName) {
     const ref = this.db.ref('groups/' + key);
     return ref.once('value').then(snap => {

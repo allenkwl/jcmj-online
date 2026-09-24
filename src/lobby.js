@@ -150,11 +150,14 @@ function doCreate(presetName) {
 function finishCreate(name) {
   const onBtn = byId('lobby-ailevel').querySelector('button.on');
   const lv = Number(onBtn && onBtn.dataset.v) || 2;
-  return Net.createGroup(name, myName, { aiLevel: lv })
-    .then(key => { rememberGroup(name); enterRoom(key, name, true); })
+  // ⚠️ 不要直接 createGroup：同名的空殼（上次大家關掉分頁留下的）會讓它永遠回 EXISTS
+  return Net.reopenGroup(name, myName, { aiLevel: lv })
+    .then(r => { rememberGroup(r.displayName); enterRoom(r.key, r.displayName, r.isHost); })
     .catch(e => {
-      if (e && e.message === 'EXISTS') toast('這個名字已經有人用了，換一個');
-      else toast('開群組失敗：' + (e && e.message));
+      const m = e && e.message;
+      if (m === 'STARTED') toast('這一桌還有人在打，換一個名字');
+      else if (m === 'EXISTS') toast('這個名字已經有人用了，換一個');
+      else toast('開群組失敗：' + m);
     });
 }
 
