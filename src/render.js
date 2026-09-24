@@ -171,6 +171,20 @@ function renderNameplate(node, match, hand, seat, mySeat) {
     const c = el('span', 'np-kingdom', node);
     c.textContent = kd.char;
   }
+
+  /* 已征服的領地：本國字後面接一串小字（韓秦…）。使用者：「在對戰畫面每個主公後寫，已征服領地」。
+     ⚠️ Firebase 會把陣列存成物件，讀回來先整理。守將沒有領地，不寫 */
+  const cq = m.conquered ? (Array.isArray(m.conquered) ? m.conquered : Object.keys(m.conquered).map(k => m.conquered[k])) : [];
+  if (cq.length) {
+    const chips = el('span', 'np-conq', node);
+    chips.textContent = cq.map(id => (K && K.get(id) || {}).char || '').join('');
+    chips.title = '已征服：' + cq.map(id => (K && K.get(id) || {}).name || id).join('、');
+  }
+  // 缺席的成員：座位保留、由他那一國的武將代打（docs/online-campaign.md 第三節）
+  if (m.absentOf && !m.sub) {
+    el('span', 'np-subtag', node).textContent = '缺席';
+    node.title = (m.absentOf.name || '') + ' 缺席，由' + m.name + '代打';
+  }
 }
 
 /* ── 牌桌中央的主公 ────────────────────────────────────────

@@ -63,6 +63,16 @@ function rememberGroup(name) {
   try { localStorage.setItem(RECENT_KEY, JSON.stringify(list.slice(0, 5))); } catch (_) {}
 }
 
+/* ── 連線戰役的存檔（src/online-campaign.js，docs/online-campaign.md）──
+   「繼續之前的牌桌」列的是**十格連線存檔**，不再是單純的桌名清單：
+   每一格記著唯一序號與整張名冊，點下去用同一個桌名、同一段戰役重開。 */
+const OC = () => window.MJOnlineCampaign;
+function slots() { try { return OC() ? OC().loadSlots(localStorage) : []; } catch (_) { return []; } }
+function slotsSave(list) { try { OC() && OC().saveSlots(localStorage, list); } catch (_) {} }
+// Firebase 會把陣列存成物件、或把空陣列吃掉 —— 名冊讀回來一律整理成陣列
+function toArr(x) { return Array.isArray(x) ? x.filter(Boolean) : Object.keys(x || {}).map(k => x[k]).filter(Boolean); }
+function rosterOf(g) { return toArr(g && g.campaign && g.campaign.roster); }
+
 /* ── 小工具 ────────────────────────────────────────────── */
 function row(cls, html, onClick) {
   const el = document.createElement('button');
@@ -97,14 +107,18 @@ function screen(which) {
 function renderLobby() {
   byId('lobby-myname').textContent = myName;
 
-  // 之前玩過的
-  const rc = recent();
-  const wrap = byId('lobby-recent-wrap');
+  // 之前玩過的：十格連線存檔
+  const list = slots();
   const rbox = byId('lobby-recent');
   clear(rbox);
-  show('lobby-recent-wrap', rc.length > 0);
-  rc.forEach(name => rbox.appendChild(
-    row('net-row', `<b>${esc(name)}</b><span>再開一次</span>`, () => doCreate(name))));
+  show('lobby-recent-wrap', list.length > 0);
+  list.forEach(sl => {
+    const names = toArr(sl.roster).map(m => esc(m.name || '?')).join('、');
+    const n = (sl.me && sl.me.conquered || []).length;
+    rbox.appendChild(row('net-row',
+      `<b>${esc(sl.table || '?')}</b><span>${names || '只有你'}　你已征服 ${n} 國</span>`,
+      () => doResume(sl)));
+  });
 
   // 現有群組（由 watchGroups 持續更新）
   byId('lobby-groups-empty').textContent = '搜尋中⋯';
@@ -147,11 +161,24 @@ function doCreate(presetName) {
   p.then(name => name && finishCreate(name)).catch(() => {});
 }
 
-function finishCreate(name) {
+function aiLevelNow() {
   const onBtn = byId('lobby-ailevel').querySelector('button.on');
-  const lv = Number(onBtn && onBtn.dataset.v) || 2;
+  return Number(onBtn && onBtn.dataset.v) || 2;
+}
+
+/* 用存檔格重開：同一個桌名、同一段戰役（序號與名冊一起帶上去） */
+function doResume(sl) {
+  return openTable(sl.table, { aiLevel: aiLevelNow(), campaign: { id: sl.id, roster: toArr(sl.roster) } });
+}
+
+function finishCreate(name) {
+  // 新開的桌＝新的一段戰役：給一個唯一序號，名冊開局時才填
+  return openTable(name, { aiLevel: aiLevelNow(), campaign: { id: OC() ? OC().newId() : String(Date.now()), roster: [] } });
+}
+
+function openTable(name, extra) {
   // ⚠️ 不要直接 createGroup：同名的空殼（上次大家關掉分頁留下的）會讓它永遠回 EXISTS
-  return Net.reopenGroup(name, myName, { aiLevel: lv })
+  return Net.reopenGroup(name, myName, extra)
     .then(r => { rememberGroup(r.displayName); enterRoom(r.key, r.displayName, r.isHost); })
     .catch(e => {
       const m = e && e.message;
@@ -181,8 +208,52 @@ function enterRoom(key, displayName, isHost) {
   startWatching();
 }
 
+/* 進房後第一次拿到房間資料：把我在這段戰役的記錄放上成員資料，
+   名冊滿了（四位主公都有人）而我不在裡面 → 進不來 */
+function syncMyCamp(g) {
+  if (!cur || cur.campSynced || !g) return true;
+  cur.campSynced = true;
+  const c = g.campaign;
+  if (!c || !c.id) return true;
+  const roster = rosterOf(g);
+  if (OC() && !OC().canJoin(roster, Net.uid)) {
+    toast('這一桌的名冊滿了（四位主公），要等有人退出才能加入');
+    leave(false);
+    return false;
+  }
+  const sl = OC() ? OC().findSlot(slots(), c.id) : null;
+  Net.updateMyCamp(Object.assign({ id: c.id }, sl ? OC().snapshot(sl.me) : { conquered: [], matches: 0, unified: false }));
+  return true;
+}
+
+/* 退出此牌局（只能在大廳）：從名冊拿掉、刪掉這一格存檔，空出來的位子讓新人加入 */
+function quitCampaign() {
+  const g = cur && cur.last;
+  const c = g && g.campaign;
+  if (!c || !c.id || !OC()) { leave(false); return; }
+  // 刪進度是不能回頭的事，要按兩下：第一下改字提醒，3 秒內再按一次才真的退
+  const btn = byId('room-quit');
+  if (!btn.dataset.armed) {
+    btn.dataset.armed = '1';
+    btn.textContent = '再按一次確認退出（進度會刪掉）';
+    setTimeout(() => { delete btn.dataset.armed; btn.textContent = '退出此牌局'; }, 3000);
+    return;
+  }
+  delete btn.dataset.armed;
+  btn.textContent = '退出此牌局';
+  Net.updateCampaign({ id: c.id, roster: OC().removeMember(rosterOf(g), Net.uid) })
+    .then(() => {
+      slotsSave(OC().dropSlot(slots(), c.id));
+      toast('已退出「' + (cur ? cur.displayName : '') + '」，這一桌的進度已刪除');
+      leave(false);
+      renderLobby();
+    });
+}
+
 function renderRoom(g) {
   if (!cur) return;
+  cur.last = g;
+  if (!syncMyCamp(g)) return;
   // ⚠️ watchRoom 回的 members 是**陣列**（每筆已經是 {id,name,isHost,me}），
   //    不是以 id 為鍵的物件 —— 當成物件處理會矇對但很脆弱。
   const members = g.members || [];
@@ -195,8 +266,14 @@ function renderRoom(g) {
 
   const box = byId('room-members');
   clear(box);
+  const conq = arr => { const a = toArr(arr); return a.length ? '　已征服 ' + a.length + ' 國' : ''; };
   members.forEach(m => box.appendChild(row('net-row',
-    `<b>${esc(m.name || '?')}</b><span>${m.me ? '（你）' : ''}${m.isHost ? '　開桌' : ''}</span>`)));
+    `<b>${esc(m.name || '?')}</b><span>${m.me ? '（你）' : ''}${m.isHost ? '　開桌' : ''}${conq(m.camp && m.camp.conquered)}</span>`)));
+  // 名冊裡有、現在不在的人：這一場由他那一國的武將代打，他的進度不動
+  const roster = rosterOf(g);
+  roster.filter(r => !members.some(m => m.uid === r.uid)).forEach(r => box.appendChild(row('net-row absent',
+    `<b>${esc(r.name || '?')}</b><span>缺席　由武將代打${conq(r.conquered)}</span>`)));
+  show('room-quit', roster.some(r => r.uid === Net.uid));
 
   show('room-start', cur.isHost);
   show('room-wait', !cur.isHost);
@@ -225,6 +302,7 @@ function enterGame(g) {
     isHost: g.host === Net.clientId,
     members: (g.members || []).slice(),
     aiLevel: g.aiLevel || 2,
+    campaign: g.campaign ? { id: g.campaign.id, roster: rosterOf(g) } : null,
     myClientId: Net.clientId,
   };
   if (cfg.onEnterGame) cfg.onEnterGame(ctx);
@@ -261,6 +339,8 @@ function init(options) {
     Net.startGame().catch(e => toast('開始失敗：' + (e && e.message)));
   });
   byId('room-leave').addEventListener('click', () => leave(false));
+  const q = byId('room-quit');
+  if (q) q.addEventListener('click', quitCampaign);
 }
 
 /* 進大廳。回傳 Promise —— 連線／登入可能失敗，呼叫端要能據此退回單機。 */
@@ -297,5 +377,15 @@ function quit() {
   screen(null);
 }
 
-return { init, open, close, hide, leave: quit, get myName() { return myName; }, get current() { return cur; } };
+/* 一場打完有人統一天下：全員回到房間（不退桌）。之後可以等新人加入，或直接按開始接著打 */
+function backToRoom() {
+  if (!cur) return;
+  cur.entered = false;
+  cur.campSynced = false;           // 記錄剛更新過，重新放上成員資料
+  screen('net-room');
+  if (cur.last) renderRoom(cur.last);
+}
+
+return { init, open, close, hide, leave: quit, backToRoom, slots, slotsSave, rosterOf,
+         get myName() { return myName; }, get current() { return cur; } };
 });

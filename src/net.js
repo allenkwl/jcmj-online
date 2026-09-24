@@ -507,12 +507,14 @@ const Net = {
         uid: members[id].uid || id,
         kingdom: members[id].kingdom || null,
         joinedAt: members[id].joinedAt || 0,
+        camp: members[id].camp || null,
         me: id === this.clientId,
       }));
       list.sort((a, b) => (b.isHost ? 1 : 0) - (a.isHost ? 1 : 0));
       this.hostId = g.host || null;   // token 要交給電腦回合的代跑者時會用到（見 rules 的 handOffToken）
       cb({status: g.status, name: g.displayName || this.groupKey, members: list,
-          host: g.host || null, aiLevel: g.aiLevel || 2, gameId: g.gameId || null});   // aiLevel 是建房時定案的，房間畫面要顯示
+          host: g.host || null, aiLevel: g.aiLevel || 2, gameId: g.gameId || null,
+          campaign: g.campaign || null, next: g.next || null});   // aiLevel 是建房時定案的，房間畫面要顯示
     };
     this._roomRef.on('value', this._roomCb);
   },
@@ -600,6 +602,34 @@ const Net = {
      不會有人先收到新的公開狀態、手牌卻還是舊的。                        */
   prefKingdom: null,
   setPreferredKingdom(k) { this.prefKingdom = k || null; },
+
+  /* ── 連線戰役（docs/online-campaign.md）──
+     成員資料的 camp：{ id, conquered, matches, unified } —— 我在這段戰役的記錄，
+     開局時群主拿它排座位、算技能成長、畫地圖；大家的名冊也以在場本人的這份為準更新。
+     群組的 campaign：{ id, roster } —— 這一桌是哪一段戰役、名冊有誰。 */
+  updateMyCamp(camp) {
+    if (this._meData) this._meData.camp = camp ? stripUndefined(camp) : null;
+    if (!this._meRef) return Promise.resolve();
+    return this._meRef.child('camp').set(camp ? stripUndefined(camp) : null).catch(() => {});
+  },
+  /* 一場打完接著打下一場：狀態維持 started，只換這一場的編號（各台據此重置畫面） */
+  setGameId(id) {
+    if (!this._groupRef) return Promise.resolve();
+    return this._groupRef.child('gameId').set(id).catch(() => {});
+  },
+  /* 一場打完「繼續征戰」的決定：{ from（上一場的 gameId）, stay: [uid] } */
+  setNext(next) {
+    if (!this._groupRef) return Promise.resolve();
+    return this._groupRef.child('next').set(next ? stripUndefined(next) : null).catch(() => {});
+  },
+  setHost(uid) {
+    if (!this._groupRef) return Promise.resolve();
+    return this._groupRef.child('host').set(uid).catch(() => {});
+  },
+  updateCampaign(campaign) {
+    if (!this._groupRef) return Promise.resolve();
+    return this._groupRef.child('campaign').set(stripUndefined(campaign)).catch(() => {});
+  },
   publishGame(payload) {
     if (!this.groupKey) return Promise.reject(new Error('NOGROUP'));
     const g = this.groupKey, up = {};
@@ -1082,7 +1112,20 @@ const Net = {
     this._meRef = null; this._groupRef = null; this._meData = null;   // 連回來時不要再把自己寫回去
     this.groupKey = null; this.groupName = null; this.isHost = false;
     if (!meRef) return Promise.resolve();
+    const wasHost = this.isHost;
+    const myId = this.clientId;
     return meRef.onDisconnect().cancel().catch(() => {})
+      /* 開桌的人走了，房間裡還有人 → 把開桌交給最早加入的那位。
+         不交的話 groups/host 還指著走掉的人，房間裡沒有人按得到「開始」。
+         （牌局中另有 10 秒換群主的機制；這裡管的是在大廳房間裡離開） */
+      .then(() => wasHost ? groupRef.child('members').once('value').then(snap => {
+        const ms = snap.val() || {};
+        const next = Object.keys(ms).filter(id => id !== myId)
+          .sort((a, b) => (ms[a].joinedAt || 0) - (ms[b].joinedAt || 0))[0];
+        if (!next) return;
+        return groupRef.child('host').transaction(cur => (cur === myId ? next : undefined))
+          .then(() => groupRef.child('members/' + next + '/isHost').set(true));
+      }).catch(() => {}) : null)
       .then(() => meRef.remove().catch(() => {}))
       .then(() => groupRef.child('members').once('value'))
       .then(snap => { if (!snap.exists()) return groupRef.remove().catch(() => {}); })
