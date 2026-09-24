@@ -429,7 +429,15 @@ function fitSizes(dom, hand) {
     // ⚠️ 退的量要照**實際超出多少**算，不能每輪固定退 2px。
     // 固定 2px 的話 iPhone SE 需要退 31px → 要 16 輪才收斂，
     // 迭代上限之內收不完，畫面就停在「還在溢出」的中途狀態。
+    /* ⚠️ 量的時候先把主公像拿掉。它是 absolute、尺寸跟著 vmin 走（手機上 148px），
+       中央一矮它就「溢出」—— scrollHeight 會把它算進去，於是被當成牌河塞不下，
+       牌河縮到底之後就一路縮自己的手牌（2026-09-24 實測 iPhone 橫式：手牌從 47px 被壓到 32px）。
+       主公像是氣氛、本來就允許被擋到一部分，#center 的 overflow:hidden 會把多的裁掉，不該拿來擠牌。 */
+    const lord = c.querySelector('#center-lord');
+    const lordDisp = lord ? lord.style.display : '';
+    if (lord) lord.style.display = 'none';
     const deficit = Math.max(c.scrollHeight - c.clientHeight, c.scrollWidth - c.clientWidth);
+    if (lord) lord.style.display = lordDisp;
     if (deficit > 1) {
       if (riverH - _riverShrink > LIMITS.river.min) {
         _riverShrink += Math.max(2, Math.ceil(deficit / Math.max(1, rows * 2)));
