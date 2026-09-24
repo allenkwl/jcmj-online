@@ -217,16 +217,40 @@ const reducedMotion = () => typeof matchMedia === 'function'
    計時器掛在 node 上：同一個 node 再播一次會先清掉上一輪，不會兩輪疊在一起。 */
 function playFrames(node, img, frames, durs) {
   clearTimeout(node._warTimer);
+  clearTimeout(node._warWait);
+  const tok = node._warTok = (node._warTok || 0) + 1;
   if (!frames.length) return;
-  if (frames.length < 2 || reducedMotion()) { img.src = frames[frames.length - 1]; return; }
-  let i = 0;
-  img.src = frames[0];
-  const next = () => {
-    i++;
-    img.src = frames[i];
-    if (i < frames.length - 1) node._warTimer = setTimeout(next, durs[i]);
+  const last = frames[frames.length - 1];
+  if (frames.length < 2 || reducedMotion()) { img.src = last; return; }
+  /* ⚠️ 先把每一格都載好才開始播。
+     原本一開始就照時間換 src，手機上圖還沒下載完：那一格就是空白、或直接被下一格蓋掉 ——
+     已經看過的國有動畫、第一次點的國沒有（2026-09-24 使用者回報「有的有動畫，有的沒有」）。
+     網路太慢也不要一直空著：最多等 1.5 秒，就直接停在最後一格。 */
+  let started = false;
+  const run = () => {
+    if (started || tok !== node._warTok) return;
+    started = true;
+    clearTimeout(node._warWait);
+    let i = 0;
+    img.src = frames[0];
+    const next = () => {
+      if (tok !== node._warTok) return;
+      i++;
+      img.src = frames[i];
+      if (i < frames.length - 1) node._warTimer = setTimeout(next, durs[i]);
+    };
+    node._warTimer = setTimeout(next, durs[0]);
   };
-  node._warTimer = setTimeout(next, durs[0]);
+  Promise.all(frames.map(u => new Promise(res => {
+    const im = new Image();
+    im.onload = im.onerror = () => res();
+    im.src = u;
+  }))).then(run);
+  node._warWait = setTimeout(() => {
+    if (started || tok !== node._warTok) return;
+    started = true;
+    img.src = last;
+  }, 1500);
 }
 function playWar(node, img, frames) {
   if (frames.length < 3) { clearTimeout(node._warTimer); if (frames.length) img.src = frames[frames.length - 1]; return; }
