@@ -33,7 +33,7 @@ const RECENT_KEY = 'jcmj_recent_groups';
 const NAME_KEY = 'jcmj_my_name';
 const SEATS = 4;
 
-let cfg = { onEnterGame: null, onBack: null };
+let cfg = { onEnterGame: null, onBack: null, onRoom: null };
 let myName = '';
 let cur = null;          // { key, displayName, isHost }
 let watching = false;
@@ -207,6 +207,8 @@ function startWatching() {
   if (watching) return;
   watching = true;
   Net.watchRoom(g => {
+    // 牌局中：成員進出（斷線、連回來、換群主）交給遊戲處理，大廳畫面不動
+    if (cur && cur.entered) { if (cfg.onRoom) cfg.onRoom(g); return; }
     if (!g) { leave(true); return; }          // 群組沒了
     // 開局只進一次 —— 房間資料之後每變一次（有人斷線、改名）都會再觸發，不擋就會重複開局
     if (g.status === 'started') { if (!cur.entered) enterGame(g); return; }

@@ -12,7 +12,10 @@
     },
     "states": {
       ".read": "auth != null",
-      "$g": { ".write": "auth != null", ".validate": "$g.length <= 64" }
+      "$g": {
+        ".write": "auth != null && (!root.child('groups').child($g).exists() || auth.uid === root.child('groups').child($g).child('host').val())",
+        ".validate": "$g.length <= 64"
+      }
     },
     "live": {
       ".read": "auth != null",
@@ -67,7 +70,7 @@
         ".validate": "$g.length <= 64",
         "$uid": {
           ".read": "auth != null && auth.uid === $uid",
-          ".write": "auth != null"
+          ".write": "auth != null && (!root.child('groups').child($g).exists() || auth.uid === root.child('groups').child($g).child('host').val())"
         }
       }
     },

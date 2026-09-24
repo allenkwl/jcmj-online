@@ -444,12 +444,51 @@ const Net = {
     this._meRef = this._groupRef.child('members/' + this.clientId);
     // 一定要先掛 onDisconnect 再寫資料：反過來的話，如果剛寫完就斷線，
     // onDisconnect 還沒註冊上去，這個人就會永遠留在群組裡變成幽靈成員。
+    // uid：群主要知道每個人的手牌寫到哪裡（/hands/{群}/{uid}）
+    // kingdom：這個人想用的國（本機戰役的本國）；撞國由群主開局時調整
+    // joinedAt：加入這一桌的伺服器時間 —— 座位順序、換群主的遞補順序都照它排
+    this._meData = stripUndefined({name: playerName, isHost: this.isHost,
+                                   uid: this.uid, kingdom: this.prefKingdom || null});
+    this._joinedAt = null;
     return this._meRef.onDisconnect().remove()
-      // uid：群主要知道每個人的手牌寫到哪裡（/hands/{群}/{uid}）
-      // kingdom：這個人想用的國（本機戰役的本國）；撞國由群主開局時調整
-      .then(() => this._meRef.set(stripUndefined({name: playerName, isHost: this.isHost,
-                                                  uid: this.uid, kingdom: this.prefKingdom || null})))
-      .then(() => { this._watchPings(key); return true; });
+      .then(() => this._meRef.set(Object.assign({joinedAt: firebase.database.ServerValue.TIMESTAMP}, this._meData)))
+      .then(() => this._meRef.child('joinedAt').once('value'))
+      .then(s => { this._joinedAt = s.val(); this._watchRejoin(); this._watchPings(key); return true; });
+  },
+
+  /* 網路斷一下又連回來：onDisconnect 已經在伺服器那邊把我的成員節點刪了，
+     頁面卻還開著、我也還以為自己在桌上 —— 別台會一直當我斷線。
+     連回來時把節點補寫回去（joinedAt 用第一次的值，不然遞補順序會被打亂）。 */
+  _watchRejoin() {
+    if (this._rejoinCb) return;
+    let wasOffline = false;
+    this._rejoinCb = snap => {
+      if (!snap.val()) { wasOffline = true; return; }
+      if (!wasOffline || !this._meRef || !this._meData) return;
+      wasOffline = false;
+      const me = this._meRef;
+      me.onDisconnect().remove()
+        .then(() => me.set(Object.assign({joinedAt: this._joinedAt || firebase.database.ServerValue.TIMESTAMP},
+                                         this._meData, {isHost: this.isHost})))
+        .catch(() => {});
+    };
+    this.db.ref('.info/connected').on('value', this._rejoinCb);
+  },
+
+  /* 接手群主：只有在群主**還是**那個斷線的人時才換成我（transaction，兩台同時搶只有一台成功）。
+     ⚠️ 先換 host 再讀 /secret —— 規則只准現任群主讀完整牌局。 */
+  takeHost(oldHost) {
+    if (!this._groupRef) return Promise.resolve(false);
+    const me = this.clientId;
+    return this._groupRef.child('host')
+      .transaction(cur => (cur === oldHost ? me : undefined))
+      .then(res => {
+        if (!res.committed) return false;
+        this.isHost = true;
+        if (this._meData) this._meData.isHost = true;
+        if (this._meRef) this._meRef.child('isHost').set(true).catch(() => {});
+        return true;
+      });
   },
 
   // ── 監看自己所在的這個群組（成員名單＋狀態）──
@@ -467,6 +506,7 @@ const Net = {
         isHost: !!members[id].isHost,
         uid: members[id].uid || id,
         kingdom: members[id].kingdom || null,
+        joinedAt: members[id].joinedAt || 0,
         me: id === this.clientId,
       }));
       list.sort((a, b) => (b.isHost ? 1 : 0) - (a.isHost ? 1 : 0));
@@ -1039,7 +1079,7 @@ const Net = {
     this.unwatchCmds();
     this.tokenHolder = null; this.tokenTurn = -1;
     const meRef = this._meRef, groupRef = this._groupRef;
-    this._meRef = null; this._groupRef = null;
+    this._meRef = null; this._groupRef = null; this._meData = null;   // 連回來時不要再把自己寫回去
     this.groupKey = null; this.groupName = null; this.isHost = false;
     if (!meRef) return Promise.resolve();
     return meRef.onDisconnect().cancel().catch(() => {})
