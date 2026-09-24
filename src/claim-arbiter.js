@@ -484,10 +484,21 @@ function selfResponse(hand, seat, win, choose) {
 }
 
 /* ── Firebase 往返修復 ──────────────────────────────────── */
+/* Firebase 看到鍵全是數字（"1"、"2"、"3"）的物件，會存成**陣列**，
+   沒有的鍵變成 null 洞：{ "2": {...} } 讀回來是 [null, null, {...}]。
+   直接拿去 Object.keys 會掃到那些 null（2026-09-24 連線實測：用戶端一收到宣告視窗就炸）。
+   轉回以座位為鍵的物件、丟掉 null。 */
+function seatMap(x) {
+  const out = {};
+  if (!x || typeof x !== 'object') return out;
+  Object.keys(x).forEach(k => { if (x[k] != null) out[k] = x[k]; });
+  return out;
+}
+
 function normalizeWindow(win) {
   if (!win) return win;
-  win.eligible = win.eligible || {};
-  win.responses = win.responses || {};
+  win.eligible = seatMap(win.eligible);
+  win.responses = seatMap(win.responses);
   Object.keys(win.eligible).forEach(k => {
     const e = win.eligible[k];
     e.chi = e.chi || [];

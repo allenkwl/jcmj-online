@@ -549,6 +549,14 @@ console.log('═══ Firebase 往返 ═══');
   // 補回來之後還能正常裁決
   eq(C.respond(w2, 1, { type: 'pong' }), true, '往返後還收得下宣告');
   eq(C.resolve(w2).type, 'meld', '往返後還裁決得出來');
+
+  // Firebase 把數字鍵的物件存成帶 null 洞的陣列（2026-09-24 連線實測炸過）
+  const w3 = { announce: true, ask: [1, 2, 3], kind: 'discard', from: 0, guarded: false,
+               eligible: [], responses: [null, null, { type: 'pass', couldRon: false }] };
+  C.normalizeWindow(w3);
+  ok(!Array.isArray(w3.responses), '陣列形式的 responses 轉回物件');
+  eq(Object.keys(w3.responses).join(','), '2', 'null 洞被丟掉，只剩真的回過的座位');
+  eq(C.pendingSeats(w3).join(','), '1,3', '還沒回的座位算得對');
 }
 
 console.log('\n─────────────────────────');
