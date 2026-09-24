@@ -2,6 +2,24 @@
    用途：啟動台以 file:// 開啟時掃不到硬碟，靠這份清單顯示小工具。 */
 window.MJDevtools = [
  {
+  "family": "分封動畫",
+  "all": [
+   {
+    "ver": "0.1",
+    "rel": "devtools/分封動畫v0.1.html"
+   }
+  ],
+  "newest": {
+   "ver": "0.1",
+   "rel": "devtools/分封動畫v0.1.html"
+  },
+  "count": 1,
+  "title": "分封動畫",
+  "sub": "一場打完的分封領地動畫（預覽，還沒接進遊戲）",
+  "ico": "🏯",
+  "cat": "動畫"
+ },
+ {
   "family": "對戰畫面編輯器",
   "all": [
    {
