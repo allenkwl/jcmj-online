@@ -15,7 +15,7 @@ window.MJDevtools = [
   },
   "count": 1,
   "title": "分封動畫",
-  "sub": "一場打完的分封領地動畫（預覽，還沒接進遊戲）",
+  "sub": "一場打完的分封領地動畫（遊戲裡用的同一支 src/enfeoff.js）",
   "ico": "🏯",
   "cat": "動畫"
  },
