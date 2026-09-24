@@ -59,22 +59,42 @@ function fileOf(key) {
    每載好一張就重畫的話，開局會閃 34 次。                        */
 function loadFaces(onReady) {
   const displays = allFaceDisplays();
-  let pending = 0, done = 0;
+  let pending = 0, done = 0, reported = false;
+  const report = () => { if (onReady) onReady(Object.keys(faces).length); };
 
   displays.forEach(d => {
     const key = faceKeyFor(d);
     const url = key && fileOf(key);
     if (!url) return;
-    const img = new Image();
     pending++;
-    const tick = () => {
-      done++;
-      if (done === pending && onReady) onReady(Object.keys(faces).length);
+    let tries = 0;
+    const load = () => {
+      const img = new Image();
+      img.onload = () => {
+        faces[d] = img;
+        // 重試成功的那一張（全部早就回報過了）：再重畫一次，不然它要等下一個動作才換上
+        if (reported && tries > 0) report();
+        else tick();
+      };
+      /* 缺圖或網路一時沒抓到：隔 2 秒再抓一次（加個參數繞過失敗的快取）。
+         再不行就讓 tiles.js 走程序繪製的 fallback。
+         ⚠️ 2026-09-24 使用者看到整副牌都是 fallback 的畫法（「牌面不見了？」），重新整理又好了 ——
+            原本失敗就算了，要等下一次重畫才有機會換上 */
+      img.onerror = () => {
+        if (tries++ < 1) { setTimeout(load, 2000); return; }
+        tick();
+      };
+      img.src = tries ? url + '?retry=' + Date.now() : url;
     };
-    img.onload = () => { faces[d] = img; tick(); };
-    img.onerror = tick;          // 缺圖就讓 tiles.js 走程序繪製的 fallback
-    img.src = url;
+    load();
   });
+
+  function tick() {
+    done++;
+    if (done === pending && !reported) { reported = true; report(); }
+  }
+  /* 手機網路慢：3 秒還沒全部載完，先拿已經到的重畫一次（全部到齊時還會再畫一次） */
+  setTimeout(() => { if (!reported && Object.keys(faces).length) report(); }, 3000);
 
   T.setFaceImages(faces);
   if (!pending && onReady) onReady(0);
