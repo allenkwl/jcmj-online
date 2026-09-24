@@ -121,7 +121,7 @@ function renderGroupList(list) {
   clear(box);
   const open = list.filter(g => g.status === 'waiting');
   byId('lobby-groups-empty').style.display = open.length ? 'none' : '';
-  byId('lobby-groups-empty').textContent = '目前沒有人開群組，按上面「開新局」自己開一個';
+  byId('lobby-groups-empty').textContent = '目前沒有人開桌，按上面「開一桌」自己開一個';
   // ⚠️ 清單是 watchGroups 非同步推過來的，項目一變焦點清單就變了。
   //    不重抓的話，方向鍵會停在已經被移除的舊節點上（畫面看起來沒有焦點框）。
   setTimeout(() => { if (window.MJInput) window.MJInput.refresh(); }, 0);

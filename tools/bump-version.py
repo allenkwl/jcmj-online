@@ -14,7 +14,10 @@
   1. 讀 latest.json 找到目前最新版
   2. 複製成下一版的檔名
   3. 把新檔 <title> 裡的版號改掉（遊戲畫面左下角的 Ver 就是讀 <title>）
-  4. latest.json 改指新檔
+  4. 寫出「現在最新是哪一版」（write_latest）：
+     ‧ latest.json —— 入口頁、編輯器、開發伺服器用 fetch 讀
+     ‧ latest.js   —— 啟動台用 <script> 讀（雙擊開的 file:// 頁面 fetch 不到 json）
+     ‧ index.html 裡的備援版號（latest.json 抓不到時走它）
 
 ⚠️ 檔名不要用「戰國麻將列傳.html」—— 那會觸發舊兩人版的自動部署（見 CLAUDE.md）。
 """
@@ -27,6 +30,22 @@ import sys
 
 ROOT = os.path.join(os.path.dirname(os.path.abspath(__file__)), '..')
 PREFIX = '戰國麻將線上v'
+
+
+def write_latest(name):
+    with io.open(os.path.join(ROOT, 'latest.json'), 'w', encoding='utf-8') as f:
+        f.write(json.dumps({'file': name}, ensure_ascii=False) + '\n')
+    with io.open(os.path.join(ROOT, 'latest.js'), 'w', encoding='utf-8') as f:
+        f.write('/* 由 tools/bump-version.py 寫出，不要手改。跟 latest.json 同一份資料 ——\n'
+                '   這一份給用 <script> 載的頁面（雙擊開的啟動台讀不了 json）。 */\n'
+                'window.MJ_LATEST = ' + json.dumps({'file': name}, ensure_ascii=False) + ';\n')
+    idx = os.path.join(ROOT, 'index.html')
+    with io.open(idx, encoding='utf-8') as f:
+        s = f.read()
+    s2 = re.sub(re.escape(PREFIX) + r'\d+\.\d{2}\.html', name, s)
+    if s2 != s:
+        with io.open(idx, 'w', encoding='utf-8') as f:
+            f.write(s2)
 
 
 def main():
@@ -62,9 +81,8 @@ def main():
     shutil.copy2(os.path.join(ROOT, cur), os.path.join(ROOT, new))
     with io.open(os.path.join(ROOT, new), 'w', encoding='utf-8') as f:
         f.write(html.replace(title_old.group(0), title_new, 1))
-    with io.open(os.path.join(ROOT, 'latest.json'), 'w', encoding='utf-8') as f:
-        f.write(json.dumps({'file': new}, ensure_ascii=False) + '\n')
-    print('✓ latest.json 已改指新版。之後的修改請改在新檔上。')
+    write_latest(new)
+    print('✓ latest.json／latest.js／index.html 的備援都已改指新版。之後的修改請改在新檔上。')
     return 0
 
 
