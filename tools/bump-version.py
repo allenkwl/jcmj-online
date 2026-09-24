@@ -14,7 +14,11 @@
   1. 讀 latest.json 找到目前最新版
   2. 複製成下一版的檔名
   3. 把新檔 <title> 裡的版號改掉（遊戲畫面左下角的 Ver 就是讀 <title>）
-  4. 寫出「現在最新是哪一版」（write_latest）：
+  4. 把新檔裡 `src/*.js`、`assets/manifest.js` 的 <script> 都加上 `?v=新版號`
+     ⚠️ 必要：遊戲本體的檔名有版號，但它載入的模組檔名沒有 —— 瀏覽器會沿用快取裡的舊模組。
+        2026-09-24 實測：v1.10 修好了 BGM 重疊，使用者的 Chrome 還是跑快取裡的舊 audio.js，
+        照樣三首重疊，看起來像沒修好。加上版號之後，每一版都一定載到那一版的模組
+  5. 寫出「現在最新是哪一版」（write_latest）：
      ‧ latest.json —— 入口頁、編輯器、開發伺服器用 fetch 讀
      ‧ latest.js   —— 啟動台用 <script> 讀（雙擊開的 file:// 頁面 fetch 不到 json）
      ‧ index.html 裡的備援版號（latest.json 抓不到時走它）
@@ -78,9 +82,13 @@ def main():
     print(f'  {title_old.group(0)}  →  {title_new}')
     if dry:
         return 0
+    html = html.replace(title_old.group(0), title_new, 1)
+    html, n_js = re.subn(r'(<script src="(?:src/[^"?]+|assets/manifest)\.js)(?:\?v=[^"]*)?"',
+                         lambda m: m.group(1) + '?v=' + new_v + '"', html)
+    print(f'  模組加上版號 ?v={new_v}：{n_js} 支')
     shutil.copy2(os.path.join(ROOT, cur), os.path.join(ROOT, new))
     with io.open(os.path.join(ROOT, new), 'w', encoding='utf-8') as f:
-        f.write(html.replace(title_old.group(0), title_new, 1))
+        f.write(html)
     write_latest(new)
     print('✓ latest.json／latest.js／index.html 的備援都已改指新版。之後的修改請改在新檔上。')
     return 0
