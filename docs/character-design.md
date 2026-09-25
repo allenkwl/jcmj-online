@@ -142,6 +142,11 @@ Art style (follow exactly — every character in this set uses the identical sty
    - WebP 品質 80／透明度 70，七國合計約 1.3MB，一場只預載場上四國（約 600KB）
    - 中央大圖原本的圓形遮罩（為了化掉舊圖白底）已拿掉；開場秦王那格的 multiply 變暗處理也拿掉了
    - ⚠️ 選國畫面、牌桌、開場的**背景插畫**裡還是舊畫風的人物，那是場景圖，不在這次範圍
+   - ✅ 2026-09-25 **選國畫面的背景換掉了**：七位主公各畫一張全身站姿（`prompts/<國>_lord_stand.txt`，
+     只附**他自己的**半身像），場景另畫一張不含人物的宮殿平台＋七色國旗（`prompts/select_bg.txt`），
+     `python3 tools/build-select-bg.py` 合成 → `assets/table/select_lords.webp`。每位主公站在自己的國旗前，
+     左到右跟卡片同順序。沒有一次畫七個人：附七張參考圖時臉會互相混掉。
+     開場第二幕、牌桌、標題的背景插畫仍是舊畫風
    - 守將 ✅ 2026-09-24：`<國>_g.webp`、`<國>_g_war1/_g_war2/_g_big.webp`
    - **誰畫守將**：`render.js` 的 `asGeneral(seat)` —— 電腦座位（`isAI`）或斷線代打中（`sub`）→ 守將；真人 → 主公。
      名牌、中央三格、說明文字都走這一個判斷。電腦座位的名字是「楚將昭陽」（`K.generalTitle`）
