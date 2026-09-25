@@ -1,0 +1,325 @@
+<!doctype html>
+<html lang="zh-Hant">
+<head>
+<meta charset="utf-8">
+<base href="../">
+<meta name="description" content="舊版：搬進遊戲之前的獨立測試頁（有暫停／進度條）。新版 v0.2 直接播遊戲裡那一份">
+<meta name="launcher-icon" content="🎬">
+<meta name="launcher-cat" content="動畫">
+<!-- 2026-09-25 從專案根目錄的「開場動畫測試.html」搬來，內容未改（只加了 base 與啟動台用的 meta）。 -->
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>開場動畫</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" media="print" onload="this.media='all'"
+  href="https://fonts.googleapis.com/css2?family=Noto+Serif+TC:wght@600;800;900&family=ZCOOL+QingKe+HuangYou&display=swap">
+<style>
+:root{
+  --gold:#d9ae52;--pale:#f6e7bd;--ink:#120e0a;--red:#8f211c;
+  --serif:"Noto Serif TC","Songti TC","PMingLiU",serif;
+  --deco:"ZCOOL QingKe HuangYou","Noto Serif TC","Songti TC",serif;
+}
+*{box-sizing:border-box}
+html,body{width:100%;height:100%;margin:0;overflow:hidden;background:#080706;color:var(--pale);font-family:var(--serif)}
+button{font:inherit}
+#stage{position:relative;width:100vw;height:100vh;overflow:hidden;isolation:isolate;background:#0c0b09}
+#stage::after{content:"";position:absolute;inset:0;z-index:90;pointer-events:none;box-shadow:inset 0 0 12vmin #000,inset 0 0 3vmin #000;background:linear-gradient(90deg,rgba(0,0,0,.22),transparent 18%,transparent 82%,rgba(0,0,0,.22));mix-blend-mode:multiply}
+.scene{position:absolute;inset:0;opacity:0;visibility:hidden;overflow:hidden;transition:opacity .8s ease,visibility .8s;will-change:opacity}
+.scene.active{opacity:1;visibility:visible}
+.bg{position:absolute;inset:-4%;width:108%;height:108%;object-fit:cover;filter:saturate(.75) contrast(1.08) brightness(.68);transform:scale(1.05)}
+.active .bg{animation:slowpush 6s ease-out both}
+.shade{position:absolute;inset:0;background:radial-gradient(circle at 50% 44%,transparent 5%,rgba(7,5,3,.2) 48%,rgba(5,3,2,.87) 100%),linear-gradient(180deg,rgba(5,4,2,.12),rgba(5,3,2,.56))}
+.grain{position:absolute;inset:-50%;opacity:.13;background-image:url("data:image/svg+xml,%3Csvg viewBox='0 0 180 180' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.92' numOctaves='3' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)' opacity='.6'/%3E%3C/svg%3E");mix-blend-mode:soft-light;pointer-events:none;animation:grain .28s steps(2) infinite}
+.eyebrow{font:600 clamp(12px,1.5vw,22px)/1 var(--serif);letter-spacing:.45em;color:#e8cf91;text-shadow:0 2px 5px #000}
+.title{margin:.25em 0;font:900 clamp(38px,7.4vw,116px)/.98 var(--serif);letter-spacing:.08em;color:#e4bb59;text-shadow:0 3px 0 #6e321b,0 7px 0 #351812,0 12px 24px #000,0 0 24px rgba(255,198,73,.25)}
+.subtitle{font:600 clamp(14px,1.8vw,28px)/1.7 var(--serif);letter-spacing:.18em;color:#fff0c7;text-shadow:0 2px 8px #000}
+.seal{display:inline-grid;place-items:center;width:clamp(44px,5.2vw,76px);aspect-ratio:1;border:3px solid #e7c16c;background:#84221c;color:#f5d991;font:800 clamp(20px,3vw,42px)/1 var(--deco);transform:rotate(-4deg);box-shadow:inset 0 0 0 4px #84221c,inset 0 0 0 6px #e7c16c,0 5px 15px #000}
+
+/* 第一幕：天下大勢 */
+#s1 .center{position:absolute;inset:0;display:grid;place-content:center;text-align:center;padding:6vw}
+#s1 .inkline{width:min(70vw,900px);height:2px;margin:1.2rem auto;background:linear-gradient(90deg,transparent,#c99d48 18%,#ffe59e 50%,#c99d48 82%,transparent);transform:scaleX(0)}
+#s1.active .eyebrow{animation:rise .9s .35s both}
+#s1.active .title{animation:titleIn 1.15s .8s cubic-bezier(.2,.9,.15,1) both}
+#s1.active .inkline{animation:unfurl 1.1s 1.45s both}
+#s1.active .subtitle{animation:rise .9s 1.8s both}
+.petal{position:absolute;top:-8%;left:var(--x);width:12px;height:7px;border-radius:80% 20% 70% 30%;background:#d9a6a0;opacity:.75;animation:fall var(--d) linear var(--delay) infinite}
+
+/* 第二幕：七雄列陣 */
+#s2 .bg{filter:saturate(.65) contrast(1.12) brightness(.48)}
+.scene-heading{position:absolute;top:7%;left:0;right:0;text-align:center;z-index:4}
+.scene-heading h2{margin:.25em 0;font:900 clamp(32px,5.2vw,78px)/1 var(--serif);letter-spacing:.22em;color:#f0cc73;text-shadow:0 4px 0 #482417,0 10px 22px #000}
+.lords{position:absolute;left:3%;right:3%;bottom:-3%;height:75%;display:flex;align-items:flex-end;justify-content:center;z-index:3}
+.lord{position:relative;width:15%;max-width:250px;margin:0 -1.1%;opacity:0;transform:translateY(28%) scale(.8);filter:drop-shadow(0 10px 12px #000)}
+.lord img{display:block;width:100%;aspect-ratio:1;object-fit:contain;border-radius:50%;border:2px solid rgba(226,184,91,.65);background:radial-gradient(circle at 50% 38%,#8d6a35 0,#302014 57%,#0b0806 73%);box-shadow:inset 0 0 24px #000,0 5px 14px #000}
+.lord:nth-child(4) img{mix-blend-mode:multiply;filter:brightness(1.28) contrast(1.08)}
+.lord:nth-child(4){width:19%;z-index:3}
+.lord b{position:absolute;left:50%;bottom:5%;transform:translateX(-50%);display:grid;place-items:center;width:2.1em;height:2.1em;border:2px solid #d7ae57;border-radius:50%;background:rgba(22,13,8,.9);color:#f3d37d;font:900 clamp(17px,2.5vw,37px)/1 var(--serif);box-shadow:0 3px 12px #000}
+#s2.active .scene-heading{animation:rise .8s .2s both}
+#s2.active .lord{animation:lordUp .85s cubic-bezier(.15,.8,.2,1.15) both;animation-delay:calc(.25s + var(--i)*.12s)}
+
+/* 第三幕：四方對峙 */
+#s3 .bg{filter:saturate(.65) contrast(1.18) brightness(.38);animation-name:battlePush}
+.versus{position:absolute;inset:0;display:grid;grid-template-columns:1fr 1fr;grid-template-rows:1fr 1fr;gap:2px;background:#b98936}
+.fighter{position:relative;overflow:hidden;background:#17100b;opacity:0}
+.fighter::after{content:"";position:absolute;inset:0;background:linear-gradient(var(--dir),rgba(0,0,0,.92),transparent 58%)}
+.fighter img{position:absolute;width:min(51vh,42vw);height:min(51vh,42vw);object-fit:contain;filter:drop-shadow(0 8px 11px #000);transform:var(--start)}
+.fighter:nth-child(1) img,.fighter:nth-child(3) img{right:2%}.fighter:nth-child(2) img,.fighter:nth-child(4) img{left:2%}
+.fighter:nth-child(-n+2) img{bottom:-5%}.fighter:nth-child(n+3) img{top:-5%}
+.fighter .tag{position:absolute;z-index:2;padding:.25em .6em;background:rgba(18,9,5,.83);border:1px solid #bf9244;color:#efd07d;font:900 clamp(22px,3.7vw,57px)/1.1 var(--serif);letter-spacing:.12em;box-shadow:0 4px 14px #000}
+.fighter:nth-child(1) .tag{left:6%;top:10%}.fighter:nth-child(2) .tag{right:6%;top:10%}.fighter:nth-child(3) .tag{left:6%;bottom:10%}.fighter:nth-child(4) .tag{right:6%;bottom:10%}
+#s3.active .fighter{animation:flashIn .55s both;animation-delay:calc(var(--i)*.13s)}
+#s3.active .fighter img{animation:fighterIn 1s cubic-bezier(.12,.85,.22,1) both;animation-delay:calc(.25s + var(--i)*.13s)}
+.cross{position:absolute;left:50%;top:50%;z-index:8;display:grid;place-items:center;width:clamp(76px,10vw,150px);aspect-ratio:1;border-radius:50%;transform:translate(-50%,-50%);background:radial-gradient(circle,#f8dc83 0 7%,#9f2a1f 8% 52%,#2a140d 54% 64%,#d3a54d 65% 69%,#160e09 71%);font:900 clamp(30px,5vw,75px)/1 var(--deco);color:#ffe5a0;text-shadow:0 4px #5b1c15;box-shadow:0 0 34px #ffbd4c,0 0 0 5px rgba(0,0,0,.55);opacity:0}
+#s3.active .cross{animation:stamp .7s 1.25s cubic-bezier(.15,.85,.15,1.25) both}
+
+/* 第四幕：以牌為兵 */
+#s4 .bg{filter:saturate(.75) contrast(1.12) brightness(.34)}
+.battle-title{position:absolute;left:8%;top:10%;z-index:4}
+.battle-title h2{margin:.15em 0;font:900 clamp(40px,7vw,106px)/1 var(--serif);letter-spacing:.12em;color:#edc769;text-shadow:0 4px #54251b,0 10px 22px #000}
+.tiles{position:absolute;inset:13% 6% 9%;display:flex;align-items:flex-end;justify-content:center;gap:clamp(8px,2.2vw,34px);perspective:1200px;z-index:3}
+.tile{position:relative;width:clamp(68px,10.5vw,166px);aspect-ratio:.72;border-radius:9% 9% 12% 12%;background:linear-gradient(135deg,#fffef1,#e7dfc0 65%,#b89e63);border:clamp(3px,.42vw,7px) solid #182116;box-shadow:inset -8px -10px 14px rgba(90,67,27,.28),8px 16px 0 #314632,14px 24px 26px #000;transform:translateY(90vh) rotate(var(--r));overflow:hidden}
+.tile img{width:100%;height:100%;object-fit:cover;mix-blend-mode:multiply}
+.tile span{position:absolute;right:-15%;top:-18%;display:grid;place-items:center;width:48%;aspect-ratio:1;border-radius:50%;background:#96251d;border:3px solid #e5b94f;color:#ffe39b;font:900 clamp(21px,3.2vw,48px)/1 var(--deco);box-shadow:0 5px 15px #000}
+#s4.active .battle-title{animation:slideRight .8s .15s both}
+#s4.active .tile{animation:tileSlam .8s cubic-bezier(.12,.8,.15,1.2) both;animation-delay:calc(.75s + var(--i)*.28s)}
+.slash{position:absolute;left:-20%;top:48%;width:140%;height:12px;z-index:7;background:linear-gradient(90deg,transparent,#fff7c2 35%,#ffb329 50%,#fff 56%,transparent 72%);filter:blur(1px) drop-shadow(0 0 12px #ffc349);transform:rotate(-9deg) scaleX(0);transform-origin:left}
+#s4.active .slash{animation:slash 1s 2.2s ease-out both}
+
+/* 第五幕：征服 */
+#s5 .bg{filter:saturate(.6) sepia(.15) contrast(1.08) brightness(.43)}
+.campaign{position:absolute;inset:0;display:grid;grid-template-columns:1.05fr .95fr;align-items:center;padding:7vw;z-index:3}
+.hero{position:relative;height:82vh;opacity:0;transform:translateX(-20%)}
+.hero img{position:absolute;left:50%;bottom:-5%;height:100%;max-width:52vw;object-fit:contain;transform:translateX(-50%);filter:drop-shadow(0 14px 16px #000)}
+.campaign-copy{opacity:0;transform:translateX(15%)}
+.campaign-copy h2{margin:.15em 0;font:900 clamp(38px,6vw,90px)/1.1 var(--serif);color:#f1cc6b;text-shadow:0 4px #54251b,0 9px 20px #000}
+.campaign-copy p{font:700 clamp(15px,2vw,29px)/1.7 var(--serif);letter-spacing:.1em;text-shadow:0 3px 8px #000}
+.kingdom-row{display:flex;gap:.6vw;margin-top:1.2rem;flex-wrap:wrap}
+.crest{display:grid;place-items:center;width:clamp(44px,5.3vw,78px);aspect-ratio:1;border-radius:50%;background:radial-gradient(circle,#392114 45%,#140d08 48%);border:3px solid var(--c);color:var(--c);font:900 clamp(21px,2.8vw,40px)/1 var(--serif);box-shadow:0 5px 16px #000;opacity:0;transform:scale(.3)}
+#s5.active .hero{animation:heroEnter 1s .15s cubic-bezier(.15,.8,.2,1) both}
+#s5.active .campaign-copy{animation:slideLeft .8s .65s both}
+#s5.active .crest{animation:pop .55s cubic-bezier(.15,.85,.15,1.25) both;animation-delay:calc(1.15s + var(--i)*.15s)}
+
+/* 第六幕：收尾 */
+#s6 .bg{filter:saturate(.75) contrast(1.1) brightness(.55)}
+#s6 .shade{background:radial-gradient(circle at 50% 45%,rgba(22,12,6,.05),rgba(5,3,2,.78) 72%,#030201)}
+.final{position:absolute;inset:0;display:grid;place-content:center;text-align:center;padding:4vw;z-index:4}
+.final .logo-small{font:600 clamp(13px,1.5vw,22px)/1 var(--serif);letter-spacing:.55em;color:#f3d784}
+.final h1{margin:.22em 0 .14em;font:900 clamp(43px,8.6vw,132px)/.94 var(--serif);letter-spacing:.06em;color:#e8bd58;text-shadow:0 3px 0 #754021,0 7px 0 #3b1a12,0 15px 30px #000,0 0 28px rgba(255,194,67,.34);opacity:0;transform:scale(.7)}
+.final p{margin:.8em 0;font:700 clamp(16px,2.2vw,32px)/1.5 var(--serif);letter-spacing:.33em;text-shadow:0 3px 10px #000;opacity:0}
+.final .seal{margin:1rem auto 0;opacity:0}
+#s6.active .logo-small{animation:rise .7s .15s both}
+#s6.active h1{animation:finalTitle 1.2s .4s cubic-bezier(.12,.82,.18,1.15) both}
+#s6.active p{animation:rise .8s 1.3s both}
+#s6.active .seal{animation:pop .65s 1.85s cubic-bezier(.15,.85,.15,1.25) both}
+
+/* 播放控制 */
+.controls{position:fixed;left:50%;bottom:max(14px,env(safe-area-inset-bottom));z-index:120;display:flex;align-items:center;gap:10px;width:min(720px,88vw);transform:translateX(-50%);opacity:.3;transition:opacity .25s}
+.controls:hover,.controls:focus-within,.ended .controls{opacity:1}
+.ctrl{width:42px;height:36px;border:1px solid rgba(230,190,102,.55);border-radius:7px;background:rgba(12,8,5,.82);color:#f2d48a;cursor:pointer}
+.ctrl:hover{background:#3b2114}
+.track{position:relative;flex:1;height:7px;border-radius:9px;background:rgba(255,255,255,.2);overflow:hidden;box-shadow:0 1px 4px #000}
+.bar{height:100%;width:0;background:linear-gradient(90deg,#8e251d,#d6a548,#ffe49a);box-shadow:0 0 10px #ffc65c}
+.time{min-width:52px;text-align:right;font:600 12px/1 sans-serif;color:#ead8ad;text-shadow:0 1px 3px #000}
+.end-replay{position:absolute;left:50%;bottom:10%;z-index:130;transform:translate(-50%,20px);padding:.65em 1.6em;border:1px solid #d8aa50;border-radius:4px;background:linear-gradient(#4a2918,#24140d);color:#f4d98f;font:700 clamp(14px,1.5vw,20px)/1 var(--serif);letter-spacing:.16em;box-shadow:0 7px 20px #000;opacity:0;visibility:hidden;transition:.5s;cursor:pointer}
+.ended .end-replay{opacity:1;visibility:visible;transform:translate(-50%,0)}
+.start-gate{position:absolute;inset:0;z-index:200;display:grid;place-content:center;text-align:center;padding:8vw;background:radial-gradient(circle at 50% 45%,rgba(35,21,11,.58),rgba(3,2,1,.94));transition:opacity .7s,visibility .7s}
+.started .start-gate{opacity:0;visibility:hidden;pointer-events:none}
+.start-gate .seal{margin:0 auto 1.2rem}
+.start-gate h2{margin:.1em 0;font:900 clamp(34px,6vw,86px)/1.05 var(--serif);letter-spacing:.12em;color:#e8bd58;text-shadow:0 3px #6a321c,0 8px 22px #000}
+.start-gate p{font:600 clamp(13px,1.55vw,21px)/1.8 var(--serif);letter-spacing:.16em;color:#ead8ad}
+.begin{justify-self:center;margin-top:1.25rem;padding:.78em 2em;border:1px solid #e1b459;border-radius:5px;background:linear-gradient(#5c321c,#28150d);color:#ffe09a;font:800 clamp(15px,1.7vw,23px)/1 var(--serif);letter-spacing:.2em;box-shadow:0 8px 25px #000,inset 0 1px rgba(255,255,255,.16);cursor:pointer}
+.begin:hover{filter:brightness(1.16);transform:translateY(-1px)}
+.not-started .controls{opacity:0;pointer-events:none}
+
+@keyframes slowpush{from{transform:scale(1.05)}to{transform:scale(1.12) translate3d(-1%,.5%,0)}}
+@keyframes battlePush{from{transform:scale(1.05)}to{transform:scale(1.16) translate3d(1%,-1%,0)}}
+@keyframes grain{0%{transform:translate(0,0)}25%{transform:translate(3%,-2%)}50%{transform:translate(-2%,3%)}75%{transform:translate(1%,2%)}100%{transform:translate(-3%,-1%)}}
+@keyframes rise{from{opacity:0;transform:translateY(25px)}to{opacity:1;transform:none}}
+@keyframes titleIn{from{opacity:0;transform:scale(1.35);filter:blur(12px)}to{opacity:1;transform:none;filter:none}}
+@keyframes unfurl{to{transform:scaleX(1)}}
+@keyframes fall{to{transform:translate(18vw,118vh) rotate(520deg)}}
+@keyframes lordUp{to{opacity:1;transform:translateY(0) scale(1)}}
+@keyframes flashIn{0%{opacity:0;filter:brightness(4)}100%{opacity:1;filter:none}}
+@keyframes fighterIn{from{transform:var(--start);filter:brightness(3) drop-shadow(0 8px 11px #000)}to{transform:none;filter:drop-shadow(0 8px 11px #000)}}
+@keyframes stamp{0%{opacity:0;transform:translate(-50%,-50%) scale(2.6) rotate(-12deg)}70%{opacity:1;transform:translate(-50%,-50%) scale(.86) rotate(3deg)}100%{opacity:1;transform:translate(-50%,-50%) scale(1)}}
+@keyframes pop{0%{opacity:0;transform:scale(2.3) rotate(-12deg)}70%{opacity:1;transform:scale(.86) rotate(3deg)}100%{opacity:1;transform:scale(1)}}
+@keyframes slideRight{from{opacity:0;transform:translateX(-60px)}to{opacity:1;transform:none}}
+@keyframes tileSlam{0%{transform:translateY(90vh) rotate(var(--r))}72%{transform:translateY(-4%) rotate(var(--r));filter:brightness(2)}100%{transform:translateY(0) rotate(var(--r));filter:none}}
+@keyframes slash{0%{transform:rotate(-9deg) scaleX(0);opacity:0}18%{opacity:1}70%{transform:rotate(-9deg) scaleX(1);opacity:1}100%{transform:rotate(-9deg) scaleX(1);opacity:0}}
+@keyframes heroEnter{to{opacity:1;transform:none}}
+@keyframes slideLeft{to{opacity:1;transform:none}}
+@keyframes finalTitle{to{opacity:1;transform:none}}
+
+@media(max-aspect-ratio:1/1){
+  .lords{left:-15%;right:-15%;height:66%}.lord{width:21%;margin:0 -2.6%}.lord:nth-child(4){width:27%}
+  .campaign{grid-template-columns:1fr;padding:7vw;text-align:center}.hero{position:absolute;inset:18% 0 0;height:65vh;opacity:.46!important}.campaign-copy{position:relative;z-index:3;align-self:end;margin-bottom:10vh}.kingdom-row{justify-content:center}
+  .fighter img{width:45vw;height:45vw}.fighter .tag{font-size:5.2vw}
+}
+@media(prefers-reduced-motion:reduce){.grain{display:none}}
+</style>
+</head>
+<body>
+<main id="stage" class="not-started" aria-label="戰國麻將列傳開場動畫">
+  <div class="start-gate" id="startGate">
+    <span class="seal">戰</span>
+    <h2>一桌　定江山</h2>
+    <p>原創配樂《一桌定江山》·片長 30 秒<br>戰鼓、古琴、編鐘與五聲音階</p>
+    <button class="begin" id="begin" type="button">▶　啟動畫面與音樂</button>
+  </div>
+  <section class="scene active" id="s1" data-start="0" data-end="5.1">
+    <img class="bg" src="assets/table/title.webp" alt="">
+    <div class="shade"></div><div class="grain"></div>
+    <i class="petal" style="--x:8%;--d:5.8s;--delay:-2s"></i><i class="petal" style="--x:28%;--d:7s;--delay:-4s"></i><i class="petal" style="--x:66%;--d:6.2s;--delay:-1s"></i><i class="petal" style="--x:88%;--d:7.6s;--delay:-5s"></i>
+    <div class="center">
+      <div class="eyebrow">七雄割據　天下未定</div>
+      <h1 class="title">一桌　定江山</h1>
+      <div class="inkline"></div>
+      <div class="subtitle">當麻將化為兵法，每一張牌都是成王的一步</div>
+    </div>
+  </section>
+
+  <section class="scene" id="s2" data-start="4.3" data-end="9.7">
+    <img class="bg" src="assets/table/select.webp" alt=""><div class="shade"></div><div class="grain"></div>
+    <header class="scene-heading"><div class="eyebrow">擇一國　承一志</div><h2>戰國七雄　列陣</h2></header>
+    <div class="lords">
+      <figure class="lord" style="--i:0"><img src="assets/avatar/qi_big.webp" alt="齊"><b>齊</b></figure>
+      <figure class="lord" style="--i:1"><img src="assets/avatar/chu_big.webp" alt="楚"><b>楚</b></figure>
+      <figure class="lord" style="--i:2"><img src="assets/avatar/yan_big.webp" alt="燕"><b>燕</b></figure>
+      <figure class="lord" style="--i:3"><img src="assets/avatar/qin_big.webp" alt="秦"><b>秦</b></figure>
+      <figure class="lord" style="--i:4"><img src="assets/avatar/han_big.webp" alt="韓"><b>韓</b></figure>
+      <figure class="lord" style="--i:5"><img src="assets/avatar/wei_big.webp" alt="魏"><b>魏</b></figure>
+      <figure class="lord" style="--i:6"><img src="assets/avatar/zhao_big.webp" alt="趙"><b>趙</b></figure>
+    </div>
+  </section>
+
+  <section class="scene" id="s3" data-start="8.9" data-end="15.0">
+    <div class="versus">
+      <div class="fighter" style="--i:0;--dir:135deg;--start:translate(-28%,-18%) scale(1.2)"><img src="assets/chu_3.png" alt="楚國君主"><span class="tag">楚·雄兵</span></div>
+      <div class="fighter" style="--i:1;--dir:225deg;--start:translate(28%,-18%) scale(1.2)"><img src="assets/wei_3.png" alt="魏國君主"><span class="tag">魏·鐵騎</span></div>
+      <div class="fighter" style="--i:2;--dir:45deg;--start:translate(-28%,18%) scale(1.2)"><img src="assets/zhao_3.png" alt="趙國君主"><span class="tag">趙·騎射</span></div>
+      <div class="fighter" style="--i:3;--dir:315deg;--start:translate(28%,18%) scale(1.2)"><img src="assets/han_3.png" alt="韓國君主"><span class="tag">韓·精兵</span></div>
+    </div>
+    <div class="cross">戰</div><div class="grain"></div>
+  </section>
+
+  <section class="scene" id="s4" data-start="14.2" data-end="21.1">
+    <img class="bg" src="assets/table/wei.webp" alt=""><div class="shade"></div><div class="grain"></div>
+    <div class="battle-title"><div class="eyebrow">算進退　斷攻守</div><h2>以牌為兵</h2></div>
+    <div class="tiles">
+      <div class="tile" style="--i:0;--r:-7deg"><img src="assets/wan1.jpg" alt="一萬"><span>吃</span></div>
+      <div class="tile" style="--i:1;--r:-2deg"><img src="assets/tong5.jpg" alt="五筒"><span>碰</span></div>
+      <div class="tile" style="--i:2;--r:3deg"><img src="assets/tiao8.jpg" alt="八條"><span>槓</span></div>
+      <div class="tile" style="--i:3;--r:8deg"><img src="assets/honor_中.jpg" alt="中"><span>胡</span></div>
+    </div>
+    <div class="slash"></div>
+  </section>
+
+  <section class="scene" id="s5" data-start="20.3" data-end="26.1">
+    <img class="bg" src="assets/vic-bg-chu.jpg" alt=""><div class="shade"></div><div class="grain"></div>
+    <div class="campaign">
+      <div class="hero"><img src="assets/chu_3.png" alt="楚國君主"></div>
+      <div class="campaign-copy">
+        <div class="eyebrow">一場四局　步步為營</div>
+        <h2>征服六國</h2>
+        <p>成長國家技能　改寫戰局<br>敗中取勢　於亂世統一天下</p>
+        <div class="kingdom-row">
+          <i class="crest" style="--i:0;--c:#4a90d9">齊</i><i class="crest" style="--i:1;--c:#27ae60">楚</i><i class="crest" style="--i:2;--c:#9b59b6">燕</i><i class="crest" style="--i:3;--c:#e67e22">韓</i><i class="crest" style="--i:4;--c:#e74c3c">魏</i><i class="crest" style="--i:5;--c:#1abc9c">趙</i><i class="crest" style="--i:6;--c:#f39c12">秦</i>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section class="scene" id="s6" data-start="25.3" data-end="30.1">
+    <img class="bg" src="assets/table/title.webp" alt=""><div class="shade"></div><div class="grain"></div>
+    <div class="final">
+      <div class="logo-small">四人麻將·七雄爭霸</div>
+      <h1>戰國麻將列傳</h1>
+      <p>一張定勝負　一桌取天下</p>
+      <span class="seal">開戰</span>
+    </div>
+  </section>
+
+  <button class="end-replay" id="endReplay" type="button">⟳　再看一次</button>
+  <div class="controls" aria-label="動畫播放控制">
+    <button class="ctrl" id="toggle" type="button" aria-label="暫停">❚❚</button>
+    <button class="ctrl" id="replay" type="button" aria-label="從頭播放">↺</button>
+    <button class="ctrl" id="mute" type="button" aria-label="靜音">🔊</button>
+    <div class="track"><div class="bar" id="bar"></div></div>
+    <output class="time" id="time">0:00</output>
+  </div>
+  <audio id="bgm" preload="auto" src="assets/audio/intro-bgm.mp3"></audio>
+</main>
+<script>
+(() => {
+  'use strict';
+  const DURATION = 30;
+  const stage = document.getElementById('stage');
+  const scenes = [...document.querySelectorAll('.scene')];
+  const toggle = document.getElementById('toggle');
+  const mute = document.getElementById('mute');
+  const audio = document.getElementById('bgm');
+  const bar = document.getElementById('bar');
+  const time = document.getElementById('time');
+  let startedAt = performance.now(), elapsed = 0, playing = false, begun = false, raf = 0;
+
+  function clock(s) { return '0:' + String(Math.min(30, Math.floor(s))).padStart(2, '0'); }
+  function activate(t) {
+    scenes.forEach(scene => {
+      const on = t >= +scene.dataset.start && t < +scene.dataset.end;
+      scene.classList.toggle('active', on);
+    });
+    bar.style.width = Math.min(100, t / DURATION * 100) + '%';
+    time.value = clock(t);
+  }
+  function frame(now) {
+    if (!playing) return;
+    elapsed = (now - startedAt) / 1000;
+    if (elapsed >= DURATION) {
+      elapsed = DURATION; playing = false; activate(elapsed - .001);
+      audio.pause();
+      stage.classList.add('ended'); toggle.textContent = '▶'; toggle.setAttribute('aria-label', '播放');
+      return;
+    }
+    activate(elapsed);
+    raf = requestAnimationFrame(frame);
+  }
+  function restart() {
+    cancelAnimationFrame(raf); stage.classList.remove('ended');
+    stage.classList.remove('not-started'); stage.classList.add('started'); begun = true;
+    scenes.forEach(s => s.classList.remove('active'));
+    void stage.offsetWidth; // 重置各幕 CSS animation
+    elapsed = 0; startedAt = performance.now(); playing = true;
+    audio.currentTime = 0; audio.play().catch(() => {});
+    toggle.textContent = '❚❚'; toggle.setAttribute('aria-label', '暫停'); activate(0);
+    raf = requestAnimationFrame(frame);
+  }
+  function togglePlay() {
+    if (!begun) return restart();
+    if (!playing && elapsed >= DURATION) return restart();
+    playing = !playing;
+    toggle.textContent = playing ? '❚❚' : '▶';
+    toggle.setAttribute('aria-label', playing ? '暫停' : '播放');
+    if (playing) {
+      startedAt = performance.now() - elapsed * 1000;
+      audio.currentTime = elapsed; audio.play().catch(() => {});
+      raf = requestAnimationFrame(frame);
+    } else { cancelAnimationFrame(raf); audio.pause(); }
+  }
+  document.getElementById('begin').addEventListener('click', restart);
+  toggle.addEventListener('click', togglePlay);
+  document.getElementById('replay').addEventListener('click', restart);
+  document.getElementById('endReplay').addEventListener('click', restart);
+  mute.addEventListener('click', () => {
+    audio.muted = !audio.muted;
+    mute.textContent = audio.muted ? '🔇' : '🔊';
+    mute.setAttribute('aria-label', audio.muted ? '解除靜音' : '靜音');
+  });
+  document.addEventListener('keydown', e => {
+    if (e.code === 'Space') { e.preventDefault(); togglePlay(); }
+    if (e.key.toLowerCase() === 'r') restart();
+  });
+  activate(0);
+})();
+</script>
+</body>
+</html>

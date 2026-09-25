@@ -2,7 +2,7 @@
 """產生《一桌定江山》：30 秒開場動畫原創配樂。
 
 只使用 numpy + Python 標準庫，輸出 44.1 kHz stereo WAV。
-音樂時間點對齊 `開場動畫測試.html` 的六幕轉場。
+音樂時間點對齊開場序章（遊戲本體 #intro-ov，舊測試頁 devtools/開場動畫v0.1.html）的六幕轉場。
 """
 from pathlib import Path
 import wave

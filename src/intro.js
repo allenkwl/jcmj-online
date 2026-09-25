@@ -2,7 +2,7 @@
    intro.js — 開場序章（30 秒）
    ───────────────────────────────────────────────────────────────
    六幕：天下大勢 → 七雄列陣 → 四方對峙 → 以牌為兵 → 征服 → 收尾。
-   來源是 `開場動畫測試.html`，搬進遊戲時拿掉了測試用的東西：
+   來源是 `開場動畫測試.html`（現在是 devtools/開場動畫v0.1.html），搬進遊戲時拿掉了測試用的東西：
    起始閘門、播放/暫停/重播/靜音控制列、進度條。
    遊戲裡只需要「播放」跟「跳過」。
 
@@ -40,9 +40,12 @@ const seen = () => { try { return localStorage.getItem(SEEN_KEY) === '1'; } catc
 const markSeen = () => { try { localStorage.setItem(SEEN_KEY, '1'); } catch (_) {} };
 
 let running = false;
+let stopNow = null;          // 播放中才有：外面要中途停掉（啟動台的「跳到第幾幕」）用
 
 /* 播放序章。回傳 Promise，播完或被跳過才 resolve。
-   opts.force  true＝不管看過沒有都播（設定面板的「重看序章」用） */
+   opts.force  true＝不管看過沒有都播（設定面板的「重看序章」用）
+   opts.from   從第幾秒開始（啟動台的開場動畫預覽用來跳幕；遊戲裡不傳＝從頭）
+   opts.keepBgm  true＝結束時不要把標題 BGM 放回來（預覽頁不需要標題音樂） */
 function play(opts) {
   const o = opts || {};
   const stage = document.getElementById('intro-ov');
@@ -67,8 +70,9 @@ function play(opts) {
   scenes.forEach(s => s.classList.remove('active'));
   void stage.offsetWidth;                    // 重置各幕的 CSS animation
 
+  const from = Math.max(0, Math.min(DURATION - 0.1, +o.from || 0));
   if (audio) {
-    audio.currentTime = 0;
+    audio.currentTime = from;
     try {
       const A = window.MJAudio;
       audio.muted = !!(A && A.SFX && A.SFX.isEnabled && !A.SFX.isEnabled());
@@ -76,7 +80,7 @@ function play(opts) {
     audio.play().catch(() => {});            // 沒有使用者手勢就靜靜失敗，動畫照跑
   }
 
-  const t0 = performance.now();
+  const t0 = performance.now() - from * 1000;
   let raf = 0, finish = null;
   const done = new Promise(res => { finish = res; });
 
@@ -103,7 +107,8 @@ function play(opts) {
     scenes.forEach(s => s.classList.remove('active'));
     if (audio) { try { audio.pause(); } catch (_) {} }
     markSeen();
-    if (hadBgm) { try { window.MJAudio.BGM.play('title', 1.0); } catch (_) {} }
+    if (hadBgm && !o.keepBgm) { try { window.MJAudio.BGM.play('title', 1.0); } catch (_) {} }
+    stopNow = null;
     finish(reason);
   }
 
@@ -117,10 +122,11 @@ function play(opts) {
   document.addEventListener('keydown', onKey, true);
   stage.querySelector('#intro-skip').onclick = () => stop('skipped');
 
-  activate(0);
+  stopNow = stop;
+  activate(from);
   raf = requestAnimationFrame(frame);
   return done;
 }
 
-return { play, isRunning: () => running, hasSeen: seen, reset() { try { localStorage.removeItem(SEEN_KEY); } catch (_) {} } };
+return { play, DURATION, stop(reason) { if (stopNow) stopNow(reason || 'stopped'); }, isRunning: () => running, hasSeen: seen, reset() { try { localStorage.removeItem(SEEN_KEY); } catch (_) {} } };
 });

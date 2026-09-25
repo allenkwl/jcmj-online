@@ -75,18 +75,25 @@ window.MJDevtools = [
   "cat": "動畫"
  },
  {
-  "family": "開場動畫測試",
+  "family": "開場動畫",
   "all": [
    {
-    "ver": "",
-    "rel": "開場動畫測試.html"
+    "ver": "0.2",
+    "rel": "devtools/開場動畫v0.2.html"
+   },
+   {
+    "ver": "0.1",
+    "rel": "devtools/開場動畫v0.1.html"
    }
   ],
   "newest": {
-   "ver": "",
-   "rel": "開場動畫測試.html"
+   "ver": "0.2",
+   "rel": "devtools/開場動畫v0.2.html"
   },
-  "count": 1,
-  "title": "戰國麻將列傳－30 秒開場動畫測試"
+  "count": 2,
+  "title": "開場動畫",
+  "sub": "30 秒開場序章（直接播遊戲本體裡的那一份，可跳幕）",
+  "ico": "🎬",
+  "cat": "動畫"
  }
 ];
