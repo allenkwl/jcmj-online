@@ -1,0 +1,44 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no">
+<title>分封動畫</title>
+<meta name="description" content="一場打完的分封領地動畫（直接在遊戲本體裡播，可選情境）">
+<meta name="launcher-icon" content="🏯">
+<meta name="launcher-cat" content="動畫">
+<!--
+  分封動畫的預覽。⚠️ 這一頁**沒有自己的動畫**：用 iframe 載最新版遊戲的 #enfeoff 模式
+  （跟開場動畫 v0.2 載 #intro、對戰畫面編輯器載 #preview 是同一招）。
+
+  一場打完的分封領地。
+  v0.1 雖然也是呼叫同一支 src/enfeoff.js，但跑在自己的頁面裡：字型設定、音效模組（BGM 讓位、靜音）、
+  君主稱號的算法都跟遊戲不一樣（2026-09-25 使用者：「分封和統一天下也是一樣的方式嗎？不是的話也改一下」）。
+  情境的假資料寫在遊戲本體的 animPreview() 裡。
+
+  載哪一版看 ../latest.js。iframe 只顯示、不跨框讀東西，所以雙擊（file://）也能開。
+-->
+<style>
+html,body{height:100%;margin:0;background:#050c09;}
+iframe{position:fixed;inset:0;width:100%;height:100%;border:0;display:block;}
+.err{position:fixed;inset:0;display:flex;align-items:center;justify-content:center;color:#e8c46a;font:14px 'Songti TC',serif;}
+</style>
+</head>
+<body>
+<script src="../latest.js"></script>
+<script>
+'use strict';
+const file = window.MJ_LATEST && window.MJ_LATEST.file;
+if (!file) {
+  document.body.insertAdjacentHTML('beforeend', '<div class="err">⚠ 讀不到 ../latest.js，不知道該載哪一版遊戲</div>');
+} else {
+  const f = document.createElement('iframe');
+  f.src = '../' + encodeURI(file) + '#enfeoff';
+  f.allow = 'autoplay; fullscreen';
+  f.title = '分封動畫';
+  document.body.appendChild(f);
+  document.title = '分封動畫（' + (file.match(/v\d+\.\d+/) || [''])[0] + '）';
+}
+</script>
+</body>
+</html>

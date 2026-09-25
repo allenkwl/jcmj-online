@@ -5,17 +5,21 @@ window.MJDevtools = [
   "family": "分封動畫",
   "all": [
    {
+    "ver": "0.2",
+    "rel": "devtools/分封動畫v0.2.html"
+   },
+   {
     "ver": "0.1",
     "rel": "devtools/分封動畫v0.1.html"
    }
   ],
   "newest": {
-   "ver": "0.1",
-   "rel": "devtools/分封動畫v0.1.html"
+   "ver": "0.2",
+   "rel": "devtools/分封動畫v0.2.html"
   },
-  "count": 1,
+  "count": 2,
   "title": "分封動畫",
-  "sub": "一場打完的分封領地動畫（遊戲裡用的同一支 src/enfeoff.js）",
+  "sub": "一場打完的分封領地動畫（直接在遊戲本體裡播，可選情境）",
   "ico": "🏯",
   "cat": "動畫"
  },
@@ -60,17 +64,21 @@ window.MJDevtools = [
   "family": "統一天下動畫",
   "all": [
    {
+    "ver": "0.2",
+    "rel": "devtools/統一天下動畫v0.2.html"
+   },
+   {
     "ver": "0.1",
     "rel": "devtools/統一天下動畫v0.1.html"
    }
   ],
   "newest": {
-   "ver": "0.1",
-   "rel": "devtools/統一天下動畫v0.1.html"
+   "ver": "0.2",
+   "rel": "devtools/統一天下動畫v0.2.html"
   },
-  "count": 1,
+  "count": 2,
   "title": "統一天下動畫",
-  "sub": "統一天下的慶祝動畫＋配樂（預覽，還沒接進遊戲）",
+  "sub": "統一天下的慶祝動畫＋配樂（直接在遊戲本體裡播，可選國家）",
   "ico": "👑",
   "cat": "動畫"
  },
