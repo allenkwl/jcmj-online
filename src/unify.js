@@ -38,7 +38,7 @@ const CSS = `
   color:#fff4d6;font-family:'Noto Serif TC','Songti TC',serif;}
 #uni-ov.show{display:block;animation:uniIn .5s ease;}
 @keyframes uniIn{from{opacity:0}to{opacity:1}}
-#uni-ov .deco{font-family:var(--font-deco,'ZCOOL QingKe HuangYou','Noto Serif TC',serif);}
+#uni-ov .deco{font-family:var(--font-deco,'Noto Serif TC',serif);font-weight:900;}
 #uni-ov .u-map{position:absolute;left:50%;top:50%;width:min(92vw,calc(92vh * 1.5),1100px);aspect-ratio:3/2;
   transform:translate(-50%,-50%);border-radius:10px;overflow:hidden;box-shadow:0 0 60px rgba(243,207,110,.35);
   transition:transform 1.2s ease,opacity 1.2s ease,filter 1.2s ease;}
@@ -293,7 +293,8 @@ function build(o) {
   }, 0.4 + i * 0.5));
 
   // ② 天下一統
-  const title = el('u-title deco', ov, '天下一統');
+  // 固定的大字用魏碑做成的圖（assets/titles/）；會變的字（主公名號、詔書）用思源宋體 Black
+  const title = el('u-title deco', ov, '<img src="assets/titles/unify.webp" alt="天下一統" style="height:1.2em;width:auto;vertical-align:middle">');
   const lord = el('u-lord', ov, '<div class="u-halo"></div><img alt="">');
   const img = lord.querySelector('img');
   const frames = K.warFrames(home.id, false);
@@ -329,7 +330,7 @@ function build(o) {
   [...edict.children].forEach((s, i) => later(() => s.classList.add('on'), T.edict + 1.0 + i * 0.75));
 
   // ④ 六國來朝
-  const cap = el('u-cap deco', ov, '六國來朝');
+  const cap = el('u-cap deco', ov, '<img src="assets/titles/court.webp" alt="六國來朝" style="height:1.2em;width:auto;vertical-align:middle">');
   const court = el('u-court', ov);
   later(() => { edict.style.transition = 'opacity .6s'; edict.style.opacity = '0'; lord.classList.remove('side'); lord.style.height = '52%'; lord.style.bottom = '30%'; cap.classList.add('on'); }, T.court);
   order.slice(1).forEach((id, i) => {
@@ -340,7 +341,7 @@ function build(o) {
   });
 
   // ⑤ 慶功
-  const fete = el('u-fete', ov, '<div class="big deco">恭喜主公</div><div class="small">' + lordName + '　統一天下</div>');
+  const fete = el('u-fete', ov, '<div class="big deco"><img src="assets/titles/congrats.webp" alt="恭喜主公" style="height:1.2em;width:auto;vertical-align:middle"></div><div class="small">' + lordName + '　統一天下</div>');
   later(() => {
     cap.classList.remove('on'); court.style.transition = 'opacity .6s'; court.style.opacity = '.35';
     lord.style.opacity = '.35'; fete.classList.add('on'); goldRain(60);

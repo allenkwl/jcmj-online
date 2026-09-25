@@ -41,13 +41,13 @@ const CSS = `
   color:#e8dcc0;font-family:'Noto Serif TC','Songti TC',serif;}
 #enf-ov.show{display:flex;animation:enfIn .35s ease;}
 @keyframes enfIn{from{opacity:0}to{opacity:1}}
-#enf-ov .enf-title{font-family:var(--font-deco,'ZCOOL QingKe HuangYou','Noto Serif TC',serif);font-size:clamp(20px,5vh,34px);
+#enf-ov .enf-title{font-family:var(--font-deco,'Noto Serif TC',serif);font-weight:900;font-size:clamp(20px,5vh,34px);
   color:#c9a44c;letter-spacing:.35em;text-shadow:0 2px 10px rgba(0,0,0,.8);}
 #enf-ov .enf-sub{font-size:clamp(10px,2vh,13px);color:rgba(232,220,192,.6);letter-spacing:.3em;margin-top:-4px;}
 #enf-ov .enf-map{position:relative;width:min(94vw,calc((100vh - 130px) * 1.5),1100px);aspect-ratio:3/2;
   border-radius:10px;overflow:hidden;box-shadow:0 10px 40px rgba(0,0,0,.75),0 0 0 1px rgba(201,164,76,.5);}
 #enf-ov .enf-map > img.bg{position:absolute;inset:0;width:100%;height:100%;display:block;filter:saturate(.85) brightness(.92);}
-#enf-ov .seal{position:absolute;transform:translate(-50%,-50%);font-family:var(--font-deco,'ZCOOL QingKe HuangYou',serif);
+#enf-ov .seal{position:absolute;transform:translate(-50%,-50%);font-family:var(--font-deco,'Noto Serif TC',serif);font-weight:900;
   font-size:clamp(13px,3.2vh,24px);line-height:1;color:#fff4d6;width:1.7em;height:1.7em;
   display:flex;align-items:center;justify-content:center;border-radius:50%;
   background:rgba(40,22,10,.6);border:2px solid rgba(255,236,190,.5);text-shadow:0 1px 2px #000;z-index:2;
@@ -74,7 +74,7 @@ const CSS = `
   z-index:6;pointer-events:none;animation:enfFlash .45s ease-out forwards;}
 @keyframes enfFlash{from{opacity:1}to{opacity:0}}
 #enf-ov .stamp{position:absolute;transform:translate(-50%,-50%) rotate(-10deg);z-index:7;pointer-events:none;
-  font-family:var(--font-deco,'ZCOOL QingKe HuangYou',serif);font-size:clamp(20px,6vh,44px);color:#c0281c;letter-spacing:.05em;
+  font-family:var(--font-deco,'Noto Serif TC',serif);font-weight:900;font-size:clamp(20px,6vh,44px);color:#c0281c;letter-spacing:.05em;
   border:4px solid #c0281c;border-radius:6px;padding:.05em .25em;background:rgba(255,240,215,.2);
   animation:enfStamp .5s cubic-bezier(.3,1.5,.5,1) both;mix-blend-mode:multiply;}
 #enf-ov .stamp.fade{transition:opacity .6s;opacity:0;}
@@ -85,12 +85,12 @@ const CSS = `
   animation:enfFlag .4s ease-out both;transform-origin:bottom;}
 #enf-ov .flag::after{content:attr(data-c);position:absolute;left:3px;top:0;
   width:clamp(18px,4.6vh,34px);height:clamp(13px,3.4vh,25px);background:var(--kc);color:#fff;
-  font-family:var(--font-deco,'ZCOOL QingKe HuangYou',serif);font-size:clamp(10px,2.4vh,18px);display:flex;align-items:center;justify-content:center;
+  font-family:var(--font-deco,'Noto Serif TC',serif);font-weight:900;font-size:clamp(10px,2.4vh,18px);display:flex;align-items:center;justify-content:center;
   clip-path:polygon(0 0,100% 0,85% 50%,100% 100%,0 100%);animation:enfWave 1.2s ease-in-out infinite alternate;transform-origin:left;}
 @keyframes enfFlag{from{transform:translate(-2px,-100%) scaleY(0)}to{transform:translate(-2px,-100%) scaleY(1)}}
 @keyframes enfWave{from{transform:skewY(-4deg)}to{transform:skewY(4deg)}}
 #enf-ov .enf-cap{min-height:2.6em;text-align:center;font-size:clamp(13px,3vh,19px);letter-spacing:.12em;}
-#enf-ov .enf-cap .rank{font-family:var(--font-deco,'ZCOOL QingKe HuangYou',serif);color:#c9a44c;margin-right:.6em;}
+#enf-ov .enf-cap .rank{font-family:var(--font-deco,'Noto Serif TC',serif);font-weight:900;color:#c9a44c;margin-right:.6em;}
 #enf-ov .enf-cap .who{color:#fff4d6;}
 #enf-ov .enf-cap .got{color:#f3cf6e;font-weight:700;}
 #enf-ov .enf-cap .none{color:rgba(232,220,192,.6);}
@@ -228,7 +228,8 @@ function ensureDom() {
   document.head.appendChild(st);
   ov = document.createElement('div');
   ov.id = 'enf-ov';
-  ov.innerHTML = '<div class="enf-title">分封領地</div><div class="enf-sub">— 打敗誰，就拿誰的地 —</div>'
+  // 標題是魏碑做成的圖（assets/titles/，tools/build-titles.py）—— 魏碑是 macOS 字型，不能當網頁字型
+  ov.innerHTML = '<div class="enf-title"><img class="ttl" src="assets/titles/enfeoff.webp" alt="分封領地" style="height:1.25em;width:auto;vertical-align:middle"></div><div class="enf-sub">— 打敗誰，就拿誰的地 —</div>'
     + '<div class="enf-map"><img class="bg" src="' + MAP_URL + '" alt=""></div>'
     + '<div class="enf-cap"></div><div class="enf-hint">點一下跳到結果</div>';
   document.body.appendChild(ov);
