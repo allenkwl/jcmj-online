@@ -28,7 +28,7 @@
    改成每次載入時去問 latest.json 現在最新是哪一版，那個請求帶時間戳，一定拿得到新的。
    ⚠️ 遊戲檔不要命名成「戰國麻將列傳.html」—— 那個檔名會觸發舊兩人版的自動部署。 */
 (function () {
-  var fallback = '戰國麻將線上v1.20.html';
+  var fallback = '戰國麻將線上v1.21.html';
   var tail = location.search + location.hash;
   function go(f) { location.replace(encodeURIComponent(f) + tail); }
   fetch('latest.json?t=' + Date.now(), { cache: 'no-store' })
@@ -37,6 +37,6 @@
     .catch(function () { go(fallback); });   // 抓不到就走備援，至少進得去
 })();
 </script>
-<noscript><a href="戰國麻將線上v1.20.html">請點這裡進入遊戲</a></noscript>
+<noscript><a href="戰國麻將線上v1.21.html">請點這裡進入遊戲</a></noscript>
 </body>
 </html>

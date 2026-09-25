@@ -15,7 +15,7 @@
    配樂：assets/audio/unify-bgm.mp3（MIDI 在 GarageBand 轉好之後放這裡）。
    還沒有 MP3 的時候，用 assets/audio/unify-bgm.notes.js 的音符在瀏覽器合成（聽起來比較陽春，但時間點一樣）。
    播的時候遊戲 BGM 讓位，靜音設定照樣有效。
-   預覽頁：devtools/統一天下動畫v0.1.html（還沒接進遊戲）
+   預覽頁：devtools/統一天下動畫v0.1.html。v1.21 起接進遊戲（單機 showUnified、連線 netSettleMatch）
    ═══════════════════════════════════════════════════════════════ */
 (function (root, factory) {
   const api = factory(root.MJKingdoms);
