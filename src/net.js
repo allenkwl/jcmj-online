@@ -681,6 +681,8 @@ const Net = {
         .transaction(cur => (cur === null ? { stub: true, at: Date.now() } : undefined)).catch(() => {}))))
       .then(() => base.once('value'))
       .then(snap => {
+        // 不知道名冊（uids 為 null，舊版排的待補送）：只標自己退出，不判斷收掉 —— 沒補佔位，名單可能不齊
+        if (uids === null) return 'quit';
         const m = snap.val() || {};
         const ids = Object.keys(m);
         if (!ids.length || !ids.every(k => m[k] && m[k].quit)) return 'quit';

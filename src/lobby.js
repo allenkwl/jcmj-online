@@ -82,14 +82,15 @@ const PENDING_QUITS_KEY = 'jcmj_pending_quits';
 function pendingQuits() {
   try {
     // v1.38 排的是戰役 id 字串，之後改成 { cid, uids, table }
-    return (JSON.parse(localStorage.getItem(PENDING_QUITS_KEY) || '[]') || []).map(x => typeof x === 'string' ? { cid: x, uids: [], table: '' } : x);
+    // uids: null＝不知道名冊（v1.38 排的）—— 補送時只標自己退出，不判斷「全部人都退出、收掉這一段」
+    return (JSON.parse(localStorage.getItem(PENDING_QUITS_KEY) || '[]') || []).map(x => typeof x === 'string' ? { cid: x, uids: null, table: '' } : x);
   } catch (_) { return []; }
 }
 function savePendingQuits(list) { try { localStorage.setItem(PENDING_QUITS_KEY, JSON.stringify(list)); } catch (_) {} }
 /* roster：自己手機上這一段的名冊（替還沒登記的成員補佔位用）；table：桌名（整段收掉時清同名空桌） */
 function markQuit(cid, roster, table) {
   if (!cid) return;
-  const uids = toArr(roster).map(m => m.uid).filter(Boolean);
+  const uids = roster === null ? null : toArr(roster).map(m => m.uid).filter(Boolean);
   const item = { cid, uids, table: table || '' };
   Net.markQuit(cid, myName, uids).then(r => {
     if (r === 'closed') Net.closeCampTable(item.table, cid);
@@ -103,7 +104,7 @@ function flushQuits() {
   const list = pendingQuits();
   if (!list.length) return;
   savePendingQuits([]);
-  list.forEach(x => markQuit(x.cid, (x.uids || []).map(uid => ({ uid })), x.table));   // 還是失敗的會自己排回去
+  list.forEach(x => markQuit(x.cid, x.uids ? x.uids.map(uid => ({ uid })) : null, x.table));   // 還是失敗的會自己排回去
 }
 
 /* ── 小工具 ────────────────────────────────────────────── */
@@ -173,12 +174,35 @@ function renderLobby() {
     });
     rbox.appendChild(del);
   });
+  syncSlotQuits(list);
   const full = list.length >= (OC() ? OC().MAX_SLOTS : 10);
   byId('lobby-recent-wrap').querySelector('.net-label').textContent =
     '繼續之前的牌桌（連線存檔 ' + list.length + ' / ' + (OC() ? OC().MAX_SLOTS : 10) + '）' + (full ? '　已滿，要開新桌請先刪一格' : '　刪除＝退出那一段');
 
   // 現有群組（由 watchGroups 持續更新）
   byId('lobby-groups-empty').textContent = '搜尋中⋯';
+}
+
+/* 大廳列表上的名冊跟雲端的退出名單對一次（2026-09-26 使用者：「手機已經退出，怎麼還在？」）。
+   列表是拿自己手機存的名冊畫的；別人退出只記在雲端（/camps），以前要等按下那一桌重開才會套用。
+   有人退出就更新自己的存檔再重畫；沒變就不重畫（避免重畫又觸發一次） */
+let quitSyncing = false;
+function syncSlotQuits(list) {
+  if (quitSyncing || !OC() || !list.length) return;
+  quitSyncing = true;
+  Promise.all(list.map(sl => Net.readQuits(sl.id).then(q => ({ sl, q })))).then(res => {
+    let all = slots(), changed = false;
+    res.forEach(({ sl, q }) => {
+      const before = toArr(sl.roster);
+      const after = OC().applyQuits(before, q);
+      if (after.length === before.length) return;
+      const cur2 = OC().findSlot(all, sl.id);
+      if (!cur2) return;
+      all = all.map(x => (x.id === sl.id ? Object.assign({}, x, { roster: after }) : x));   // 不動順序、不改時間
+      changed = true;
+    });
+    if (changed) { slotsSave(all); renderLobby(); }
+  }).catch(() => {}).then(() => { setTimeout(() => { quitSyncing = false; }, 0); });
 }
 
 function esc(s) {
