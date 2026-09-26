@@ -122,7 +122,8 @@ function play(opts) {
        序章還沒播完就發牌占卜了（2026-09-26 使用者）。 */
     e.stopPropagation();
     // 跳過：Enter、空白、A（照電鐵的慣例是 Enter／A；空白是玩家最直覺會按的）
-    if (e.key === 'Enter' || e.key === ' ' || e.key === 'a' || e.key === 'A') {
+    // B＝返回，在序章就是跳過（2026-09-26 使用者：所有停下來的地方都要可以按 B 返回）
+    if (e.key === 'Enter' || e.key === ' ' || e.key === 'a' || e.key === 'A' || e.key === 'b' || e.key === 'B') {
       e.preventDefault();
       stop('skipped');
     }
