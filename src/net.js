@@ -651,25 +651,61 @@ const Net = {
     if (!this._groupRef) return Promise.resolve();
     return this._groupRef.child('campaign').set(stripUndefined(campaign)).catch(() => {});
   },
-  /* ── 退出紀錄：刪掉連線存檔＝退出那一段戰役（2026-09-26 使用者定案）──
-     /quits/{戰役 id}/{uid} = { at, name }。
-     牌桌（/groups）大家都走了就會被清掉，名冊存在各人手機裡 —— 要讓**其他人之後重開這一桌**
-     知道誰退出了，只能記在這個不會被清掉的地方。規則：每個人只能寫、刪自己那一筆。
-     markQuit 失敗（離線、規則還沒部署）時丟出錯誤，由大廳排進待補送的清單。 */
-  markQuit(cid, name) {
-    if (!this.db || !this.uid || !cid) return Promise.reject(new Error('NOAUTH'));
-    return this.db.ref('quits/' + cid + '/' + this.uid)
-      .set({ at: firebase.database.ServerValue.TIMESTAMP, name: String(name || '').slice(0, 20) });
-  },
-  /* 退出之後又用同一桌重新加入（當新人）：把自己那一筆清掉，免得下次重開又被當成退出 */
-  clearQuit(cid) {
+  /* ── 戰役成員名單：刪掉連線存檔＝退出那一段戰役（2026-09-26 使用者定案）──
+     /camps/{戰役 id}/members/{uid} = { name, at, quit? }（quit＝退出的時間）
+     ‧ 為什麼要放雲端：名冊存在各人手機裡，牌桌（/groups）大家都走了就被清掉 ——
+       只刪自己手機的存檔，其他人重開時名冊裡還有你，會被當成缺席、由武將代打
+     ‧ 每個人打這一段時登記自己（campJoin）；刪存檔／退出時標 quit（markQuit）
+     ‧ **全部成員都退出了，這一段就收掉**：整個 /camps/{id} 刪掉，退出紀錄一起清（使用者：「不要亂」）
+       ⚠️ 判斷「全部」只看雲端的成員名單，不看自己手機的名冊 —— 你不在時加入的人不在你的名冊裡，
+          拿舊名冊判斷會把別人還在用的紀錄刪掉。舊版開的戰役（成員還沒登記過）靠 markQuit 替名冊上的人補佔位
+     規則：自己那一筆只有本人能寫；別人的只能「補佔位」（還不存在時寫 stub）；整段只能刪不能改 */
+  campJoin(cid, name) {
     if (!this.db || !this.uid || !cid) return Promise.resolve();
-    return this.db.ref('quits/' + cid + '/' + this.uid).remove().catch(() => {});
+    return this.db.ref('camps/' + cid + '/members/' + this.uid)
+      .set({ name: String(name || '').slice(0, 20), at: firebase.database.ServerValue.TIMESTAMP }).catch(() => {});
   },
-  /* 這一段戰役誰退出了：{ uid: { at, name } }（讀不到就當沒有人退出） */
+  /* 退出。uids＝自己手機名冊上的其他成員（替還沒登記的補佔位）。
+     回傳 'closed'（全部人都退出了，整段已收掉）或 'quit'。寫不進去就丟錯誤（大廳排進待補送） */
+  markQuit(cid, name, uids) {
+    if (!this.db || !this.uid || !cid) return Promise.reject(new Error('NOAUTH'));
+    const base = this.db.ref('camps/' + cid + '/members');
+    const others = (uids || []).filter(u => u && u !== this.uid);
+    return base.child(this.uid)
+      .set({ name: String(name || '').slice(0, 20), at: firebase.database.ServerValue.TIMESTAMP,
+             quit: firebase.database.ServerValue.TIMESTAMP })
+      // 名冊上還沒登記的人補一筆佔位（沒退出）—— 不補的話舊戰役會被誤判成「全部人都退出了」
+      .then(() => Promise.all(others.map(u => base.child(u)
+        .transaction(cur => (cur === null ? { stub: true, at: Date.now() } : undefined)).catch(() => {}))))
+      .then(() => base.once('value'))
+      .then(snap => {
+        const m = snap.val() || {};
+        const ids = Object.keys(m);
+        if (!ids.length || !ids.every(k => m[k] && m[k].quit)) return 'quit';
+        return this.db.ref('camps/' + cid).remove().then(() => 'closed');
+      });
+  },
+  /* 退出之後又用同一桌重新加入（當新人）：重新登記一筆（蓋掉 quit） */
+  clearQuit(cid, name) { return this.campJoin(cid, name); },
+  /* 這一段戰役誰退出了：{ uid: { name, at, quit } }（讀不到就當沒有人退出） */
   readQuits(cid) {
     if (!this.db || !cid) return Promise.resolve({});
-    return this.db.ref('quits/' + cid).once('value').then(snap => snap.val() || {}).catch(() => ({}));
+    return this.db.ref('camps/' + cid + '/members').once('value').then(snap => {
+      const m = snap.val() || {}, out = {};
+      Object.keys(m).forEach(k => { if (m[k] && m[k].quit) out[k] = m[k]; });
+      return out;
+    }).catch(() => ({}));
+  },
+  /* 這一段收掉了：同名的牌桌如果還掛著這一段、而且一個人都不在，一起清掉（不動別人正在用的桌） */
+  closeCampTable(tableName, cid) {
+    if (!this.db || !tableName || !cid) return Promise.resolve();
+    const key = this.keyOf(tableName);
+    return this.db.ref('groups/' + key).once('value').then(snap => {
+      const g = snap.val();
+      if (!g || !g.campaign || g.campaign.id !== cid) return;
+      if (Object.keys(g.members || {}).length) return;
+      return this.db.ref('groups/' + key).remove();
+    }).catch(() => {});
   },
   publishGame(payload) {
     if (!this.groupKey) return Promise.reject(new Error('NOGROUP'));

@@ -81,13 +81,16 @@
         ".write": "auth != null && auth.uid === root.child('groups').child($g).child('host').val()"
       }
     },
-    "quits": {
+    "camps": {
       ".read": "auth != null",
       "$c": {
         ".validate": "$c.length <= 64",
-        "$uid": {
-          ".write": "auth != null && auth.uid === $uid",
-          ".validate": "!newData.exists() || (newData.hasChildren(['at']) && (!newData.child('name').exists() || newData.child('name').val().length <= 20))"
+        ".write": "auth != null && !newData.exists()",
+        "members": {
+          "$uid": {
+            ".write": "auth != null && (auth.uid === $uid || (!data.exists() && newData.child('stub').val() === true))",
+            ".validate": "!newData.exists() || (newData.hasChildren(['at']) && (!newData.child('name').exists() || newData.child('name').val().length <= 20))"
+          }
         }
       }
     },

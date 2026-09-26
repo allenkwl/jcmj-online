@@ -74,17 +74,28 @@ function toArr(x) { return Array.isArray(x) ? x.filter(Boolean) : Object.keys(x 
 function rosterOf(g) { return toArr(g && g.campaign && g.campaign.roster); }
 
 /* ── 退出＝刪掉這一段的存檔（2026-09-26 使用者：「刪除就是退出很合理」）──
-   刪除（或房間裡的「退出此牌局」）時，在 /quits/{戰役 id} 記一筆「我退出了」，
+   刪除（或房間裡的「退出此牌局」）時，在雲端的成員名單（/camps/{戰役 id}）標記「我退出了」，
    其他人之後重開這一桌就會把我從名冊拿掉（空位給新人或電腦守將）。
+   **全部成員都退出了**，這一段連同退出紀錄整個收掉，同名的空桌也清掉（使用者：「不要亂」）。
    當下沒網路、或規則還沒部署寫不進去：先排進待補送清單，之後每次進大廳再送一次。 */
 const PENDING_QUITS_KEY = 'jcmj_pending_quits';
-function pendingQuits() { try { return JSON.parse(localStorage.getItem(PENDING_QUITS_KEY) || '[]'); } catch (_) { return []; } }
+function pendingQuits() {
+  try {
+    // v1.38 排的是戰役 id 字串，之後改成 { cid, uids, table }
+    return (JSON.parse(localStorage.getItem(PENDING_QUITS_KEY) || '[]') || []).map(x => typeof x === 'string' ? { cid: x, uids: [], table: '' } : x);
+  } catch (_) { return []; }
+}
 function savePendingQuits(list) { try { localStorage.setItem(PENDING_QUITS_KEY, JSON.stringify(list)); } catch (_) {} }
-function markQuit(cid) {
+/* roster：自己手機上這一段的名冊（替還沒登記的成員補佔位用）；table：桌名（整段收掉時清同名空桌） */
+function markQuit(cid, roster, table) {
   if (!cid) return;
-  Net.markQuit(cid, myName).catch(() => {
-    const list = pendingQuits().filter(x => x !== cid);
-    list.push(cid);
+  const uids = toArr(roster).map(m => m.uid).filter(Boolean);
+  const item = { cid, uids, table: table || '' };
+  Net.markQuit(cid, myName, uids).then(r => {
+    if (r === 'closed') Net.closeCampTable(item.table, cid);
+  }).catch(() => {
+    const list = pendingQuits().filter(x => x.cid !== cid);
+    list.push(item);
     savePendingQuits(list);
   });
 }
@@ -92,7 +103,7 @@ function flushQuits() {
   const list = pendingQuits();
   if (!list.length) return;
   savePendingQuits([]);
-  list.forEach(markQuit);           // 還是失敗的會自己排回去
+  list.forEach(x => markQuit(x.cid, (x.uids || []).map(uid => ({ uid })), x.table));   // 還是失敗的會自己排回去
 }
 
 /* ── 小工具 ────────────────────────────────────────────── */
@@ -156,7 +167,7 @@ function renderLobby() {
         return;
       }
       slotsSave(OC().dropSlot(slots(), sl.id));
-      markQuit(sl.id);
+      markQuit(sl.id, sl.roster, sl.table);
       toast('已退出「' + (sl.table || '') + '」並刪除存檔 —— 其他人之後開這一桌就沒有你了');
       renderLobby();
     });
@@ -355,7 +366,7 @@ function quitCampaign() {
   Net.updateCampaign({ id: c.id, roster: OC().removeMember(rosterOf(g), Net.uid) })
     .then(() => {
       slotsSave(OC().dropSlot(slots(), c.id));
-      markQuit(c.id);
+      markQuit(c.id, rosterOf(g), cur && cur.displayName);
       toast('已退出「' + (cur ? cur.displayName : '') + '」，這一桌的進度已刪除');
       leave(false);
       renderLobby();
