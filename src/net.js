@@ -649,6 +649,16 @@ const Net = {
     if (!this._groupRef) return Promise.resolve();
     return this._groupRef.child('host').set(uid).catch(() => {});
   },
+  /* 一場打完、開桌的人自己不留：「誰留下」跟「開桌交給誰」**一次寫進去**。
+     ⚠️ 原本分兩次（setNext 再 setHost）：留下來的人先收到 next，當時 host 還不是自己 →
+        以為開桌的人會開下一場、而且把這個決定標成處理過；host 換過來時不再看第二次，
+        開桌的人已經走了，整桌卡住（2026-09-26 使用者：分封後有人離開，卡住不動了） */
+  setNextAndHost(next, uid) {
+    if (!this._groupRef) return Promise.resolve();
+    const up = { next: stripUndefined(next), host: uid };
+    up['members/' + uid + '/isHost'] = true;
+    return this._groupRef.update(up).catch(() => {});
+  },
   updateCampaign(campaign) {
     if (!this._groupRef) return Promise.resolve();
     return this._groupRef.child('campaign').set(stripUndefined(campaign)).catch(() => {});
