@@ -7,7 +7,8 @@
    遊戲裡只需要「播放」跟「跳過」。
 
    ── 跳過 ──
-   照小球貓電鐵的慣例：**A 或 Enter**（手把 A 也通）。
+   照小球貓電鐵的慣例：**A 或 Enter**（手把 A 也通），2026-09-26 加上空白鍵。
+   播放中其他按鍵一律攔下，不往後面的畫面傳（Esc 除外，那是老闆模式）。
    按鈕一直顯示在右下角，不是藏起來等人找。
    ⚠️ Esc 不接 —— 那是老闆模式。
 
@@ -113,9 +114,16 @@ function play(opts) {
   }
 
   function onKey(e) {
-    // 照電鐵的慣例：A 或 Enter 跳過。⚠️ Esc 不接，那是老闆模式。
-    if (e.key === 'Enter' || e.key === 'a' || e.key === 'A') {
-      e.preventDefault(); e.stopPropagation();
+    // ⚠️ Esc 不接、也不攔：那是老闆模式
+    if (e.key === 'Escape') return;
+    /* 序章播放中，按鍵**一律不往後面的畫面傳**。
+       原本只攔跳過鍵，其他鍵（空白、方向鍵）穿過去打到標題／選國畫面的焦點上 ——
+       玩家看著序章連按空白，背後已經依序按了開始征途 → 選國 → 強度 → 出兵，
+       序章還沒播完就發牌占卜了（2026-09-26 使用者）。 */
+    e.stopPropagation();
+    // 跳過：Enter、空白、A（照電鐵的慣例是 Enter／A；空白是玩家最直覺會按的）
+    if (e.key === 'Enter' || e.key === ' ' || e.key === 'a' || e.key === 'A') {
+      e.preventDefault();
       stop('skipped');
     }
   }
@@ -123,6 +131,8 @@ function play(opts) {
   stage.querySelector('#intro-skip').onclick = () => stop('skipped');
 
   stopNow = stop;
+  // 焦點馬上換到「跳過」—— 不然手把 A 還停在後面畫面原本的那顆鈕上（主程式的焦點清單播放中只給跳過鈕）
+  try { if (window.MJInput) window.MJInput.refresh(0); } catch (_) {}
   activate(from);
   raf = requestAnimationFrame(frame);
   return done;
