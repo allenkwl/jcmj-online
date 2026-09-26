@@ -241,7 +241,9 @@ const Net = {
   pruneGroup(key) {
     if (!this._pruning || this._pruning.has(key)) return;
     this._pruning.add(key);
-    this.db.ref('groups/' + key).remove().catch(() => this._pruning.delete(key));
+    this.db.ref('groups/' + key).remove()
+      .then(() => this.purgeGroupData(key))          // 過期的桌：附屬資料一起清
+      .catch(() => this._pruning.delete(key));
   },
 
   unwatchGroups() {
@@ -704,7 +706,7 @@ const Net = {
       const g = snap.val();
       if (!g || !g.campaign || g.campaign.id !== cid) return;
       if (Object.keys(g.members || {}).length) return;
-      return this.db.ref('groups/' + key).remove();
+      return this.db.ref('groups/' + key).remove().then(() => this.purgeGroupData(key));
     }).catch(() => {});
   },
   publishGame(payload) {
@@ -1106,6 +1108,22 @@ const Net = {
 
   disbandGroup(key) { return this.purgeGroup(key); },
 
+  /* 桌已經收掉（/groups/{桌} 刪了）之後，把那一桌散落的附屬資料一起清掉。
+     ⚠️ 麻將跟電鐵不一樣：電鐵的本機存檔一年才寫一次，Firebase 上的狀態是唯一的中途進度，所以刻意留著；
+        麻將每一場結束各台都存進自己的手機、重開同名的桌是開新的一場 —— 這些留著只是垃圾
+        （2026-09-26 實際比對：只剩 1 桌，states／hands／secret 卻各留了二十幾份）。
+     逐棵刪、各自吞錯：某一棵沒權限不影響其他的。桌又被人重開了（群組又在了）就不動 ——
+     規則也會擋（states／hands／secret 只有「桌不在」或群主才能寫）。
+     這裡只是盡量清；漏掉的（最後一個人直接關分頁、寫到一半）由 tools/db-janitor.py 比對補清。 */
+  purgeGroupData(key) {
+    if (!key || !this.db) return Promise.resolve();
+    return this.db.ref('groups/' + key).once('value').then(snap => {
+      if (snap.exists()) return;
+      return Promise.all(this.GROUP_NODES.filter(n => n !== 'groups')
+        .map(n => this.db.ref(n + '/' + key).remove().catch(() => {})));
+    }).catch(() => {});
+  },
+
   // 一般成員在選角階段離開 → 把整局拉回等待室重新來過：狀態退回 waiting，
   // 認領與準備標記全部清空。少了這一步，離開的人佔著的角色永遠等不到他回來，
   // 「全員都準備好」的門檻也再也湊不齊（tryFinalizeStart 只在有人按準備時才重算），
@@ -1164,7 +1182,8 @@ const Net = {
   // 先取消 onDisconnect 再手動刪自己，然後看看群組是不是空了；空了就把大廳節點收掉，
   // 免得列表裡留一堆沒人的空群組。
   //
-  // /states 底下的遊戲狀態刻意「不刪」：
+  // ⚠️ 下面這段是電鐵的理由，**麻將不適用**（2026-09-26 起最後一個人走時會清，見 purgeGroupData）。
+  // 電鐵：/states 底下的遊戲狀態刻意「不刪」：
   //  ‧ 最後一個人離開時通常是直接關分頁，這幾個連續的非同步寫入很可能只做到一半，
   //    留下刪一半的殘骸反而更糟。
   //  ‧ 本機存檔是每年三月底才寫回去的，萬一一局玩到七月就散會，四到七月的進度只存在
@@ -1205,7 +1224,8 @@ const Net = {
       }).catch(() => {}) : null)
       .then(() => meRef.remove().catch(() => {}))
       .then(() => groupRef.child('members').once('value'))
-      .then(snap => { if (!snap.exists()) return groupRef.remove().catch(() => {}); })
+      // 最後一個人走了：大廳節點收掉，附屬資料（states、hands、secret、cmds…）一起清
+      .then(snap => { if (!snap.exists()) return groupRef.remove().then(() => this.purgeGroupData(groupRef.key)).catch(() => {}); })
       .catch(() => {});
   },
 

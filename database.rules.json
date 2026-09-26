@@ -68,6 +68,7 @@
     "hands": {
       "$g": {
         ".validate": "$g.length <= 64",
+        ".write": "auth != null && !root.child('groups').child($g).exists()",
         "$uid": {
           ".read": "auth != null && auth.uid === $uid",
           ".write": "auth != null && (!root.child('groups').child($g).exists() || auth.uid === root.child('groups').child($g).child('host').val())"
@@ -78,7 +79,7 @@
       "$g": {
         ".validate": "$g.length <= 64",
         ".read": "auth != null && auth.uid === root.child('groups').child($g).child('host').val()",
-        ".write": "auth != null && auth.uid === root.child('groups').child($g).child('host').val()"
+        ".write": "auth != null && (auth.uid === root.child('groups').child($g).child('host').val() || !root.child('groups').child($g).exists())"
       }
     },
     "camps": {
