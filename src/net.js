@@ -651,6 +651,26 @@ const Net = {
     if (!this._groupRef) return Promise.resolve();
     return this._groupRef.child('campaign').set(stripUndefined(campaign)).catch(() => {});
   },
+  /* ── 退出紀錄：刪掉連線存檔＝退出那一段戰役（2026-09-26 使用者定案）──
+     /quits/{戰役 id}/{uid} = { at, name }。
+     牌桌（/groups）大家都走了就會被清掉，名冊存在各人手機裡 —— 要讓**其他人之後重開這一桌**
+     知道誰退出了，只能記在這個不會被清掉的地方。規則：每個人只能寫、刪自己那一筆。
+     markQuit 失敗（離線、規則還沒部署）時丟出錯誤，由大廳排進待補送的清單。 */
+  markQuit(cid, name) {
+    if (!this.db || !this.uid || !cid) return Promise.reject(new Error('NOAUTH'));
+    return this.db.ref('quits/' + cid + '/' + this.uid)
+      .set({ at: firebase.database.ServerValue.TIMESTAMP, name: String(name || '').slice(0, 20) });
+  },
+  /* 退出之後又用同一桌重新加入（當新人）：把自己那一筆清掉，免得下次重開又被當成退出 */
+  clearQuit(cid) {
+    if (!this.db || !this.uid || !cid) return Promise.resolve();
+    return this.db.ref('quits/' + cid + '/' + this.uid).remove().catch(() => {});
+  },
+  /* 這一段戰役誰退出了：{ uid: { at, name } }（讀不到就當沒有人退出） */
+  readQuits(cid) {
+    if (!this.db || !cid) return Promise.resolve({});
+    return this.db.ref('quits/' + cid).once('value').then(snap => snap.val() || {}).catch(() => ({}));
+  },
   publishGame(payload) {
     if (!this.groupKey) return Promise.reject(new Error('NOGROUP'));
     const g = this.groupKey, up = {};

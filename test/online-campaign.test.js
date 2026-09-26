@@ -100,6 +100,26 @@ console.log('── 結算：每台各自算要算出同一個答案 ──');
   eq(r3.report.map(x => x.gained), r1.report.map(x => x.gained), '帶不帶完整記錄，分封結果都一樣');
 }
 
+console.log('── 退出紀錄（刪存檔＝退出） ──');
+{
+  const roster = [
+    { uid: 'a', name: '小球貓', kingdom: 'qi', joinedAt: 1, conquered: ['chu'], matches: 3 },
+    { uid: 'b', name: '阿明', kingdom: 'chu', joinedAt: 2, conquered: [], matches: 3 },
+    { uid: 'c', name: '小華', kingdom: 'yan', joinedAt: 3, conquered: ['han'], matches: 3 },
+  ];
+  eq(OC.applyQuits(roster, { b: { at: 1, name: '阿明' } }).map(m => m.uid), ['a', 'c'], '刪了存檔的人從名冊拿掉');
+  eq(OC.applyQuits(roster, {}).length, 3, '沒有人退出：名冊不變');
+  eq(OC.applyQuits(roster, null).length, 3, '讀不到退出紀錄：當沒有人退出');
+  eq(OC.applyQuits(roster, { a: {}, b: {}, c: {} }).length, 0, '全部都退出了');
+  eq(OC.applyQuits(roster, { b: {} })[1].conquered, ['han'], '其他人的進度不動');
+  // 退出後又用同一桌加入：存著的名冊裡拿掉，在場時再當新人併進來
+  const r2 = OC.mergeRoster(OC.applyQuits(roster, { b: {} }),
+    [{ uid: 'b', name: '阿明', kingdom: 'chu', joinedAt: 9 }], 'cid');
+  const b = r2.find(m => m.uid === 'b');
+  ok(!!b, '退出後重新加入的人照樣進得來');
+  eq(b && (b.conquered || []).length, 0, '重新加入是新人：進度從零開始');
+}
+
 console.log('\n─────────────────────────');
 console.log(`通過 ${pass}　失敗 ${fail}`);
 if (fail) { fails.forEach(f => console.log('  ✗ ' + f)); process.exit(1); }

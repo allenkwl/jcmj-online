@@ -81,6 +81,16 @@
         ".write": "auth != null && auth.uid === root.child('groups').child($g).child('host').val()"
       }
     },
+    "quits": {
+      ".read": "auth != null",
+      "$c": {
+        ".validate": "$c.length <= 64",
+        "$uid": {
+          ".write": "auth != null && auth.uid === $uid",
+          ".validate": "!newData.exists() || (newData.hasChildren(['at']) && (!newData.child('name').exists() || newData.child('name').val().length <= 20))"
+        }
+      }
+    },
     "debug": {
       ".read": "auth != null",
       "$g": { ".write": "auth != null", ".validate": "$g.length <= 64" }

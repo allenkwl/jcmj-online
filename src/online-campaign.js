@@ -121,6 +121,14 @@ function canJoin(roster, uid) {
 
 function removeMember(roster, uid) { return (roster || []).filter(m => m.uid !== uid).map(cleanMember); }
 
+/* 套用退出紀錄（/quits/{戰役 id}）：刪了這一段存檔的人＝退出，從名冊拿掉。
+   ⚠️ 只套在**存著的名冊**上，在場成員之後才併進來（mergeRoster）——
+      退出後又用同一桌重新加入的人照樣進得來，只是當新人（他的存檔已經刪了，進度從零開始） */
+function applyQuits(roster, quits) {
+  const q = quits || {};
+  return (roster || []).filter(m => m && !q[m.uid]).map(cleanMember);
+}
+
 /* 本國不能重複。照加入順序，先來的保有自己的國；沒國或撞國的從空國抽。 */
 function assignKingdoms(roster, rng) {
   const used = new Set();
@@ -192,6 +200,6 @@ function makeRNG(seed) {
 return {
   KEY, MAX_SLOTS,
   loadSlots, saveSlots, findSlot, putSlot, dropSlot, isFull, newId, makeSlot,
-  snapshot, mergeRoster, canJoin, removeMember, assignKingdoms, buildSeats, settle, makeRNG,
+  snapshot, mergeRoster, canJoin, removeMember, applyQuits, assignKingdoms, buildSeats, settle, makeRNG,
 };
 });

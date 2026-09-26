@@ -73,6 +73,28 @@ function slotsSave(list) { try { OC() && OC().saveSlots(localStorage, list); } c
 function toArr(x) { return Array.isArray(x) ? x.filter(Boolean) : Object.keys(x || {}).map(k => x[k]).filter(Boolean); }
 function rosterOf(g) { return toArr(g && g.campaign && g.campaign.roster); }
 
+/* ── 退出＝刪掉這一段的存檔（2026-09-26 使用者：「刪除就是退出很合理」）──
+   刪除（或房間裡的「退出此牌局」）時，在 /quits/{戰役 id} 記一筆「我退出了」，
+   其他人之後重開這一桌就會把我從名冊拿掉（空位給新人或電腦守將）。
+   當下沒網路、或規則還沒部署寫不進去：先排進待補送清單，之後每次進大廳再送一次。 */
+const PENDING_QUITS_KEY = 'jcmj_pending_quits';
+function pendingQuits() { try { return JSON.parse(localStorage.getItem(PENDING_QUITS_KEY) || '[]'); } catch (_) { return []; } }
+function savePendingQuits(list) { try { localStorage.setItem(PENDING_QUITS_KEY, JSON.stringify(list)); } catch (_) {} }
+function markQuit(cid) {
+  if (!cid) return;
+  Net.markQuit(cid, myName).catch(() => {
+    const list = pendingQuits().filter(x => x !== cid);
+    list.push(cid);
+    savePendingQuits(list);
+  });
+}
+function flushQuits() {
+  const list = pendingQuits();
+  if (!list.length) return;
+  savePendingQuits([]);
+  list.forEach(markQuit);           // 還是失敗的會自己排回去
+}
+
 /* ── 小工具 ────────────────────────────────────────────── */
 function row(cls, html, onClick) {
   const el = document.createElement('button');
@@ -125,23 +147,24 @@ function renderLobby() {
     del.type = 'button';
     del.className = 'net-del';
     del.textContent = '刪除';
-    del.title = '刪除這一格存檔';
+    del.title = '刪除這一格存檔＝退出這一段戰役（其他人之後開這一桌就沒有你）';
     del.addEventListener('click', () => {
       if (!del.dataset.armed) {
         del.dataset.armed = '1';
-        del.textContent = '確定刪除？';
+        del.textContent = '確定退出？';
         setTimeout(() => { delete del.dataset.armed; del.textContent = '刪除'; }, 3000);
         return;
       }
       slotsSave(OC().dropSlot(slots(), sl.id));
-      toast('已刪除「' + (sl.table || '') + '」的存檔');
+      markQuit(sl.id);
+      toast('已退出「' + (sl.table || '') + '」並刪除存檔 —— 其他人之後開這一桌就沒有你了');
       renderLobby();
     });
     rbox.appendChild(del);
   });
   const full = list.length >= (OC() ? OC().MAX_SLOTS : 10);
   byId('lobby-recent-wrap').querySelector('.net-label').textContent =
-    '繼續之前的牌桌（連線存檔 ' + list.length + ' / ' + (OC() ? OC().MAX_SLOTS : 10) + '）' + (full ? '　已滿，要開新桌請先刪一格' : '');
+    '繼續之前的牌桌（連線存檔 ' + list.length + ' / ' + (OC() ? OC().MAX_SLOTS : 10) + '）' + (full ? '　已滿，要開新桌請先刪一格' : '　刪除＝退出那一段');
 
   // 現有群組（由 watchGroups 持續更新）
   byId('lobby-groups-empty').textContent = '搜尋中⋯';
@@ -191,7 +214,15 @@ function aiLevelNow() {
 
 /* 用存檔格重開：同一個桌名、同一段戰役（序號與名冊一起帶上去） */
 function doResume(sl) {
-  return openTable(sl.table, { aiLevel: aiLevelNow(), campaign: { id: sl.id, roster: toArr(sl.roster) } });
+  // 先看這一段有誰退出了（刪了存檔的人），從名冊拿掉再開桌；自己的存檔也跟著更新
+  return Net.readQuits(sl.id).then(q => {
+    const roster = OC() ? OC().applyQuits(toArr(sl.roster), q) : toArr(sl.roster);
+    if (OC() && roster.length !== toArr(sl.roster).length) {
+      const s2 = OC().findSlot(slots(), sl.id);
+      if (s2) slotsSave(OC().putSlot(slots(), Object.assign({}, s2, { roster }), s2.updatedAt || Date.now()));
+    }
+    return openTable(sl.table, { aiLevel: aiLevelNow(), campaign: { id: sl.id, roster } });
+  });
 }
 
 function slotsFullMsg() { toast('連線存檔已滿 ' + (OC() ? OC().MAX_SLOTS : 10) + ' 格，要開新的一段請先在「繼續之前的牌桌」刪掉一格'); }
@@ -324,6 +355,7 @@ function quitCampaign() {
   Net.updateCampaign({ id: c.id, roster: OC().removeMember(rosterOf(g), Net.uid) })
     .then(() => {
       slotsSave(OC().dropSlot(slots(), c.id));
+      markQuit(c.id);
       toast('已退出「' + (cur ? cur.displayName : '') + '」，這一桌的進度已刪除');
       leave(false);
       renderLobby();
@@ -461,6 +493,7 @@ function init(options) {
 function open() {
   if (!Net.init()) return Promise.reject(new Error('NOFIREBASE'));
   return Net.signIn().then(() => {
+    flushQuits();
     renderLobby();
     screen('net-lobby');
     Net.watchConnection(ok => show('net-offline', !ok));
