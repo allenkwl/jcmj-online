@@ -249,7 +249,10 @@ function finishCreate(name) {
 function openTable(name, extra) {
   // ⚠️ 不要直接 createGroup：同名的空殼（上次大家關掉分頁留下的）會讓它永遠回 EXISTS
   return Net.reopenGroup(name, myName, extra)
-    .then(r => { rememberGroup(r.displayName); enterRoom(r.key, r.displayName, r.isHost); })
+    .then(r => {
+      rememberGroup(r.displayName); enterRoom(r.key, r.displayName, r.isHost);
+      if (r.isHost) Net.sweepOrphans();          // 開桌的人順手清別桌的殘留資料（一天一次）
+    })
     .catch(e => {
       const m = e && e.message;
       if (m === 'STARTED') toast('這一桌還有人在打，換一個名字');

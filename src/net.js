@@ -1108,6 +1108,46 @@ const Net = {
 
   disbandGroup(key) { return this.purgeGroup(key); },
 
+  /* 開桌時順手清垃圾（2026-09-26 使用者：「群主開桌時就幫忙清垃圾，可行嗎？」）。
+     ‧ 找「附屬資料還在、桌卻不在」的桌名：用 REST 的 shallow 只抓名字不抓內容，不耗流量。
+       hands／secret 規則上列不出清單（只有本人／群主讀得到）—— 但 states 跟它們每一局是一起寫的，
+       所以拿 states、cmds 的名字當線索，交給 purgeGroupData 整桌清（刪之前它會再確認一次桌真的不在，
+       規則也擋「桌還在就不准刪」，不會誤刪別人正要開的桌）
+     ‧ /camps 裡全部人都退出、卻沒被收掉的（markQuit 寫到一半斷線）也收掉
+     ‧ 每台一天最多做一次（localStorage 記時間）。失敗就算了，tools/db-janitor.py 可以人工補清 */
+  SWEEP_KEY: 'jcmj_sweep_at',
+  SWEEP_EVERY_MS: 24 * 60 * 60 * 1000,
+  sweepOrphans() {
+    if (!this.db || !this.uid) return Promise.resolve(0);
+    try {
+      const last = +localStorage.getItem(this.SWEEP_KEY) || 0;
+      if (Date.now() - last < this.SWEEP_EVERY_MS) return Promise.resolve(0);
+      localStorage.setItem(this.SWEEP_KEY, String(Date.now()));
+    } catch (_) { return Promise.resolve(0); }
+    const base = FIREBASE_CONFIG.databaseURL;
+    const user = firebase.auth().currentUser;
+    if (!user) return Promise.resolve(0);
+    return user.getIdToken().then(tok => {
+      const shallow = p => fetch(base + '/' + p + '.json?shallow=true&auth=' + encodeURIComponent(tok))
+        .then(r => (r.ok ? r.json() : null)).then(j => j || {}).catch(() => ({}));
+      return Promise.all([shallow('groups'), shallow('states'), shallow('cmds')]);
+    }).then(([groups, states, cmds]) => {
+      const orphans = Object.keys(Object.assign({}, states, cmds)).filter(k => !groups[k]);
+      return Promise.all(orphans.map(k => this.purgeGroupData(k))).then(() => orphans.length);
+    }).then(n => this.db.ref('camps').once('value').then(snap => {
+      const all = snap.val() || {};
+      const dead = Object.keys(all).filter(c => {
+        const m = (all[c] && all[c].members) || {};
+        const ids = Object.keys(m);
+        return !ids.length || ids.every(u => m[u] && m[u].quit);
+      });
+      return Promise.all(dead.map(c => this.db.ref('camps/' + c).remove().catch(() => {}))).then(() => n + dead.length);
+    }).catch(() => n)).then(n => {
+      if (n) console.info('[net] 開桌順手清掉 ' + n + ' 筆殘留資料');
+      return n;
+    }).catch(() => 0);
+  },
+
   /* 桌已經收掉（/groups/{桌} 刪了）之後，把那一桌散落的附屬資料一起清掉。
      ⚠️ 麻將跟電鐵不一樣：電鐵的本機存檔一年才寫一次，Firebase 上的狀態是唯一的中途進度，所以刻意留著；
         麻將每一場結束各台都存進自己的手機、重開同名的桌是開新的一場 —— 這些留著只是垃圾
