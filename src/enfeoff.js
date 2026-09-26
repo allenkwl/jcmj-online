@@ -97,6 +97,11 @@ const CSS = `
 #enf-ov .enf-cap.in{animation:enfCap .4s ease both;}
 @keyframes enfCap{from{opacity:0;transform:translateY(8px)}to{opacity:1}}
 #enf-ov .enf-hint{font-size:10px;color:rgba(232,220,192,.4);letter-spacing:.2em;}
+#enf-ov .enf-ok{display:none;font:inherit;font-size:16px;font-weight:700;letter-spacing:.12em;padding:8px 30px;border-radius:8px;cursor:pointer;
+  background:linear-gradient(#caa14a,#9c7527);color:#20160a;border:1px solid #e0c07a;box-shadow:0 0 0 2px rgba(255,215,102,.55),0 4px 16px rgba(0,0,0,.6);}
+#enf-ov.wait .enf-ok{display:inline-block;animation:enfOkIn .35s ease both;}
+#enf-ov.wait .enf-hint{display:none;}
+@keyframes enfOkIn{from{opacity:0;transform:translateY(6px)}to{opacity:1;transform:none}}
 `;
 
 /* ── 音效（使用者：「分封領地是不是也該有 BGM？或音效」）──────────────
@@ -231,7 +236,8 @@ function ensureDom() {
   // 標題是魏碑做成的圖（assets/titles/，tools/build-titles.py）—— 魏碑是 macOS 字型，不能當網頁字型
   ov.innerHTML = '<div class="enf-title"><img class="ttl" src="assets/titles/enfeoff.webp" alt="分封領地" style="height:1.25em;width:auto;vertical-align:middle"></div><div class="enf-sub">— 打敗誰，就拿誰的地 —</div>'
     + '<div class="enf-map"><img class="bg" src="' + MAP_URL + '" alt=""></div>'
-    + '<div class="enf-cap"></div><div class="enf-hint">點一下跳到結果</div>';
+    + '<div class="enf-cap"></div><div class="enf-hint">點一下跳到結果</div>'
+    + '<button type="button" class="enf-ok">確認　▶</button>';
   document.body.appendChild(ov);
   mapEl = ov.querySelector('.enf-map');
   capEl = ov.querySelector('.enf-cap');
@@ -395,7 +401,11 @@ function summaryHtml(awards) {
     : '<span class="none">此戰無人得地</span>';
 }
 
-/* 播一次。回傳 Promise：播完、或點一下跳到結果之後再停 1.5 秒才 resolve */
+/* 播一次。回傳 Promise：播完（或點一下跳到結果）之後**停在最後的地圖，等玩家按「確認」**才 resolve。
+   ⚠️ 原本是播完停 2.2 秒就自己關掉 —— 分封的結果一閃就過，玩家還沒看清楚誰拿了哪一國
+   （2026-09-26 使用者：「分封領地後要停下來等玩家按確認」）。
+   確認：點按鈕、Enter、空白鍵、A（手把 A 由主程式的焦點系統轉成點按鈕）。
+   o.confirm === false 時照舊：停 o.holdMs（預設 2200ms）自己關 */
 function play(o) {
   ensureDom();
   stop();
@@ -408,17 +418,39 @@ function play(o) {
   ov.classList.add('show');
   bgmPause();
 
+  ov.classList.remove('wait');
   return new Promise(resolve => {
-    let over = false;
+    let over = false, closed = false;
+    const close = () => {
+      if (closed) return;
+      closed = true;
+      document.removeEventListener('keydown', onKey, true);
+      ov.classList.remove('show', 'wait');
+      stop(); bgmResume(); resolve();
+    };
+    const onKey = e => {
+      if (!ov.classList.contains('wait')) return;
+      if (e.key === 'Enter' || e.key === ' ' || e.key === 'a' || e.key === 'A') {
+        e.preventDefault(); e.stopPropagation(); close();
+      }
+    };
     const end = () => {
       if (over) return;
       over = true;
       finishing = null;
-      later(() => { ov.classList.remove('show'); stop(); bgmResume(); resolve(); }, o.holdMs != null ? o.holdMs : 2200);
+      if (o.confirm === false) { later(close, o.holdMs != null ? o.holdMs : 2200); return; }
+      // 等玩家確認。稍等一下才亮按鈕，免得「點一下跳到結果」那一下連點直接把結果關掉
+      later(() => {
+        ov.classList.add('wait');
+        const b = ov.querySelector('.enf-ok');
+        b.onclick = e => { e.stopPropagation(); close(); };
+        document.addEventListener('keydown', onKey, true);
+        try { if (window.MJInput) window.MJInput.refresh(0); } catch (_) {}
+      }, 700);
     };
     // 跳到結果：直接畫出最後的樣子
     finishing = () => {
-      if (over) { stop(); ov.classList.remove('show'); bgmResume(); resolve(); return; }
+      if (over) return;            // 已經播完：只能按「確認」關（不是點畫面任何地方）
       stop();
       awards.forEach(a => {
         const l = lords.find(x => x.name === a.name);
