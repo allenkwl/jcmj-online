@@ -109,13 +109,16 @@ function renderMelds(container, melds, opts) {
 
 /* ── 牌河 ──────────────────────────────────────────────────
    被鳴走的那張不畫（它在別人的副露裡），用 visibleDiscards 濾掉。
-   一列六張，這是雀魂／天鳳的慣例。                               */
+   一列幾張看 layout 的 river.perRow。
+   ⚠️ 這裡**刻意不設列數上限**：maxRows 只是給尺寸計算用的預期值，
+      真的多出一列也要照畫。少畫一張棄牌是會讓人算錯牌的，寧可版面擠一點
+      （擠到的話 fitSizes 的收縮迴路會把牌縮小，不會溢出去壓到手牌）。   */
 function renderRiver(container, hand, seat, pos) {
   clear(container);
   const tiles = S.visibleDiscards(hand, seat);
   const rot = ROT[pos];
   const sz = SIZE.river;
-  const perRow = RIVER_PER_ROW;
+  const perRow = RIVER_PER_ROW_OF();
   for (let i = 0; i < tiles.length; i += perRow) {
     const row = el('div', 'river-row', container);
     tiles.slice(i, i + perRow).forEach(t => {
@@ -371,11 +374,16 @@ const RIVER_RATIO = 33 / 24;
 
 /* 這幾個是 API 的一部分（別的模組與測試在讀），維持匯出。
    值改成從 layout 讀 —— 編輯器改完不用重載模組。 */
-const RIVER_PER_ROW = tune().river.perRow;   // 六張一列，雀魂／天鳳的慣例
-const RIVER_MAX_ROWS = tune().river.maxRows; // 一家最多 18 張棄牌
+/* ⚠️ 這兩個一定要用 getter，不能在載入時取值。寫成 const 的話，用對戰畫面編輯器
+   改 river.perRow／maxRows 完全沒反應（同一份 LIMITS 是 getter，改 min/max 有效、
+   改這兩個沒效），看起來會像編輯器壞掉。 */
+const RIVER_PER_ROW_OF = () => tune().river.perRow;
+const RIVER_MAX_ROWS_OF = () => tune().river.maxRows;
 const LIMITS = {
-  own:   { get min() { return tune().own.min; },   get max() { return tune().own.max; },   ratio: RATIO },
-  river: { get min() { return tune().river.min; }, get max() { return tune().river.max; }, ratio: RIVER_RATIO },
+  own:   { get min() { return tune().own.min; },   get max() { return tune().own.max; },
+           get soft() { return tune().own.soft || tune().own.min; },   ratio: RATIO },
+  river: { get min() { return tune().river.min; }, get max() { return tune().river.max; },
+           get soft() { return tune().river.soft || tune().river.min; }, ratio: RIVER_RATIO },
   opp:   { get min() { return tune().opp.min; },   get max() { return tune().opp.max; },   ratio: RATIO },
 };
 
@@ -399,13 +407,13 @@ let _ownShrink = 0;
    累積到三列才需要縮到最小。取四家的最大值而不是各自算 ——
    四家的河尺寸不一致會很難讀。                                   */
 function riverRowsInUse(hand) {
-  if (!hand) return RIVER_MAX_ROWS;
+  if (!hand) return RIVER_MAX_ROWS_OF();
   let rows = 1;
   for (let i = 0; i < SEATS; i++) {
     const n = S.visibleDiscards(hand, i).length;
-    rows = Math.max(rows, Math.ceil(n / RIVER_PER_ROW) || 1);
+    rows = Math.max(rows, Math.ceil(n / RIVER_PER_ROW_OF()) || 1);
   }
-  return Math.min(RIVER_MAX_ROWS, rows);
+  return Math.min(RIVER_MAX_ROWS_OF(), rows);
 }
 
 function fitSizes(dom, hand) {
@@ -417,31 +425,43 @@ function fitSizes(dom, hand) {
   // 自己的手牌：受寬度（14 張要排得下）與高度（不能吃掉整個牌桌）雙重限制
   const ownByWidth = Math.floor((mid.clientWidth - 8) / 14) - 2;
   const ownByHeight = Math.floor(mid.clientHeight * tune().own.maxHeightPct / LIMITS.own.ratio);
-  const ownW = clamp(Math.min(ownByWidth, ownByHeight) - _ownShrink,
-                     LIMITS.own.min, LIMITS.own.max);
+  const ownBase = Math.min(ownByWidth, ownByHeight);
+  const ownW = clamp(ownBase - _ownShrink, LIMITS.own.min, LIMITS.own.max);
   SIZE.own.w = ownW;
   SIZE.own.h = Math.round(ownW * LIMITS.own.ratio);
   SIZE.ownMeld.w = Math.round(ownW * tune().own.meldOfHand);
   SIZE.ownMeld.h = Math.round(SIZE.ownMeld.w * LIMITS.own.ratio);
 
-  // 牌河：照**實際用到的列數**算，不是照上限三列算 ——
-  // 開局只有一列的時候把整個高度預算塞給那一列，牌就看得清楚；
-  // 打到三列才縮到最小。
+  // 牌河：照**實際用到的列數**算，不是照上限算 ——
+  // 開局只有一列的時候把整個高度預算塞給那一列，牌就看得清楚。
   const rows = riverRowsInUse(hand);
+  const perRow = RIVER_PER_ROW_OF();
 
-  // 高度：中央區扣掉對家區、自己區與中央資訊牌，平分給上下各 rows 列
+  /* #center 是 3×3：左家｜舞台｜右家 ／ 對家 ／ 自己。兩個方向的算式其實一樣：
+       高度 = 對家(rows 列) + max(舞台, 左右家一欄的長度) + 自己(rows 列)
+       寬度 = 左家(rows 欄) + max(舞台, 上下家一列的長度) + 右家(rows 欄)
+     左右兩家的牌是轉 90° 的，一張佔「h 寬 × w 高」，所以一欄 perRow 張＝perRow×w 高；
+     上下兩家一列 perRow 張＝perRow×w 寬。兩邊的 rows 那一項都是 rows×h。
+
+     ⚠️ 舊的算式把舞台當成**固定扣掉**的一塊，又漏算了左右兩家那一欄有多長
+     （六張一列時剛好 6 張 ≈ 6 列，矇對了；改成九張一列就差很多），
+     於是第一次估出來的牌太大，全靠下面的收縮迴路一輪一輪退 —— 退到上限 14 輪
+     還沒收完就會停在中途，或退過頭把牌縮得比需要的更小。 */
   const topH = dom.zones.top.wrap ? dom.zones.top.wrap.offsetHeight : 0;
   const botH = dom.zones.bottom.wrap ? dom.zones.bottom.wrap.offsetHeight : 0;
-  // 中央留給動畫的方形空間 —— 場況資訊已經移到上方資訊列，
-  // 這裡量的是那塊**刻意空著**的舞台，牌河不能吃掉它
+  // 中央那塊**刻意空著**給動畫的舞台，牌河不能吃掉它
   const infoH = dom.centerStage ? dom.centerStage.offsetHeight : 82;
-  const hAvail = mid.clientHeight - topH - botH - infoH - 22;
-  const rvByHeight = Math.floor(hAvail / (rows * 2)) - 1;
-
-  // 寬度：左右兩家各 rows 欄，加上中央資訊牌要塞得進中央區
   const infoW = dom.centerStage ? dom.centerStage.offsetWidth : 150;
-  const wLeft = mid.clientWidth - infoW - 24;
-  const rvByWidth = Math.floor(wLeft / (rows * 2) * LIMITS.river.ratio);
+
+  /* 解 2·rows·h + max(info, perRow·h/ratio) ≤ avail 的最大 h。
+     左式對 h 單調遞增，所以先假設牌河那一項比舞台大，不成立再換另一段。 */
+  const fitRiver = (avail, info) => {
+    const a = 2 * rows, b = perRow / LIMITS.river.ratio;
+    const h = avail / (a + b);
+    return (b * h >= info) ? h : (avail - info) / a;
+  };
+  const rvByHeight = Math.floor(fitRiver(mid.clientHeight - topH - botH - 22, infoH));
+  const rvByWidth  = Math.floor(fitRiver(mid.clientWidth - 24, infoW));
 
   let riverH = clamp(Math.min(rvByHeight, rvByWidth),
                      LIMITS.river.min, LIMITS.river.max);
@@ -462,6 +482,7 @@ function fitSizes(dom, hand) {
     if (wide > 1) _ownShrink += Math.max(1, Math.ceil(wide / 14));
   }
 
+  let pressed = false;   // 這一輪量到還在溢出 —— 就算收縮量被夾住沒動，也要再跑一輪換下一段
   const c = dom.center;
   if (c) {
     // ⚠️ 退的量要照**實際超出多少**算，不能每輪固定退 2px。
@@ -476,13 +497,37 @@ function fitSizes(dom, hand) {
     if (lord) lord.style.display = 'none';
     const deficit = Math.max(c.scrollHeight - c.clientHeight, c.scrollWidth - c.clientWidth);
     if (lord) lord.style.display = lordDisp;
+    /* 誰來讓：**兩段式**，不是一路壓牌河壓到底。
+         1. 牌河讓到 soft（還讀得舒服的那一階）
+         2. 換手牌讓到它的 soft（還按得到的那一階）
+         3. 還是不夠 → 牌河讓到硬下限 min
+         4. 都到底了 → 手牌讓到硬下限 min
+
+       原本只有第 1、4 兩段：牌河一路被壓到 min 才肯動手牌，所以只要打到中盤、
+       四家的河一多，棄牌就永遠是最小的那一號，手牌卻還留著五十幾像素
+       （使用者 2026-09-29：「手機上的棄牌太小」）。實測 932×430、四家河全滿：
+       棄牌 9px→15px，手牌 50px→32px。iPhone SE 這種真的沒有餘裕的尺寸會自己
+       退回原本的行為（兩邊都到硬下限），不會因為這一段而溢出。
+
+       deficit 是高度，換算成牌寬要除長寬比。 */
     if (deficit > 1) {
-      if (riverH - _riverShrink > LIMITS.river.min) {
-        _riverShrink += Math.max(2, Math.ceil(deficit / Math.max(1, rows * 2)));
-      } else {
-        // 牌河縮到底了 → 換自己的手牌讓。deficit 是高度，換算成牌寬要除長寬比
-        _ownShrink += Math.max(1, Math.ceil(deficit / LIMITS.own.ratio));
-      }
+      pressed = true;
+      const riverNow = riverH - _riverShrink;
+      /* ⚠️ 每一段都要**夾住**，不能讓單次的收縮量一口氣跳過這一段的地板。
+         少了這個夾制，第一次的 deficit 只要夠大，牌河就從估出來的 22px 直接砸到
+         硬下限 12px —— 第二段「換手牌讓」永遠輪不到，結果跟舊行為一模一樣。 */
+      const cutRiver = floor => {
+        const step = Math.max(2, Math.ceil(deficit / Math.max(1, rows * 2)));
+        _riverShrink = Math.min(_riverShrink + step, Math.max(0, riverH - floor));
+      };
+      const cutOwn = floor => {
+        const step = Math.max(1, Math.ceil(deficit / LIMITS.own.ratio));
+        _ownShrink = Math.min(_ownShrink + step, Math.max(0, ownBase - floor));
+      };
+      if (riverNow > LIMITS.river.soft) cutRiver(LIMITS.river.soft);
+      else if (ownW > LIMITS.own.soft) cutOwn(LIMITS.own.soft);
+      else if (riverNow > LIMITS.river.min) cutRiver(LIMITS.river.min);
+      else cutOwn(LIMITS.own.min);
     }
   }
   riverH = Math.max(LIMITS.river.min, riverH - _riverShrink);
@@ -516,7 +561,7 @@ function fitSizes(dom, hand) {
      實測：牌河全滿又沒人副露時，手牌停在 84px、橫向擠出 46px 不動。
      所以只要這一輪動過收縮量，就得再跑一輪。 */
   const changed = before !== (SIZE.own.w + ',' + SIZE.river.h);
-  return changed || shrinkBefore !== (_ownShrink + '/' + _riverShrink);
+  return changed || pressed || shrinkBefore !== (_ownShrink + '/' + _riverShrink);
 }
 
 /* ── 攤牌 ──────────────────────────────────────────────────
@@ -618,7 +663,9 @@ function paint(dom, match, ui, mySeat) {
 
 return {
   SIZE, POS, ROT, seatAt, fitSizes, riverRowsInUse,
-  RIVER_PER_ROW, RIVER_MAX_ROWS, LIMITS,
+  get RIVER_PER_ROW() { return RIVER_PER_ROW_OF(); },
+  get RIVER_MAX_ROWS() { return RIVER_MAX_ROWS_OF(); },
+  LIMITS,
   renderRow, renderMelds, renderRiver, renderNameplate, renderCenterInfo, renderCenterLord,
   revealedOf,
   renderSelfInfo,
