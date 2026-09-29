@@ -86,5 +86,10 @@ console.log('── 功業簿 ──');
   eq(d.fame.length, 0, '玩家自己刪');
 }
 
-console.log(`\n${pass} 通過，${fail} 失敗`);
+/* ⚠️ 收尾格式要跟其他測試一致 —— tools/run-tests.sh 是靠
+   「開頭是『通過 』的那一行」抓項數、靠「全部通過」判定成敗。
+   這支原本寫成 `36 通過，0 失敗`，腳本抓不到，明明全過卻把整包判成失敗。
+   假警報比沒測試更糟：會訓練人忽略紅字。 */
+console.log(`\n通過 ${pass}　失敗 ${fail}`);
 if (fail) { fails.forEach(f => console.log('  ✗ ' + f)); process.exit(1); }
+console.log('全部通過 ✓');

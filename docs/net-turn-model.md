@@ -138,10 +138,15 @@
 
 ## 七、還沒做
 
-- [ ] 網路層：群主把狀態分寫到 `/states`、`/hands`、`/secret`；用戶端送動作、讀自己的節點
-- [ ] `mj4.html` 的宣告視窗改成讀 `selfResponse` 算出來的選項（現在讀 `window.eligible`）
-- [ ] `hands`／`secret` 的規則寫進 `database.rules.json`（專案裡已有這份規則檔，跟線上實測一致），再部署到 Firebase
-- [ ] 收緊現有十個路徑的寫入權（`/token` 最要緊）
+（2026-09-29 複查：前四項在 v1.0x–v1.4x 之間陸續做完了，這份清單先前沒跟著更新。）
+
+- [x] 網路層：群主把狀態分寫到 `/states`、`/hands`、`/secret`；用戶端送動作、讀自己的節點
+- [x] 宣告視窗改成讀 `selfResponse` 算出來的選項
+      （檔名也從 `mj4.html` 改成 `戰國麻將線上vX.XX.html`）
+- [x] `hands`／`secret` 的規則寫進 `database.rules.json` 並部署
+      —— 2026-09-29 用匿名 token 實測線上：讀別人的 `/hands`、非群主讀 `/secret`
+      都回 `Permission denied`
+- [ ] **收緊現有十個路徑的寫入權（`/token` 最要緊）** ← 唯一還沒做的
 - [x] `/secret` 加進 `GROUP_NODES`
 
 ## 附錄：Firebase 現況實測（2026-09-23）
