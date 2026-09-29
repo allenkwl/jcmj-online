@@ -516,6 +516,14 @@ const Net = {
       }));
       list.sort((a, b) => (b.isHost ? 1 : 0) - (a.isHost ? 1 : 0));
       this.hostId = g.host || null;   // token 要交給電腦回合的代跑者時會用到（見 rules 的 handOffToken）
+      /* 群主是誰以 Firebase 那份為準（同 readHostId 的說明）。本機的 isHost 原本只在
+         建群、takeHost 時設過 —— 換過群主之後，新群主這台的 Net.isHost 還是 false，
+         斷線補寫（_watchRejoin）會把自己的 isHost 寫回 false；被換掉的那台則相反，
+         一直以為自己還是群主。 */
+      if (g.host) {
+        this.isHost = (g.host === this.clientId);
+        if (this._meData) this._meData.isHost = this.isHost;
+      }
       cb({status: g.status, name: g.displayName || this.groupKey, members: list,
           host: g.host || null, aiLevel: g.aiLevel || 2, gameId: g.gameId || null,
           campaign: g.campaign || null, next: g.next || null});   // aiLevel 是建房時定案的，房間畫面要顯示
@@ -1083,14 +1091,25 @@ const Net = {
   // Net.isHost）。用 transaction 是因為好幾台裝置的成員名單監看幾乎會同時發現
   // 「群主不在了」，只讓其中一次真的寫得進去；其餘幾次會在 cur 已經不是舊群主時
   // 自動放棄（transaction 發現條件不成立就中止，不會覆寫別人剛換好的結果）。
-  maybeReassignHost(members, oldHostId) {
-    if (!this._groupRef) return;
-    const ids = Object.keys(members || {});
-    if (!ids.length) return;
+  //
+  // ⚠️ memberList 是 **watchRoom 回來的那個陣列**（每筆 {id, joinedAt, ...}），
+  //    不是以 id 為鍵的物件 —— 這支以前收物件，唯一的呼叫端卻只拿得到陣列。
+  maybeReassignHost(memberList, oldHostId) {
+    if (!this._groupRef || !oldHostId) return;
+    /* 遞補順序＝加入順序（joinedAt）。跟 leaveGroup（自己按離開）那條路、跟牌局中的
+       netSuccessor（座位順序就是開局時照 joinedAt 排的）同一套規則。
+       原本是從成員名單裡隨機挑一個：每台算出來的「該換誰」都不一樣，誰的 transaction
+       先到就是誰，結果無法預期；而且沒把斷線的那個人排除，還可能挑回他自己。 */
+    const rest = (memberList || []).filter(m => m && m.id && m.id !== oldHostId);
+    if (!rest.length) return;
+    const next = rest.sort((a, b) => (a.joinedAt || 0) - (b.joinedAt || 0))[0].id;
     this._groupRef.child('host').transaction(cur => {
       if (cur !== oldHostId) return undefined;   // 群主其實還在，或已經被別台換過了
-      return ids[Math.floor(Math.random() * ids.length)];
-    });
+      return next;
+    }).then(res => {
+      // 名單上的「開桌」標記也要跟著走，不然房間畫面上會一個開桌的人都沒有
+      if (res.committed) this._groupRef.child('members/' + next + '/isHost').set(true).catch(() => {});
+    }).catch(() => {});
   },
 
   // ── 還沒真的開始玩之前，有人離開的兩種收拾方式 ──

@@ -192,7 +192,8 @@ if (save.conquered.length > 5) → 統一天下
 | 斷線偵測 | `onDisconnect` 自動清節點 + 存活探測 |
 | 接手 | 暫停 → **群主**決定要不要讓電腦接手 |
 | 保留座位 | 座位加 `away` 標記而不是刪認領，人回來清掉就接回去 |
-| 群主也斷線 | `maybeReassignHost` 用 transaction 換人 |
+| 群主也斷線（牌局中） | `netTryTakeover`：依座位順序遞補，`Net.takeHost` 用 transaction 搶 |
+| 群主也斷線（等待室） | `Net.maybeReassignHost`：依 `joinedAt` 交給最早加入的那位，一樣用 transaction |
 
 **接手用的機器已經有了** —— 自動打牌（`mj4.html` 的 `autoStep()`）就是同一套。
 差別只在自動打牌僅於聽牌時接手（沒聽牌時代替玩家決定做什麼牌是不對的），

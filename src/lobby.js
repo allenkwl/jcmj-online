@@ -463,16 +463,47 @@ function startWatching() {
   watching = true;
   Net.watchRoom(g => {
     // 牌局中：成員進出（斷線、連回來、換群主）交給遊戲處理，大廳畫面不動
-    if (cur && cur.entered) { if (cfg.onRoom) cfg.onRoom(g); return; }
+    if (cur && cur.entered) { cancelHostWatch(); if (cfg.onRoom) cfg.onRoom(g); return; }
     if (!g) { leave(true); return; }          // 群組沒了
     // 開局只進一次 —— 房間資料之後每變一次（有人斷線、改名）都會再觸發，不擋就會重複開局
     if (g.status === 'started') { if (!cur.entered) enterGame(g); return; }
+    watchHostGone(g);
     renderRoom(g);
   });
 }
 
+/* ── 開桌的人在等待室斷線 ──
+   他按「離開」是 Net.leaveGroup 收拾的（那條路自己會交棒）；這裡管的是**沒按就不見了**
+   （關分頁、斷網、當機）：onDisconnect 只刪他的成員節點，groups/host 還指著他，
+   房間裡剩下的人一個都按不到「開始牌局」，只能各自退出重開一桌。
+   等 10 秒再換，跟牌局中換群主同一個緩衝（NET_GRACE_MS）—— 網路瞬斷的人會自己補寫回
+   成員名單（Net._watchRejoin），不給這段時間就會把人家踢下開桌位。
+   每台都會跑這段，真正寫進去的只有一台（Net.maybeReassignHost 用 transaction）。 */
+const HOST_GRACE_MS = 10000;
+let hostGoneTimer = null;
+
+function cancelHostWatch() {
+  if (hostGoneTimer) { clearTimeout(hostGoneTimer); hostGoneTimer = null; }
+}
+
+function watchHostGone(g) {
+  const gone = g.host && !(g.members || []).some(m => m.id === g.host);
+  if (!gone) { cancelHostWatch(); return; }
+  if (hostGoneTimer) return;      // 已經在等了；房間資料每變動一次就重新計時的話永遠等不到
+  const oldHost = g.host;
+  hostGoneTimer = setTimeout(() => {
+    hostGoneTimer = null;
+    const last = cur && cur.last;
+    // 這 10 秒裡他連回來了、別台已經換過、或我自己已經離開這桌 → 不用動
+    if (!last || last.host !== oldHost) return;
+    if ((last.members || []).some(m => m.id === oldHost)) return;
+    Net.maybeReassignHost(last.members || [], oldHost);
+  }, HOST_GRACE_MS);
+}
+
 function enterGame(g) {
   cur.entered = true;
+  cancelHostWatch();
   cur.ready = false;
   Net.updateMyReady(false);
   const ctx = {
@@ -490,6 +521,7 @@ function enterGame(g) {
 
 function leave(silent) {
   Net.unwatchRoom();
+  cancelHostWatch();
   watching = false;
   Net.leaveGroup().catch(() => {});
   cur = null;
