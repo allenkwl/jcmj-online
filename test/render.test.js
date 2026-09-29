@@ -67,6 +67,29 @@ console.log('═══ 只有「局已結束 + 是贏家」才攤牌 ═══')
 }
 
 console.log('\n─────────────────────────');
+
+console.log('\n═══ 聽牌標示：只能用「真的看得到」的手牌算 ═══');
+/* ⚠️ 跟上面攤牌那一條是同一類的安全規則。
+   聽牌章標在名牌上（頭像左邊），但線上版用戶端手上，別家的手牌是張數重建出來的
+   佔位牌（suit:'?'、hidden:true）。把那種東西丟進 isTenpaiHand 算出來的「聽牌」
+   是假的 —— 會在畫面上憑空指控某一家聽牌，而且四台各算各的、結果還不一樣。 */
+{
+  const real = [{ display: '1萬', suit: '萬', num: 1 }, { display: '2萬', suit: '萬', num: 2 }];
+  const fake = [{ display: '?', suit: '?', num: 0, hidden: true },
+                { display: '?', suit: '?', num: 0, hidden: true }];
+
+  ok(R.handIsKnown({ hand: real }), '真的牌：算得出來');
+  ok(!R.handIsKnown({ hand: fake }), '線上版的佔位牌（hidden）：不算');
+  ok(!R.handIsKnown({ hand: [real[0], fake[0]] }), '只要**有一張**是佔位牌就不算');
+  ok(!R.handIsKnown({ hand: [{ display: '?', suit: '?', num: 0 }] }),
+     "沒有 hidden 但 suit 是 '?' 的也不算");
+  ok(!R.handIsKnown({ hand: [] }), '空手牌：不算');
+  ok(!R.handIsKnown({ hand: null }), 'hand 是 null：不算，也不爆');
+  ok(!R.handIsKnown({}), '沒有 hand 欄位：不算，也不爆');
+  ok(!R.handIsKnown(null), '整個 seat 是 null：不算，也不爆');
+  ok(!R.handIsKnown({ hand: [null] }), '陣列裡是 null：不算，也不爆');
+}
+
 console.log(`通過 ${pass}　失敗 ${fail}`);
 if (fail) { fails.forEach(f => console.log('  ✗ ' + f)); process.exit(1); }
 console.log('全部通過 ✓');

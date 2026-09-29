@@ -138,6 +138,18 @@ function renderNameplate(node, match, hand, seat, mySeat) {
   node.classList.toggle('is-turn', isTurn);
   node.classList.toggle('is-me', seat === mySeat);
 
+  /* 聽牌標在**頭像左邊**（使用者 2026-09-29：「感覺就是這個人聽牌」）。
+     放在名牌裡、排在頭像前面，才會讀成「這個人聽牌了」而不是一句飄在旁邊的說明。
+     ⚠️ 只有**真的看得到那一家的牌**才算得出來。線上版用戶端手上，別家的手牌是
+        佔位牌（suit:'?'、hidden:true），拿去算聽牌會得到毫無意義的結果 ——
+        所以線上對戰只有自己這一家會亮，這是資料本來就不在手上，不是漏做。 */
+  const st = hand.seats[seat];
+  if (hand.phase !== 'over' && handIsKnown(st) && R_isTenpai(st)) {
+    const tp = el('span', 'np-tenpai', node);
+    tp.textContent = '🎯 聽';
+    tp.title = '聽牌';
+  }
+
   // 主公的大頭貼。圖是 tools/build-avatars.py 從舊版的 KING_AVATARS 壓出來的
   // 96px WebP（約 4 KB）—— 直接用 1024px 的原圖等於為了 22px 下載 200 KB。
   if (kd) {
@@ -321,8 +333,7 @@ function renderSelfInfo(node, hand, seat) {
   node.className = 'selfinfo' + (tenpai ? ' tenpai' : '');
 
   if (tenpai) {
-    const t = el('span', 'si-tenpai', node);
-    t.textContent = '🎯 聽牌';
+    // 「聽牌」兩個字已經標在名牌上的頭像左邊了，這裡只留「等哪幾張」
     const waits = (Fo ? Fo.analyze(me.hand, me.melds).waits : []);
     if (waits.length) {
       const w = el('span', 'si-waits', node);
@@ -341,6 +352,14 @@ function renderSelfInfo(node, hand, seat) {
     const g = el('span', 'si-goal' + (h.away <= Fo.CLOSE ? ' near' : ''), node);
     g.textContent = h.name + '　還差 ' + h.away + ' 張';
   }
+}
+
+/* 這一家的牌是不是真的在手上。線上版用戶端只拿得到別家的**張數**，
+   會重建成 suit:'?'、hidden:true 的佔位牌（見主檔的 netAdopt）——
+   那種東西丟進 isTenpaiHand 只會算出沒有意義的答案。 */
+function handIsKnown(st) {
+  return !!(st && Array.isArray(st.hand) && st.hand.length
+            && !st.hand.some(t => !t || t.hidden || t.suit === '?'));
 }
 
 /* 用 flow 那邊同一套判定，避免兩處各寫一次 */
@@ -668,7 +687,7 @@ return {
   LIMITS,
   renderRow, renderMelds, renderRiver, renderNameplate, renderCenterInfo, renderCenterLord,
   revealedOf,
-  renderSelfInfo,
+  renderSelfInfo, handIsKnown,
   renderAll, el, clear,
   asGeneral, playFrames, WAR_MS,
 };
