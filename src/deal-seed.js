@@ -39,6 +39,19 @@ const SEATS = 4;
 const HAND = 13;          // 起手張數
 const DEALT = SEATS * HAND;   // 前 52 張是四家的起手牌
 
+/* 牌山尾端的王牌有幾張 —— 換牌時不能碰那一段（見 placeHand 的說明）。
+   ⚠️ 刻意**不在這裡複製一份常數**，而是執行時跟 game-state 要：
+      那邊才是唯一的來源（`DEAD_WALL`），複製一份遲早會對不上。
+      只能延遲取：game-state 在載入時就 require 了這支，
+      反過來在檔頭 require 它會變成循環相依、拿到半成品。
+      呼叫發生在 createMatch 之中，那時兩邊都載好了。 */
+function deadWallSize() {
+  const S = (typeof require === 'function')
+    ? require('./game-state.js')
+    : (typeof globalThis !== 'undefined' ? globalThis.MJState : null);
+  return (S && S.DEAD_WALL) || 14;
+}
+
 /* 觸發機率（docs/biased-deal.md 第五節定案）。
    單機與線上相同 —— 種子不是給某一個人的特權，是給所有人的玩法。 */
 const RATE = 0.40;
@@ -212,12 +225,22 @@ function pickType(rng, skip) {
    第 i 張牌的位置是 i*4 + seat —— 因為 startHand 是
    `for round { for seat { hands[seat].push(wall[idx++]) } }` 發的。
 
-   只從 index ≥ 52（還沒發出去的那段）換牌，所以：
+   只在 index 52 ～ 活牌山結尾之間換牌，所以：
      ‧ 整副牌還是合法的 136 張，只是順序不同
      ‧ 不會去偷另一家**已經配好**的種子牌
+     ‧ **不會碰到牌山尾端的王牌**
+
+   ⚠️ 最後一條是 2026-09-29 才補的，原本上限是 `wall.length`（整副牌尾）。
+      當時無害 —— 王牌只拿來當嶺上牌，哪一張都一樣。但王牌同時是
+      寶牌指示牌的位置（docs/dora-and-declare.md），一旦指示牌進去，
+      這個迴圈就會把被照顧那一家**不要的牌**換進王牌，
+      於是指示牌會系統性地偏向「那個人手上沒有的牌」——
+      被偏向照顧的玩家反而比較不容易吃到寶牌。方向跟直覺相反，畫面上也看不出來。
+      偏向發牌本來就不該動王牌，所以這條跟寶牌做不做無關，先修。
 
    換不到就回 false，由呼叫端換一個牌型重試。 */
 function placeHand(wall, seat, wanted) {
+  const wallEnd = wall.length - deadWallSize();   // 活牌山結尾（不含）
   const pos = i => i * SEATS + seat;
   const need = wanted.slice();
   const keep = new Array(HAND).fill(false);
@@ -233,10 +256,10 @@ function placeHand(wall, seat, wanted) {
     if (keep[i]) continue;
     const want = need[0];
     let found = -1;
-    for (let w = DEALT; w < wall.length; w++) {
+    for (let w = DEALT; w < wallEnd; w++) {
       if (wall[w].display === want) { found = w; break; }
     }
-    if (found < 0) {                      // 這張牌已經被別家或王牌占光了
+    if (found < 0) {                      // 這張牌在活牌山裡已經被別家占光了
       swaps.forEach(sw => {               // 把動過的換回去，不留半套
         const t = wall[sw.a]; wall[sw.a] = wall[sw.b]; wall[sw.b] = t;
       });

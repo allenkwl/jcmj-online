@@ -208,6 +208,48 @@ console.log('═══ 打散張數混著用（小確幸要維持得住）══
   ok(all11, '傳 disrupt 就照傳的來，不再混合');
 }
 
+console.log('\n═══ 偏向發牌不准碰王牌區 ═══');
+/* 為什麼要守這一條：王牌是寶牌指示牌的位置（docs/dora-and-declare.md）。
+   placeHand 的換牌範圍原本是到整副牌尾，會把被照顧那一家**不要的牌**換進王牌，
+   於是指示牌系統性地偏向「那個人手上沒有的牌」——被照顧的人反而比較不容易吃到寶牌。
+   方向跟直覺相反，畫面上看不出來，只有這種測試抓得到。 */
+{
+  // 決定論的 rng（同 game-state 的用法：吃外部 rng，不碰 Math.random）
+  const mkRng = seed => { let x = seed >>> 0;
+    return () => { x = (x * 1664525 + 1013904223) >>> 0; return x / 4294967296; }; };
+
+  let touched = 0, shortened = 0, illegal = 0, seededAny = 0;
+  const TRIALS = 200;
+  for (let k = 0; k < TRIALS; k++) {
+    const rng = mkRng(20260929 + k);
+    // 洗一副牌（用同一個 rng，順序不重要，重要的是王牌那一段前後有沒有變）
+    const wall = S.makeDeck();          // 136 張（ALL_TILES 只有 34 種）
+    for (let i = wall.length - 1; i > 0; i--) {
+      const j = Math.floor(rng() * (i + 1)) % (i + 1);
+      const t = wall[i]; wall[i] = wall[j]; wall[j] = t;
+    }
+    // ⚠️ 要排序再比：countBy 出來的物件鍵序會跟著交換變動，
+    //    直接 JSON.stringify 比會 200 次錯 197 次，錯的是測試不是程式
+    const tally = w => JSON.stringify(Object.entries(countBy(w.map(t => t.display))).sort());
+    const before = tally(wall);
+    const deadBefore = wall.slice(wall.length - S.DEAD_WALL).map(t => t.display).join(',');
+
+    // 四家都配種子（rates 全 1），把換牌壓到最大
+    const out = DS.seedWall(wall, rng, { rates: [1, 1, 1, 1] });
+    if (out.some(Boolean)) seededAny++;
+
+    const deadAfter = wall.slice(wall.length - S.DEAD_WALL).map(t => t.display).join(',');
+    if (deadBefore !== deadAfter) touched++;
+    if (wall.length !== 136) shortened++;
+    if (before !== tally(wall)) illegal++;
+  }
+
+  ok(seededAny > TRIALS * 0.8, `${TRIALS} 次裡有 ${seededAny} 次真的配了種子（測試本身有作用）`);
+  eq(touched, 0, `${TRIALS} 次全配種子：王牌那 ${S.DEAD_WALL} 張一次都沒被動過`);
+  eq(shortened, 0, '牌山長度不變');
+  eq(illegal, 0, '每一張牌的張數不變（換牌沒有讓牌憑空多出來或消失）');
+}
+
 console.log('\n─────────────────────────');
 console.log(`通過 ${pass}　失敗 ${fail}`);
 if (fail) { fails.forEach(f => console.log('  ✗ ' + f)); process.exit(1); }
