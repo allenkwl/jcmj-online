@@ -51,3 +51,7 @@ assets/zhao_3.png
 # ── 開場音樂的原始檔：遊戲只載 intro-bgm.mp3 ──
 assets/audio/intro-bgm.wav
 assets/audio/intro-bgm.mid
+tools/rules-test/node_modules/
+tools/rules-test/database.rules.json
+tools/rules-test/*.log
+tools/rules-test/package-lock.json

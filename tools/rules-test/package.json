@@ -1,0 +1,1 @@
+{"name":"jcmj-rules-test","private":true,"type":"module","dependencies":{"@firebase/rules-unit-testing":"^5.0.2","firebase":"^12.19.0"}}

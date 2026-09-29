@@ -108,6 +108,15 @@ const Net = {
     try {
       if (!firebase.apps || !firebase.apps.length) firebase.initializeApp(FIREBASE_CONFIG);
       this.db = firebase.database();
+      /* ?emu=1：改連本機的 Firebase 模擬器（tools/run-rules-test.sh 會把它跑起來）。
+         用途是**驗安全規則**：規則寫錯的後果是線上玩家寫不進去、當場卡死，所以
+         database.rules.json 改完一定要先在模擬器上把整套流程真的跑一遍再部署。
+         只認網址參數、預設完全不啟用 —— 正式站上不會有人誤連到 127.0.0.1。 */
+      if (this._wantEmulator()) {
+        this.db.useEmulator('127.0.0.1', 9123);
+        firebase.auth().useEmulator('http://127.0.0.1:9099');
+        console.info('[net] 連的是本機模擬器（?emu=1），不是線上資料庫');
+      }
       this.clientId = this._stableClientId();   // 先給一個暫時的，signIn() 完成後換成 uid
       this._pruning = new Set();
       // 判斷群組過不過期要用伺服器時間：createdAt 是伺服器寫的，如果拿一支時鐘慢了
@@ -119,6 +128,10 @@ const Net = {
       this.available = false;
     }
     return this.available;
+  },
+
+  _wantEmulator() {
+    try { return new URLSearchParams(location.search).has('emu'); } catch (_) { return false; }
   },
 
   // 裝置身分要活得比頁面久。原本是每次載入頁面就亂數產生一個新的，於是重新整理、
@@ -1155,11 +1168,13 @@ const Net = {
       if (Date.now() - last < this.SWEEP_EVERY_MS) return Promise.resolve(0);
       localStorage.setItem(this.SWEEP_KEY, String(Date.now()));
     } catch (_) { return Promise.resolve(0); }
-    const base = FIREBASE_CONFIG.databaseURL;
+    const emu = this._wantEmulator();
+    const base = emu ? 'http://127.0.0.1:9123' : FIREBASE_CONFIG.databaseURL;
+    const ns = emu ? '&ns=' + FIREBASE_CONFIG.projectId + '-default-rtdb' : '';   // 模擬器要用 ?ns= 指定命名空間
     const user = firebase.auth().currentUser;
     if (!user) return Promise.resolve(0);
     return user.getIdToken().then(tok => {
-      const shallow = p => fetch(base + '/' + p + '.json?shallow=true&auth=' + encodeURIComponent(tok))
+      const shallow = p => fetch(base + '/' + p + '.json?shallow=true' + ns + '&auth=' + encodeURIComponent(tok))
         .then(r => (r.ok ? r.json() : null)).then(j => j || {}).catch(() => ({}));
       return Promise.all([shallow('groups'), shallow('states'), shallow('cmds')]);
     }).then(([groups, states, cmds]) => {
