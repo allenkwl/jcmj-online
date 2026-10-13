@@ -61,6 +61,25 @@ window.MJDevtools = [
   "cat": "美術"
  },
  {
+  "family": "發牌動畫",
+  "all": [
+   {
+    "ver": "0.1",
+    "rel": "devtools/發牌動畫v0.1.html"
+   }
+  ],
+  "newest": {
+   "ver": "0.1",
+   "rel": "devtools/發牌動畫v0.1.html"
+  },
+  "count": 1,
+  "needsServer": true,
+  "title": "發牌動畫",
+  "sub": "發牌動畫的實驗台：改的是副本，不會動到線上玩家；可調節奏、換尺寸、重播",
+  "ico": "🀄",
+  "cat": "動畫"
+ },
+ {
   "family": "統一天下動畫",
   "all": [
    {
