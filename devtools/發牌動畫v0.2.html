@@ -13,7 +13,9 @@
 
   v0.2（2026-10-14）：加入**新版**動畫 devtools/發牌動畫/deal-anim-wall.js —— 牌牆升起、莊家擲骰開門、
   一家一次抓 4 張轉三圈再補 1 張、自己理牌（使用者：「先按照你的建議完整做出來，我們看結果再決定」）。
-  舊版（deal-anim-lab.js，跟線上一樣）保留，可以切換對照。v0.1 保留不刪。
+  舊版（deal-anim-lab.js，v1.53 以前線上用的）保留，可以切換對照。v0.1 保留不刪。
+  ⚠️ v1.54 起新版已經搬進遊戲本體（src/deal-anim.js）。這一頁跑的仍是 devtools 裡的副本，
+     在這裡調好之後，要把 T_ 等改動抄回 src/deal-anim.js 才會上線。
 
   ── 為什麼不直接改 src/deal-anim.js ──
   所有版本的遊戲本體共用同一支 src/deal-anim.js（模組檔名沒有版號）。
@@ -65,7 +67,7 @@ pre{background:#0e1611;border:1px solid var(--line);border-radius:4px;padding:8p
 
   <div class="note">新版 <code>deal-anim-wall.js</code>、舊版 <code>deal-anim-lab.js</code> 都在
   <code>devtools/發牌動畫/</code>，都是<b>副本</b>。
-  線上玩家跑的 <code>src/deal-anim.js</code> 完全不受影響。
+  v1.54 起新版已經搬進遊戲（<code>src/deal-anim.js</code>）；在這裡調好要抄回去才會上線。
   改了程式碼不用重新整理，按「播放」就會重新載入。</div>
 
   <button class="main" id="play" disabled>▶ 播放（R）</button>
