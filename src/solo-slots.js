@@ -120,8 +120,12 @@ function update(d, id, patch, now) {
 /* 只有玩家按刪除才會呼叫；統一天下移進功業簿時也用（那一段已經記進功業簿了） */
 function drop(d, id) { d.slots = d.slots.filter(s => s.id !== id); return d; }
 
-function addFame(d, camp, lord, now) {
+/* extra.level：這段征途用過的**最低**對手強度（1 初學／2 普通／3 高手）。
+   v1.57 起設定裡可以中途改強度，所以記最低的那個 —— 只是記錄，不限制玩家。
+   舊紀錄沒有這個欄位，畫面上就不標。 */
+function addFame(d, camp, lord, now, extra) {
   const e = fameFrom(camp, lord, now || Date.now(), false);
+  if (extra && extra.level) e.level = extra.level;
   d.fame.push(e);
   return e;
 }
