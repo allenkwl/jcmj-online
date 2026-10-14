@@ -53,9 +53,15 @@ const T_ = {
 
 /* ── 尺寸（工具頁也會改）── */
 const SIZE = {
-  bigScale: 0.78,    // 大圖的邊長＝畫面短邊 × 這個比例
-  bigMax:   720,     // 大圖最大幾像素
-  spareHand: true,   // 不蓋到自己的手牌（大圖底邊停在手牌上緣）
+  /* 大圖的邊長＝可用高度 × 這個比例。可用高度＝畫面頂端到手牌上緣（spareHand）或到畫面底。
+     ⚠️ 原本是「畫面短邊 × 比例」再夾一個 720px 上限、而且以中央為中心往上下長：
+        桌機被 720 卡住、手機被手牌卡住，滑桿拉了沒反應
+        （2026-10-14 使用者：「大圖大小，調了沒作用？我要再大一點」）。
+        現在不設像素上限；往下碰到手牌就改成貼著手牌往上長，上方的空間也用得到。 */
+  bigScale: 0.92,
+  /* 不蓋到自己的手牌（大圖底邊停在手牌上緣）。預設關：
+     2026-10-14 使用者：「蓋到手牌沒關係，這個動畫時間很短」 */
+  spareHand: false,
   punch:    1.08,    // 出招那一下多衝出去多少
 };
 
@@ -133,21 +139,25 @@ function playBig(node, o) {
   node.style.visibility = 'hidden';
   const cx = small.left + small.width / 2, cy = small.top + small.height / 2;
 
-  // 大圖多大：畫面短邊 × 比例，不超過上限；不蓋到手牌的話，底邊停在手牌上緣
-  const vw = innerWidth, vh = innerHeight;
-  let big = Math.min(Math.min(vw, vh) * SIZE.bigScale, SIZE.bigMax);
-  big = Math.min(big, 2 * cy - 4, 2 * (vw - cx) - 4, 2 * cx - 4);       // 不超出畫面
+  // 大圖多大：可用高度 × 比例。可用高度＝畫面頂端到底邊（不蓋手牌的話，底邊＝手牌上緣）
+  const vw = innerWidth, vh = innerHeight, M = 4;
+  let bottom = vh - M;
   if (SIZE.spareHand) {
     const hb = document.getElementById('hand-bottom');
     const r = hb && hb.getBoundingClientRect();
-    if (r && r.height) big = Math.min(big, 2 * (r.top - cy) - 4);
+    if (r && r.height) bottom = Math.min(bottom, r.top - M);
   }
+  let big = (bottom - M) * SIZE.bigScale;
+  big = Math.min(big, vw - 2 * M);                                       // 也不能比畫面寬
   big = Math.max(big, small.width);
+  // 位置：盡量以中央小圖為中心；往下超過底邊就整個往上推，往上超過畫面頂就往下推
+  const bx = Math.min(Math.max(cx - big / 2, M), vw - M - big);
+  const by = Math.min(Math.max(cy - big / 2, M), bottom - big);
 
   const layer = document.createElement('div');
   layer.className = 'lord-fx';
   Object.assign(layer.style, {
-    position: 'fixed', left: (cx - big / 2) + 'px', top: (cy - big / 2) + 'px',
+    position: 'fixed', left: bx + 'px', top: by + 'px',
     width: big + 'px', height: big + 'px', pointerEvents: 'none', zIndex: '45',
   });
   const img = document.createElement('img');
@@ -162,6 +172,7 @@ function playBig(node, o) {
   s.layer = layer;
 
   const k = small.width / big;                        // 縮回去的比例
+  const dx = cx - (bx + big / 2), dy = cy - (by + big / 2);   // 縮回去要移多少（大圖被推過時中心不在中央）
   const op = parseFloat(getComputedStyle(finalImg).opacity) || 0.82;
 
   return new Promise(res => {
@@ -192,7 +203,7 @@ function playBig(node, o) {
     later(node, tok, t3, () => {
       if (layer.animate) layer.animate([
         { transform: 'none', opacity: 1 },
-        { transform: `scale(${k})`, opacity: op },
+        { transform: `translate(${dx}px,${dy}px) scale(${k})`, opacity: op },
       ], { duration: T_.shrink, easing: 'cubic-bezier(.4,0,.2,1)', fill: 'forwards' });
     });
 
