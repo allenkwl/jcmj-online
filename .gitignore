@@ -9,6 +9,7 @@ assets/portraits/
 
 # ── 本機開發用 ──
 CLAUDE.md
+tools/sim-out/
 啟動台.html
 啟動戰國麻將.command
 開場動畫測試.html
