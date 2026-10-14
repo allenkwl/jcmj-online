@@ -251,7 +251,9 @@ function drawHonor(ctx, tile, x, y, w, h) {
      ‧ 圖的白先拉到純白（color-dodge 除以 0.95，等於調色階的白點），
        再用 multiply 疊到牌殼上：白的地方直接透出牌殼自己的象牙漸層，墨色、紅綠照舊。
        接縫就沒了，整副牌的底色也一致（原本數字牌和字牌的白不一樣）。
-     ‧ 只縮 3%，留牌殼的金邊；字牌的實拍四邊先裁掉 5%（深色的角與陰影）。
+     ‧ 四邊留 6.5%（原本 8%）；字牌的實拍四邊先裁掉 5%（深色的角與陰影）。
+       v1.59 先改成 3%，使用者看了覺得太滿（「手牌好像改得太大一點」）——
+       3%／5%／6.5%／8% 並排比過，選 6.5%：四周留一圈象牙邊，跟實體牌的比例最像。
    ⚠️ 不用 getImageData 調色：雙擊開（file://）時圖片算跨來源，讀像素會丟 SecurityError。
       color-dodge／multiply 都是合成運算，不讀像素，file:// 也能用。 */
 const FACE_PREP = new WeakMap();
@@ -280,7 +282,7 @@ function drawFaceInner(ctx, tile, x, y, w, h) {
   if (FACE_IMAGES && FACE_IMAGES[tile.display]) {
     const img = FACE_IMAGES[tile.display];
     if (img.complete && img.naturalWidth > 0) {
-      const pad = Math.max(1.5, w * 0.03);
+      const pad = Math.max(1.5, w * 0.065);
       ctx.save();
       rrect(ctx, x + pad, y + pad, w - pad * 2, h - pad * 2, 3);
       ctx.clip();
