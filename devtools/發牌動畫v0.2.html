@@ -247,6 +247,17 @@ async function play() {
     }
     const me = w.MJDev.me();
     if (!me || !me.hand || !me.hand.length) throw new Error('預覽牌局沒有手牌');
+    /* ⚠️ MJDev.me().hand 是牌的**名字字串**（'1萬'、'東'），不是牌物件。
+       直接交給動畫的話 makeTile 畫不出牌面，整排都是空白的白牌，等動畫結束、
+       底下真正的手牌露出來才看得到牌面（2026-10-14 使用者：「為什麼發出來的牌是白色的，
+       最後才出現？」）。遊戲本體給的是真正的牌物件，沒有這個問題 —— 是實驗台餵錯。
+       用遊戲自己發牌用的 makeDeck() 按名字換回牌物件。 */
+    const deck = w.MJState.makeDeck();
+    const myTiles = me.hand.map(d => {
+      const i = deck.findIndex(t => t.display === d);
+      if (i < 0) throw new Error('認不得這張牌：' + d);
+      return deck.splice(i, 1)[0];
+    });
 
     useStore();
     if (!base || $('tune').dataset.which !== which()) { buildTune(lab.T_); $('tune').dataset.which = which(); }
@@ -260,7 +271,7 @@ async function play() {
        所以 match 只需要這一點點，不必把整個牌局交出去 */
     const dv = $('dealer').value;
     const dealer = dv === 'rand' ? Math.floor(Math.random() * 4) : Number(dv);
-    const r = await lab.run({ match: { hand: { seats: [{ hand: me.hand }] } }, mySeat: 0, dealer,
+    const r = await lab.run({ match: { hand: { seats: [{ hand: myTiles }] } }, mySeat: 0, dealer,
                               seed: Math.floor(Math.random() * 2 ** 31), preview: false });
     const ms = Math.round(performance.now() - t0);
     const SEAT = ['自己', '下家', '對家', '上家'];
