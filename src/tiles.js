@@ -240,16 +240,52 @@ function drawHonor(ctx, tile, x, y, w, h) {
   ctx.restore();
 }
 
+/* ── 牌面圖：先處理一次再用 ──────────────────────────────
+   2026-10-14 使用者：「牌面的外觀看起來像是套版的，可以把顏色調好避免斷層嗎？
+   套上去的圖可以再大一點，因為當初我提供的圖就是原本牌面的大小」。
+   原因有兩個：
+     1. 圖是偏冷的白／灰（數字牌約 240–250；字牌是實拍，邊緣有灰色陰影、四角是深色），
+        牌殼是暖色的象牙白漸層 —— 一張白卡片貼在象牙色的框裡，看得出一圈接縫。
+     2. 圖四邊各縮了 8%，再自己切一個圓角 —— 更像「框裡放一張圖」。
+   做法：
+     ‧ 圖的白先拉到純白（color-dodge 除以 0.95，等於調色階的白點），
+       再用 multiply 疊到牌殼上：白的地方直接透出牌殼自己的象牙漸層，墨色、紅綠照舊。
+       接縫就沒了，整副牌的底色也一致（原本數字牌和字牌的白不一樣）。
+     ‧ 只縮 3%，留牌殼的金邊；字牌的實拍四邊先裁掉 5%（深色的角與陰影）。
+   ⚠️ 不用 getImageData 調色：雙擊開（file://）時圖片算跨來源，讀像素會丟 SecurityError。
+      color-dodge／multiply 都是合成運算，不讀像素，file:// 也能用。 */
+const FACE_PREP = new WeakMap();
+const WHITE_POINT = 0.95;            // 原圖亮到這個比例就當成純白
+function prepFace(img, isHonor) {
+  let c = FACE_PREP.get(img);
+  if (c) return c;
+  const crop = isHonor ? 0.05 : 0.015;
+  const sw = img.naturalWidth, sh = img.naturalHeight;
+  const sx = Math.round(sw * crop), sy = Math.round(sh * crop);
+  const cw = sw - sx * 2, ch = sh - sy * 2;
+  c = document.createElement('canvas');
+  c.width = cw; c.height = ch;
+  const g = c.getContext('2d');
+  g.drawImage(img, sx, sy, cw, ch, 0, 0, cw, ch);
+  g.globalCompositeOperation = 'color-dodge';
+  const k = Math.round(255 * (1 - WHITE_POINT));
+  g.fillStyle = `rgb(${k},${k},${k})`;
+  g.fillRect(0, 0, cw, ch);
+  FACE_PREP.set(img, c);
+  return c;
+}
+
 /* ── 牌面總入口 ── */
 function drawFaceInner(ctx, tile, x, y, w, h) {
   if (FACE_IMAGES && FACE_IMAGES[tile.display]) {
     const img = FACE_IMAGES[tile.display];
     if (img.complete && img.naturalWidth > 0) {
-      const pad = Math.max(2, w * 0.08);
+      const pad = Math.max(1.5, w * 0.03);
       ctx.save();
       rrect(ctx, x + pad, y + pad, w - pad * 2, h - pad * 2, 3);
       ctx.clip();
-      ctx.drawImage(img, x + pad, y + pad, w - pad * 2, h - pad * 2);
+      ctx.globalCompositeOperation = 'multiply';
+      ctx.drawImage(prepFace(img, !!tile.isHonor), x + pad, y + pad, w - pad * 2, h - pad * 2);
       ctx.restore();
       return;
     }
