@@ -34,7 +34,11 @@ const REPEAT_FIRST = 380;    // 按住後第一次連發的延遲
 const REPEAT_NEXT = 110;     // 之後每次
 const STICK_DEAD = 0.55;     // 搖桿死區
 
-let cfg = { getItems: () => [], onConfirm: null, onCancel: null, onFocus: null };
+/* getScroller（v1.58）：回傳目前畫面上「要用上下鍵捲動的那一塊」，沒有就回 null。
+   2026-10-14 使用者：「用手把無法捲動遊戲說明」「鍵盤也是」——
+   說明面板裡能選的只有「關閉」一顆，上下鍵沒有別的可以移，就什麼都不做；
+   而且一打開焦點落在最底下的「關閉」，scrollIntoView 直接把說明捲到最後，前面的字看不到。 */
+let cfg = { getItems: () => [], onConfirm: null, onCancel: null, onFocus: null, getScroller: null };
 let items = [];
 let idx = -1;
 let padOn = false;           // 有沒有偵測到手把
@@ -51,7 +55,10 @@ function paint() {
   });
   items.forEach((el, i) => el.classList.toggle(FOCUS_CLASS, i === idx));
   const el = items[idx];
-  if (el && el.scrollIntoView) el.scrollIntoView({ block: 'nearest', inline: 'nearest' });
+  // ⚠️ 焦點在可捲動的那一塊裡面時不要自動捲過去 —— 捲動交給玩家（見 getScroller）
+  const sc = scroller();
+  const inSc = sc && el && sc.contains(el);
+  if (el && el.scrollIntoView && !inSc) el.scrollIntoView({ block: 'nearest', inline: 'nearest' });
   if (cfg.onFocus) cfg.onFocus(el || null, idx);
 }
 
@@ -93,7 +100,24 @@ function move(delta) {
 
 /* 上下移動：版面是換行排列的，所以用實際座標找「正上方／正下方最近的那個」，
    不能用固定的每列幾個 —— 選國畫面的每列張數會隨視窗寬度變。 */
+function scroller() {
+  try { return (cfg.getScroller && cfg.getScroller()) || null; } catch (_) { return null; }
+}
+/* 捲一步。回傳有沒有真的捲動（已經到頂／到底就回 false，讓呼叫端照常移焦點） */
+function scrollStep(dir, frac) {
+  const sc = scroller();
+  if (!sc) return false;
+  const max = sc.scrollHeight - sc.clientHeight;
+  if (max <= 1) return false;
+  if (dir < 0 ? sc.scrollTop <= 0 : sc.scrollTop >= max - 1) return false;
+  /* ⚠️ 不用 behavior:'smooth'：連按（或按住連發）時，新的一步會打斷還沒播完的上一步，
+     實測連按六下只捲了第一下、之後完全不動。直接跳，一步不要太大就不會突兀。 */
+  sc.scrollTop = Math.max(0, Math.min(max, sc.scrollTop + dir * Math.max(40, sc.clientHeight * (frac || 0.3))));
+  return true;
+}
+
 function moveVertical(dir) {
+  if (scrollStep(dir)) return;                  // 有可捲動的內容就先捲，捲到底才移焦點
   if (items.length < 2) return;
   const cur = items[idx] || items[0];
   const a = cur.getBoundingClientRect();
@@ -177,6 +201,9 @@ function pollPads() {
   repeat('right', down(15) || ax[0] > STICK_DEAD, () => move(1));
   repeat('up', down(12) || ax[1] < -STICK_DEAD, () => moveVertical(-1));
   repeat('down', down(13) || ax[1] > STICK_DEAD, () => moveVertical(1));
+  // 右搖桿：只捲動、不移焦點（有可捲動的內容時才有作用）
+  repeat('rsUp', ax[3] < -STICK_DEAD, () => scrollStep(-1, 0.2));
+  repeat('rsDown', ax[3] > STICK_DEAD, () => scrollStep(1, 0.2));
   // A／Start 確定，B 取消。不連發 —— 確定鍵連發會連按兩次。
   repeat('a', down(0) || down(9), () => { held.a.n = 99; confirm(); });
   repeat('b', down(1), () => { held.b.n = 99; cancel(); });
@@ -211,5 +238,5 @@ function setIndexOf(el) {
 function current() { return items[idx] || null; }
 function hasPad() { return padOn; }
 
-return { init, refresh, move, moveVertical, confirm, cancel, current, setIndexOf, hasPad, FOCUS_CLASS };
+return { init, refresh, move, moveVertical, scrollStep, confirm, cancel, current, setIndexOf, hasPad, FOCUS_CLASS };
 });
