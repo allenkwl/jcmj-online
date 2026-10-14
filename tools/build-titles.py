@@ -51,15 +51,29 @@ TITLES = [
     ('intro-lineup',  '戰國七雄　列陣',    0.08),
     ('intro-battle',  '以牌為兵',          0.14),
     ('intro-conquer', '征服六國',          0.14),
+    # 亡國動畫（src/fallen.js）：暗紅色，七國各一張（2026-10-14）
+    ('fallen-qi',     '齊亡',              0.3, 'blood'),
+    ('fallen-chu',    '楚亡',              0.3, 'blood'),
+    ('fallen-yan',    '燕亡',              0.3, 'blood'),
+    ('fallen-han',    '韓亡',              0.3, 'blood'),
+    ('fallen-wei',    '魏亡',              0.3, 'blood'),
+    ('fallen-zhao',   '趙亡',              0.3, 'blood'),
+    ('fallen-qin',    '秦亡',              0.3, 'blood'),
 ]
 
 SIZE = 160            # 字級（像素）。畫面上最大的主標題約 104px，兩倍解析度夠用
 GOLD_TOP = (255, 236, 170)
 GOLD_BOT = (201, 150, 58)
 EXTRUDE = [((58, 32, 8), 6), ((90, 62, 18), 3)]   # 先畫深的、遠的，再畫淺的、近的（跟主標題的 text-shadow 一樣）
+# 配色：標題預設金色；亡國用暗紅（像乾掉的血、燒過的印）
+PALETTES = {
+    'gold':  (GOLD_TOP, GOLD_BOT, EXTRUDE),
+    'blood': ((236, 92, 66), (128, 18, 14), [((24, 4, 2), 6), ((60, 10, 6), 3)]),
+}
 
 
-def render(text, spacing):
+def render(text, spacing, palette='gold'):
+    top_c, bot_c, extrude = PALETTES[palette]
     font = ImageFont.truetype(FONT, SIZE)
     # 逐字排，字距用 em 算
     widths = [font.getbbox(ch)[2] - font.getbbox(ch)[0] if ch.strip() and ch != '　' else SIZE * 0.6 for ch in text]
@@ -76,7 +90,7 @@ def render(text, spacing):
 
     img = Image.new('RGBA', (W, H), (0, 0, 0, 0))
     # 立體擠出：把字形往右下偏移、塗深褐
-    for color, off in EXTRUDE:
+    for color, off in extrude:
         for k in range(1, off + 1):
             layer = Image.new('RGBA', (W, H), color + (255,))
             shifted = Image.new('L', (W, H), 0)
@@ -88,7 +102,7 @@ def render(text, spacing):
     top, bot = SIZE * 0.12, SIZE * 1.12
     for y in range(H):
         t = min(1, max(0, (y - top) / (bot - top)))
-        c = tuple(int(GOLD_TOP[i] + (GOLD_BOT[i] - GOLD_TOP[i]) * t) for i in range(3))
+        c = tuple(int(top_c[i] + (bot_c[i] - top_c[i]) * t) for i in range(3))
         gd.line([(0, y), (W, y)], fill=c + (255,))
     img = Image.composite(grad, img, mask)
     # 裁掉多餘的透明邊（留一點給 CSS 的光暈）
@@ -105,8 +119,12 @@ def main():
         return 1
     os.makedirs(OUT, exist_ok=True)
     total = 0
-    for tid, text, spacing in TITLES:
-        img = render(text, spacing)
+    only = set(sys.argv[1:])                       # 給了 id 就只重做那幾張：python3 tools/build-titles.py fallen-qi
+    for row in TITLES:
+        tid, text, spacing = row[:3]
+        if only and tid not in only:
+            continue
+        img = render(text, spacing, row[3] if len(row) > 3 else 'gold')
         dst = os.path.join(OUT, tid + '.webp')
         img.save(dst, 'WEBP', quality=88, alpha_quality=90, method=6)
         total += os.path.getsize(dst)

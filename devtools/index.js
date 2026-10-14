@@ -21,6 +21,24 @@ window.MJDevtools = [
   "cat": "動畫"
  },
  {
+  "family": "亡國動畫",
+  "all": [
+   {
+    "ver": "0.1",
+    "rel": "devtools/亡國動畫v0.1.html"
+   }
+  ],
+  "newest": {
+   "ver": "0.1",
+   "rel": "devtools/亡國動畫v0.1.html"
+  },
+  "count": 1,
+  "title": "亡國動畫",
+  "sub": "國庫見底的亡國動畫＋配樂（直接在遊戲本體裡播，可選國家）；影片是 ComfyUI 做的",
+  "ico": "🏚️",
+  "cat": "動畫"
+ },
+ {
   "family": "分封動畫",
   "all": [
    {
