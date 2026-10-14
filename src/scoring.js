@@ -48,6 +48,17 @@ const YAKUHAI_PTS  = 4 * POINT_SCALE;   // 每一組役牌刻子，半個基本�
 const DEALER_MULT  = 1.5;               // 莊家胡牌的加成
 const HONBA_PTS    = 2 * POINT_SCALE;   // 每一本場
 const NOTEN_POT    = 8 * POINT_SCALE;   // 流局罰符的總額（一個基本和牌）
+
+/* ── 押注的押金（v1.61）──────────────────────────────────
+   原本押注沒有代價，倍率又乘在**任何**胡牌上 —— 永遠押孤注一擲最划算
+   （模擬：每局平均比押普通多賺 80）。2026-10-14 改成：
+     ‧ 先付押金；**做成特殊牌型胡牌**才乘倍率、押金退回
+     ‧ 其他情況押金進彩池，這一局胡牌的人拿走（自己胡了就是拿回自己的）
+     ‧ 流局彩池留到下一局；一場打完還有剩，給這一場第一名
+   押金 = 半個／一個基本胡牌。tools/sim-bet.js 跑了 2000 多場：
+   亂押每局 −35／−70，照占卜押每局約 +15 —— 押注變成真的要看占卜的決定。
+   40／80 太便宜（楚、秦亂押反而小賺），120／240 太貴（照占卜押也賺不到）。 */
+const STAKE = { normal: 0, special: 8 * POINT_SCALE, dragon: 16 * POINT_SCALE };
 const DRAGONS      = ['中', '發', '白'];
 
 /* ── 國家的被動技能係數 ──────────────────────────────────
@@ -109,7 +120,8 @@ function handValue(hand, seat, opts) {
 
   // 基礎分走 rules-core 的 calcScore，但秦的倍率改用成長後的值，
   // 所以這裡不把 kingdomId 傳進去，自己乘。
-  let base = R.calcScore(special, o.bet || 'normal', null) * POINT_SCALE;
+  // ⚠️ 押注倍率只在**做成特殊牌型**時生效（v1.61 起）。原本 calcScore 不看有沒有特殊牌型就乘
+  let base = R.calcScore(special, special ? (o.bet || 'normal') : 'normal', null) * POINT_SCALE;
   const yaku = yakuhaiBonus(hand, seat);
   let total = base + yaku.pts;
 
@@ -228,12 +240,50 @@ function settleDraw(match, hand, tenpaiSeats, opts) {
   return { transfers, details: [{ pot, tenpai, noten }] };
 }
 
+/* ── 押金與彩池（v1.61，規則見 STAKE）─────────────────────────
+   一局結束時算：押了注、卻沒做成特殊牌型胡牌的人，押金進彩池；
+   這一局有人胡就把彩池（含之前流局留下的）分給胡的人，流局就留著。
+   彩池不是一個座位，transfers 裡用 POT 表示（applyTransfers 只動座位那一端）。
+   回傳 { transfers, potAfter, stakes:[{seat,pts}], paid:[{seat,pts}] } —— 結算畫面要逐項顯示。 */
+const POT = 'pot';
+function settleStakes(match, hand, result, opts) {
+  const seatInfo = (opts && opts.seatInfo) || {};
+  const winners = (result.winners || []).map(w => w.seat);
+  const madeIt = seat => (result.winners || []).some(w => w.seat === seat && w.special);
+  const transfers = [], stakes = [];
+  [0, 1, 2, 3].forEach(seat => {
+    const pts = STAKE[(seatInfo[seat] || {}).bet] || 0;
+    if (!pts || madeIt(seat)) return;           // 沒押、或做成了（押金退回 = 不動）
+    stakes.push({ seat, pts });
+    transfers.push({ from: seat, to: POT, pts, reason: 'stake' });
+  });
+  let pot = (match.pot || 0) + stakes.reduce((n, x) => n + x.pts, 0);
+  let paid = [];
+  if (result.type !== 'draw' && winners.length && pot > 0) {
+    paid = distribute(pot, winners);
+    paid.forEach(p => { if (p.pts > 0) transfers.push({ from: POT, to: p.seat, pts: p.pts, reason: 'pot' }); });
+    pot = 0;
+  }
+  return { transfers, potAfter: pot, stakes, paid };
+}
+
+/* 一場打完，彩池還有剩（最後一局流局）→ 給這一場的第一名。回傳 {seat, pts} 或 null */
+function potToLeader(match) {
+  const pot = match.pot || 0;
+  if (pot <= 0) return null;
+  const top = standings(match)[0];
+  match.seats[top.seat].matchScore += pot;
+  match.pot = 0;
+  return { seat: top.seat, pts: pot };
+}
+
 /* ── 落到 match 上 ─────────────────────────────────────────── */
 function applyTransfers(match, transfers) {
   const net = [0, 0, 0, 0];
   (transfers || []).forEach(t => {
-    net[t.from] -= t.pts;
-    net[t.to] += t.pts;
+    // 彩池那一端（POT）不是座位，只動座位這一端
+    if (typeof t.from === 'number') net[t.from] -= t.pts;
+    if (typeof t.to === 'number') net[t.to] += t.pts;
   });
   net.forEach((n, i) => { match.seats[i].matchScore += n; });
   return net;
@@ -287,11 +337,11 @@ function standings(match) {
 }
 
 return {
-  POINT_SCALE, YAKUHAI_PTS, DEALER_MULT, HONBA_PTS, NOTEN_POT,
+  POINT_SCALE, YAKUHAI_PTS, DEALER_MULT, HONBA_PTS, NOTEN_POT, STAKE, POT,
   QI_PAY, CHU_WIN, QIN_SPEC,
   growthTier, kingdomMods,
   yakuhaiBonus, handValue,
-  settleWin, settleDraw, applyTransfers, distribute, payerAmount,
+  settleWin, settleDraw, settleStakes, potToLeader, applyTransfers, distribute, payerAmount,
   nextDealer, standings,
 };
 });

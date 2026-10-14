@@ -343,6 +343,83 @@ console.log('═══ 名次 ═══');
   eq(st.map(x => x.seat).join(','), '1,2,0,3', '分高者前，同分時座位小的前');
 }
 
+console.log('═══ 押注與彩池（v1.61）═══');
+
+{
+  // 平胡（沒有特殊牌型）：押什麼都照普通算 —— 原本會照乘 ×2／×3
+  const { h } = table(1, ['1萬 2萬 3萬 4筒 5筒 6筒 7條 8條 9條 2萬 3萬 4萬 5筒 5筒']);
+  const n = SC.handValue(h, 0, { bet: 'normal' }).total;
+  eq(SC.handValue(h, 0, { bet: 'special' }).total, n, '平胡押特殊牌型：不乘倍率');
+  eq(SC.handValue(h, 0, { bet: 'dragon' }).total, n, '平胡孤注一擲：不乘倍率');
+  // 做成特殊牌型（清一色）：倍率照乘
+  const { h: h2 } = table(1, ['1萬 1萬 1萬 2萬 3萬 4萬 5萬 6萬 7萬 8萬 9萬 9萬 9萬 5萬']);
+  const n2 = SC.handValue(h2, 0, { bet: 'normal' });
+  ok(n2.special, '清一色測資真的是特殊牌型');
+  ok(SC.handValue(h2, 0, { bet: 'dragon' }).base === n2.base * 3, '特殊牌型孤注一擲：基礎分 ×3');
+  eq(SC.STAKE.special, 80, '押特殊牌型押金 80');
+  eq(SC.STAKE.dragon, 160, '孤注一擲押金 160');
+}
+
+{
+  // 座位 0 押孤注一擲、座位 1 榮和（不是座位 0）→ 押金 160 進彩池、全給座位 1
+  const { m, h } = table(1, []);
+  const si = { 0: { bet: 'dragon' }, 2: { bet: 'special' } };
+  const res = { type: 'ron', from: 3, winners: [{ seat: 1, special: null }] };
+  const r = SC.settleStakes(m, h, res, { seatInfo: si });
+  eq(r.stakes.map(x => x.seat + ':' + x.pts).join(','), '0:160,2:80', '沒做成的兩家都付押金');
+  eq(r.paid.map(x => x.seat + ':' + x.pts).join(','), '1:240', '胡牌的人拿走整個彩池');
+  eq(r.potAfter, 0, '有人胡，彩池清空');
+  const net = SC.applyTransfers(m, r.transfers);
+  eq(net.join(','), '-160,240,-80,0', '押金與彩池的淨額');
+  eq(net.reduce((a, b) => a + b, 0), 0, '有人拿走彩池時零和');
+}
+
+{
+  // 押注的人自己胡了但不是特殊牌型：押金進彩池又被自己拿回來 → 淨額 0
+  const { m, h } = table(1, []);
+  const r = SC.settleStakes(m, h, { type: 'tsumo', winners: [{ seat: 0, special: null }] }, { seatInfo: { 0: { bet: 'special' } } });
+  eq(SC.applyTransfers(m, r.transfers)[0], 0, '自己胡了平胡：押金拿回來');
+  // 做成特殊牌型：押金直接退回，不進彩池
+  const r2 = SC.settleStakes(m, h, { type: 'tsumo', winners: [{ seat: 0, special: { name: '清一色' } }] }, { seatInfo: { 0: { bet: 'dragon' } } });
+  eq(r2.stakes.length, 0, '做成特殊牌型：押金退回');
+}
+
+{
+  // 流局：彩池留著；下一局有人胡才拿走（含上一局留下的）
+  const { m, h } = table(1, []);
+  const r = SC.settleStakes(m, h, { type: 'draw', winners: [] }, { seatInfo: { 0: { bet: 'special' } } });
+  eq(r.potAfter, 80, '流局：押金留在彩池');
+  eq(r.paid.length, 0, '流局：沒有人拿彩池');
+  m.pot = r.potAfter;
+  const r2 = SC.settleStakes(m, h, { type: 'ron', from: 0, winners: [{ seat: 2, special: null }] }, { seatInfo: {} });
+  eq(r2.paid.map(x => x.seat + ':' + x.pts).join(','), '2:80', '下一局胡牌的人拿走上一局留下的彩池');
+  // 一場打完還有剩 → 第一名
+  const m3 = S.createMatch({ seed: 1, seats: [0, 1, 2, 3].map(i => ({ name: 'P' + i })) });
+  m3.seats[2].matchScore = 300; m3.pot = 160;
+  const aw = SC.potToLeader(m3);
+  eq(aw && aw.seat, 2, '剩下的彩池給第一名');
+  eq(m3.seats[2].matchScore, 460, '第一名加上彩池');
+  eq(m3.pot, 0, '彩池清空');
+}
+
+{
+  // 整場打完（真的流程）：座位 0 每一局都孤注一擲，最後四家總和仍是 0、彩池清空
+  const F = require('../src/flow.js');
+  let worst = null;
+  for (let seed = 1; seed <= 12 && !worst; seed++) {
+    const m = S.createMatch({ seed, seats: [0, 1, 2, 3].map(i => ({ name: 'P' + i, isAI: true })) });
+    const si = { 0: { isAI: true, aiLevel: 1, bet: 'dragon' }, 1: { isAI: true, aiLevel: 1 }, 2: { isAI: true, aiLevel: 1 }, 3: { isAI: true, aiLevel: 1 } };
+    const ctx = { seatInfo: si, now: 1, claimTimeoutMs: 8000, chooseDiscard: (hand, seat) => hand.seats[seat].hand.length - 1 };
+    F.startMatch(m, ctx);
+    let g = 0;
+    while (!m.finished && g++ < 50) F.run(m, ctx);
+    const sum = m.seats.reduce((n, st) => n + st.matchScore, 0);
+    if (!m.finished) worst = `seed ${seed} 沒打完`;
+    else if (sum !== 0 || m.pot !== 0) worst = `seed ${seed}：總和 ${sum}、彩池 ${m.pot}`;
+  }
+  ok(!worst, '押注的整場：零和、彩池最後清空', worst);
+}
+
 console.log('\n─────────────────────────');
 console.log(`通過 ${pass}　失敗 ${fail}`);
 if (fail) { fails.forEach(f => console.log('  ✗ ' + f)); process.exit(1); }

@@ -38,6 +38,25 @@ const UNIFY = 6;
 const RALLY_NEED_NEW = 1;
 const RALLY_NEED_OLD = 2;
 
+/* ── 國庫（兩黃金，v1.61）──────────────────────────────────
+   2026-10-14 使用者定案（數字由 tools/sim-bet.js 模擬）：
+     ‧ 開始征途有本錢 2000 兩；每征服一國收它的國庫當戰利品 300 兩
+     ‧ 每一場的輸贏直接進出國庫；押注的押金也是這筆錢
+     ‧ **一場結算時國庫 < 0 就亡國**：這段征途結束（存檔刪掉）
+   模擬（實力跟電腦相當、不押注）：2000＋300 → 途中跌破 0 約 0.8%。
+   重整旗鼓換國時國庫保留（見 repick）。
+   ⚠️ 目前只有單機用；連線的國庫要存進 Firebase，之後再做。 */
+const START_GOLD = 2000;
+const SPOILS = 300;
+const LOW_GOLD = 300;       // 低於這個數字算「國庫告急」（畫面變紅）
+
+/* 舊存檔沒有國庫：照「本錢 + 已征服國數 × 戰利品」補一筆 */
+function goldOf(player) {
+  if (!player) return START_GOLD;
+  if (typeof player.gold === 'number') return player.gold;
+  return START_GOLD + (player.conquered || []).length * SPOILS;
+}
+
 /* ── 一個玩家的戰役進度 ────────────────────────────────────
    這就是要存檔／上傳的全部內容。刻意保持成純 JSON，
    不放函式也不放 DOM 參照 —— 階段三要原樣丟進 Firebase。 */
@@ -53,6 +72,7 @@ function createPlayer(cfg) {
     boost: false,                 // 下一場要不要提高特殊牌型機率（追趕機制）
     matches: 0,                   // 打過幾場（存檔用）
     unified: false,
+    gold: START_GOLD,             // 國庫（兩黃金），見 START_GOLD
   };
 }
 
@@ -68,6 +88,7 @@ function repick(player, kingdomId) {
   }), {
     boost: player.boost,
     matches: player.matches,
+    gold: goldOf(player),         // 國庫跟著人走，不屬於某一國（2026-10-14 使用者同意）
   });
 }
 
@@ -230,7 +251,7 @@ function drawOpponents(player, rng, n) {
 }
 
 return {
-  UNIFY, RALLY_NEED_NEW, RALLY_NEED_OLD,
+  UNIFY, RALLY_NEED_NEW, RALLY_NEED_OLD, START_GOLD, SPOILS, LOW_GOLD, goldOf,
   createPlayer, repick, conqueredCount, isUnified, canTake, remaining,
   awardConquests, applyResult, creditable, rallyNeed, rallyState, drawOpponents,
 };

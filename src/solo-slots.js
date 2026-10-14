@@ -126,6 +126,9 @@ function drop(d, id) { d.slots = d.slots.filter(s => s.id !== id); return d; }
 function addFame(d, camp, lord, now, extra) {
   const e = fameFrom(camp, lord, now || Date.now(), false);
   if (extra && extra.level) e.level = extra.level;
+  if (extra && typeof extra.gold === 'number') e.gold = extra.gold;   // 統一時的國庫（v1.61）
+  if (extra && extra.online) e.online = true;                          // 連線打下來的（標 🌐）
+  if (extra && extra.mates && extra.mates.length) e.mates = extra.mates.slice(0, 3).map(n => String(n).slice(0, 16));
   d.fame.push(e);
   return e;
 }

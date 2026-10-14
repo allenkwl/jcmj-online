@@ -320,7 +320,9 @@ function renderCenterLord(node, match, hand, mySeat, ui) {
 }
 
 /* ── 場況 ──────────────────────────────────────────────────── */
-function renderCenterInfo(node, match, hand) {
+/* ui.gold：自己的國庫（單機才有；連線傳 null 就不畫）。ui.pot：桌上的彩池。
+   v1.61 起（國庫與押注，見 scoring.js 的 STAKE、campaign.js 的 START_GOLD）。 */
+function renderCenterInfo(node, match, hand, ui) {
   clear(node);
   const a = el('div', 'ci-round', node);
   a.textContent = (hand.roundWind || '東') + ' ' + hand.handNo + ' 局';
@@ -330,6 +332,17 @@ function renderCenterInfo(node, match, hand) {
   }
   const c = el('div', 'ci-wall', node);
   c.textContent = '餘 ' + S.liveWallCount(hand);
+  const u = ui || {};
+  if (u.pot > 0) {
+    const p = el('div', 'ci-pot', node);
+    p.textContent = '彩池 ' + u.pot.toLocaleString() + ' 兩';
+    p.title = '沒做成的押金。這一局胡牌的人拿走';
+  }
+  if (typeof u.gold === 'number') {
+    const g = el('div', 'ci-gold' + (u.gold < (u.lowGold || 300) ? ' low' : ''), node);
+    g.textContent = '國庫 ' + u.gold.toLocaleString() + ' 兩';
+    g.title = u.gold < 0 ? '一場結束時國庫是負的就亡國' : '一場結束時國庫 < 0 就亡國';
+  }
 }
 
 /* ── 自己這一手的狀態 ──────────────────────────────────────
@@ -694,7 +707,7 @@ function paint(dom, match, ui, mySeat) {
     }
   });
 
-  renderCenterInfo(dom.centerInfo, match, hand);
+  renderCenterInfo(dom.centerInfo, match, hand, ui);
   renderCenterLord(dom.centerLord, match, hand, mySeat, ui);
   renderSelfInfo(dom.selfInfo, hand, mySeat);
 }

@@ -11,7 +11,7 @@
 const fs = require('fs');
 const files = process.argv.slice(2);
 const matches = [];
-files.forEach(f => fs.readFileSync(f, 'utf8').split('\n').filter(Boolean).forEach(l => matches.push(JSON.parse(l))));
+files.forEach(f => fs.readFileSync(f, 'utf8').split('\n').filter(Boolean).forEach(l => { try { matches.push(JSON.parse(l)); } catch (_) {} }));   // 還在寫的最後一行可能不完整
 const hands = [];
 matches.forEach(m => m.hands.forEach(h => { if (h.start) hands.push(h); }));
 

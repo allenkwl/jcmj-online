@@ -193,9 +193,15 @@ function finishHand(match, events, result, ctx) {
     ? SC.settleDraw(match, h, result.tenpai, opt)
     : SC.settleWin(match, h, result, opt);
 
-  result.transfers = settled.transfers;
+  // 押金與彩池（v1.61）：疊在胡牌／流局的收付之後
+  const sk = SC.settleStakes(match, h, result, opt);
+  match.pot = sk.potAfter;
+  result.transfers = settled.transfers.concat(sk.transfers);
   result.details = settled.details;
-  result.net = SC.applyTransfers(match, settled.transfers);
+  result.stakes = sk.stakes;
+  result.potPaid = sk.paid;
+  result.potLeft = sk.potAfter;
+  result.net = SC.applyTransfers(match, result.transfers);
   h.result = result;
 
   ev(events, 'handEnd', { handNo: h.handNo, result });
@@ -467,13 +473,18 @@ function run(match, ctx) {
 
       if (nd.matchOver) {
         match.finished = true;
-        ev(events, 'matchEnd', { standings: SC.standings(match) });
+        // 最後一局流局留下的彩池給第一名（v1.61）。要在算名次之前給 —— 第一名本來就是他，給了也不會變
+        const potAward = SC.potToLeader(match);
+        if (potAward) match.potAward = potAward;
+        ev(events, 'matchEnd', { standings: SC.standings(match), potAward });
         return { events, waiting: { kind: 'matchOver' } };
       }
 
       S.startHand(match, Object.assign({}, handOpts(ctx), { dealer: nd.dealer }));
       if (match.finished) {
-        ev(events, 'matchEnd', { standings: SC.standings(match) });
+        const potAward = SC.potToLeader(match);       // 同上：剩下的彩池給第一名
+        if (potAward) match.potAward = potAward;
+        ev(events, 'matchEnd', { standings: SC.standings(match), potAward });
         return { events, waiting: { kind: 'matchOver' } };
       }
       initHandFields(match.hand);

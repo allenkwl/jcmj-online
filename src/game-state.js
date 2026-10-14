@@ -107,6 +107,7 @@ function createMatch(opts) {
     dealerSeat: 0,                             // 目前的莊家（連莊時不輪轉）
     dealerRotations: 0,                        // 莊家換過幾次（連莊模式的結束條件）
     honba: 0,                                  // 本場數，連莊或流局累積
+    pot: 0,                                    // 彩池：沒做成的押金，下一個胡牌的人拿走（v1.61）
     hand: null,                                // 當前這一局，見 startHand
     finished: false,
   };
@@ -186,6 +187,7 @@ function normalize(match) {
   if (match.dealerSeat == null) match.dealerSeat = 0;
   if (match.dealerRotations == null) match.dealerRotations = 0;
   if (match.handLimit == null) match.handLimit = match.totalHands || 4;
+  if (match.pot == null) match.pot = 0;          // 彩池（v1.61）：Firebase 存 0 也可能讀回 undefined
   // Firebase 會把 null 吃掉、false 也可能不見 —— 代打的兩個欄位要補回來
   match.seats.forEach(st => {
     if (!st) return;
