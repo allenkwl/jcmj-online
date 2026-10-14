@@ -227,14 +227,27 @@ async function play() {
   busy = true; $('play').disabled = true;
   const w = frame.contentWindow;
   try {
+    /* 先載動畫程式 —— 它跟牌桌無關，放在擺牌之前，省掉擺好牌之後的空等 */
+    const lab = await injectLab();
+
     status('擺牌⋯');
     // 新的一手：#preview 的假牌局，四家 13 張、沒有副露也沒有牌河
     w.MJDev.scenario('start', $('kingdom').value);
-    await new Promise(r => setTimeout(r, 450));        // 等牌桌重畫完再量座標
+    /* ⚠️ 擺好牌的**同一瞬間**就把中央的主公像藏起來。預覽牌局一擺好，主公就開始播
+       出場動作（三張動作圖輪播）；原本這裡固定等 0.45 秒再載動畫，那段空檔整個看得到他
+       （2026-10-14 使用者：「一開始的主公動畫不要顯示，直接開始浮出四道牆」）。
+       動畫本身開頭也會藏、結束時放回來 —— 這裡只是把那段空檔補上。 */
+    const lord = w.document.getElementById('center-lord');
+    if (lord) lord.style.visibility = 'hidden';
+    /* 等到手牌真的畫好就開始，不再固定等 0.45 秒（量座標只需要元素在 DOM 裡） */
+    for (let i = 0; i < 20; i++) {
+      const hb = w.document.getElementById('hand-bottom');
+      if (hb && hb.children.length >= 13) break;
+      await new Promise(r => setTimeout(r, 15));
+    }
     const me = w.MJDev.me();
     if (!me || !me.hand || !me.hand.length) throw new Error('預覽牌局沒有手牌');
 
-    const lab = await injectLab();
     useStore();
     if (!base || $('tune').dataset.which !== which()) { buildTune(lab.T_); $('tune').dataset.which = which(); }
     Object.assign(lab.T_, effective());                // 副本的 T_ 是 const 物件，改屬性就生效
