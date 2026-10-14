@@ -2,6 +2,25 @@
    用途：啟動台以 file:// 開啟時掃不到硬碟，靠這份清單顯示小工具。 */
 window.MJDevtools = [
  {
+  "family": "主公出場",
+  "all": [
+   {
+    "ver": "0.1",
+    "rel": "devtools/主公出場v0.1.html"
+   }
+  ],
+  "newest": {
+   "ver": "0.1",
+   "rel": "devtools/主公出場v0.1.html"
+  },
+  "count": 1,
+  "needsServer": true,
+  "title": "主公出場",
+  "sub": "主公出場實驗台：輪到自己時主公放大衝出、再縮回中央；順便驗證重畫不再重播淡入。改的是副本，不會動到線上玩家",
+  "ico": "👑",
+  "cat": "動畫"
+ },
+ {
   "family": "分封動畫",
   "all": [
    {

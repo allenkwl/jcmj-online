@@ -1,0 +1,373 @@
+<!doctype html>
+<html lang="zh-Hant">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>主公出場</title>
+<meta name="description" content="主公出場實驗台：輪到自己時主公放大衝出、再縮回中央；順便驗證重畫不再重播淡入。改的是副本，不會動到線上玩家">
+<meta name="launcher-icon" content="👑">
+<meta name="launcher-cat" content="動畫">
+<meta name="launcher-needs-server" content="1">
+<!--
+  主公出場的實驗台（2026-10-14）。
+
+  起因：使用者「每次輪到玩家，君王動畫會出現兩次」—— 查到是 fitSizes 每次重畫都把
+  #center-lord 暫時 display:none 去量版面，樣式裡的 lordIn 淡入就從頭再播一次。
+  使用者接著提：「放大主公的動畫，動畫完成後再……縮小主公圖在中間，這樣會比較有魄力，
+  動畫放大壓到牌也沒關係，反而有張力」。
+
+  這一頁跑的是**副本** devtools/主公出場/lord-entrance.js（掛在 window.MJLordEntrance），
+  遊戲本體的 render.js 一行都沒改。做法、節奏、尺寸的說明都寫在那支的檔頭。
+
+  ── 跟發牌動畫實驗台同一套 ──
+  iframe 載最新版遊戲的 #preview（假牌局、不讀寫存檔），把副本注入進去，
+  直接對著遊戲真正的 #center-lord 播 —— 位置、大小、跟牌河疊起來的樣子都是真的。
+  ⚠️ 要跨框操作，所以**一定要經開發伺服器開**（http://）。
+
+  ── 「修正淡入重播」那個勾 ──
+  勾著：在 iframe 裡把樣式的 lordIn 關掉（模擬搬回本體時刪掉那一行），淡入改由副本用 animate() 播。
+  不勾：保留遊戲現在的樣式，可以按「重畫牌桌 3 次」親眼看到舊的毛病。
+-->
+<style>
+:root{--bg:#0b120e;--panel:#141d17;--line:#2a3a2f;--ink:#e9e3cf;--quiet:#9fb3a6;--gold:#e8c46a;}
+*{box-sizing:border-box;}
+html,body{height:100%;margin:0;background:var(--bg);color:var(--ink);font:13px/1.5 -apple-system,'PingFang TC','Noto Sans TC',sans-serif;}
+body{display:grid;grid-template-columns:300px 1fr;}
+#panel{background:var(--panel);border-right:1px solid var(--line);padding:16px;overflow:auto;}
+h1{font-size:16px;margin:0 0 4px;color:var(--gold);}
+.sub{color:var(--quiet);font-size:12px;margin:0 0 16px;}
+.note{border:1px solid var(--line);border-radius:6px;padding:8px 10px;color:var(--quiet);font-size:12px;margin-bottom:16px;}
+.note b{color:var(--ink);}
+label{display:block;margin:10px 0 4px;color:var(--quiet);font-size:12px;}
+select,input[type=number]{width:100%;background:#0e1611;color:var(--ink);border:1px solid var(--line);border-radius:4px;padding:5px 6px;font:inherit;}
+.row{display:flex;gap:8px;align-items:center;}
+.row input[type=range]{flex:1;}
+.btns{display:grid;grid-template-columns:1fr 1fr;gap:6px;margin-top:6px;}
+button{background:#22301f;color:var(--ink);border:1px solid #3b5235;border-radius:6px;padding:7px 10px;font:inherit;cursor:pointer;}
+button.main{background:var(--gold);color:#20160a;border-color:var(--gold);font-weight:600;}
+button.wide{grid-column:1/-1;padding:10px;font-size:14px;}
+button:disabled{opacity:.5;cursor:default;}
+.grid{display:grid;grid-template-columns:1fr 84px;gap:4px 8px;align-items:center;}
+.grid span{color:var(--quiet);font-size:12px;}
+.grid input{padding:3px 6px;}
+h2{font-size:12px;color:var(--gold);margin:16px 0 4px;font-weight:600;}
+#status{margin-top:10px;font-size:12px;color:var(--quiet);min-height:3em;white-space:pre-wrap;}
+#status.err{color:#f0a08a;}
+pre{background:#0e1611;border:1px solid var(--line);border-radius:4px;padding:8px;font-size:11px;white-space:pre-wrap;color:var(--ink);}
+#stage{position:relative;overflow:hidden;display:flex;align-items:center;justify-content:center;}
+#frameWrap{position:absolute;transform-origin:0 0;box-shadow:0 0 0 1px var(--line);}
+#frameWrap iframe{border:0;display:block;background:#000;}
+#size{position:absolute;right:10px;bottom:8px;color:var(--quiet);font-size:11px;}
+</style>
+</head>
+<body>
+<div id="panel">
+  <h1>主公出場實驗台</h1>
+  <p class="sub" id="ver">載入中⋯</p>
+
+  <div class="note">跑的是副本 <code>devtools/主公出場/lord-entrance.js</code>，
+  遊戲本體沒有改。改了程式碼不用重新整理，按任何一顆播放鈕就會重新載入。</div>
+
+  <div class="btns">
+    <button class="main wide" id="sim" disabled>▶ 模擬一輪（R）：三家電腦 → 輪到自己</button>
+    <button id="me" disabled>輪到自己</button>
+    <button id="ai" disabled>輪到電腦</button>
+    <button class="wide" id="redraw" disabled>重畫牌桌 3 次（測淡入會不會重播）</button>
+  </div>
+  <div id="status">等遊戲載入⋯</div>
+
+  <label>哪些回合放大</label>
+  <select id="mode">
+    <option value="me" selected>只有自己的回合（建議）</option>
+    <option value="all">每一家都放大</option>
+    <option value="none">都不放大（＝現在的遊戲）</option>
+  </select>
+
+  <label class="row"><input type="checkbox" id="fix" checked> 修正淡入重播（關掉樣式裡的 lordIn）</label>
+  <label class="row"><input type="checkbox" id="spare" checked> 大圖不蓋到自己的手牌</label>
+
+  <label>大圖大小：畫面短邊的 <b id="scaleVal">78%</b></label>
+  <div class="row"><input type="range" id="scale" min="0.4" max="1.2" step="0.02" value="0.78"></div>
+  <label>出招往前衝 <b id="punchVal">1.08×</b></label>
+  <div class="row"><input type="range" id="punch" min="1" max="1.3" step="0.01" value="1.08"></div>
+
+  <label>本國（自己）</label>
+  <select id="kingdom">
+    <option value="qi">齊</option><option value="chu">楚</option><option value="yan">燕</option>
+    <option value="han">韓</option><option value="wei">魏</option><option value="zhao">趙</option>
+    <option value="qin" selected>秦</option>
+  </select>
+
+  <label>牌桌情境（看大圖壓到牌的樣子）</label>
+  <select id="scene">
+    <option value="start">開局：牌河是空的</option>
+    <option value="mid" selected>中盤：每家 8 張棄牌</option>
+    <option value="rivers">牌河全滿</option>
+    <option value="both">牌河全滿＋四副露</option>
+  </select>
+
+  <label>畫面尺寸</label>
+  <select id="vp">
+    <option value="1920x1080">桌機 1920×1080</option>
+    <option value="1280x720">筆電 1280×720</option>
+    <option value="932x430">手機橫放 932×430（大支）</option>
+    <option value="667x375">手機橫放 667×375（SE）</option>
+  </select>
+
+  <label>電腦出牌間隔（毫秒，遊戲實測約 650）</label>
+  <input type="number" id="pace" value="650" min="200" step="10">
+
+  <label>速度倍率 <b id="speedVal">1.00×</b>（>1 變快）</label>
+  <div class="row"><input type="range" id="speed" min="0.25" max="3" step="0.05" value="1"></div>
+
+  <h2>節奏（毫秒，T_）</h2>
+  <div class="grid" id="tune"></div>
+
+  <p style="margin-top:12px"><button id="copy">複製目前數值</button> <button id="reset">回到檔案預設</button></p>
+  <pre id="out" hidden></pre>
+</div>
+
+<div id="stage"><div id="frameWrap"></div><div id="size"></div></div>
+
+<script src="../latest.js"></script>
+<script>
+'use strict';
+const LABELS = {
+  zoomIn: '大：放大衝出（蓄勢）', hold1: '大：蓄勢停住', strike: '大：出招一閃',
+  hold3: '大：進攻停住', shrink: '大：縮回中央',
+  smallHold1: '小：蓄勢停住', smallStrike: '小：出招一閃', smallFade: '小：淡入',
+};
+const SRC = 'devtools/主公出場/lord-entrance.js', GLOBAL = 'MJLordEntrance';
+const $ = id => document.getElementById(id);
+const file = window.MJ_LATEST && window.MJ_LATEST.file;
+let frame = null, lab = null, base = null, fileDefaults = null, sceneShown = null, simTok = 0;
+
+function status(msg, err) { $('status').textContent = msg; $('status').className = err ? 'err' : ''; }
+const BTNS = ['sim', 'me', 'ai', 'redraw'];
+const enable = on => BTNS.forEach(id => { $(id).disabled = !on; });
+
+/* ── iframe：載最新版遊戲的 #preview ── */
+function mount() {
+  if (!file) { status('讀不到 ../latest.js，不知道該載哪一版遊戲', true); return; }
+  if (location.protocol === 'file:') {
+    status('⚠ 要經開發伺服器開（http://），雙擊開的 file:// 讀不到 iframe 裡面。\n雙擊「啟動戰國麻將.command」再從啟動台點進來。', true);
+    return;
+  }
+  $('ver').textContent = '遊戲：' + file;
+  frame = document.createElement('iframe');
+  frame.src = '../' + encodeURI(file) + '#preview';
+  frame.addEventListener('load', waitReady);
+  $('frameWrap').appendChild(frame);
+  applyViewport();
+}
+function waitReady() {
+  sceneShown = null;
+  const t0 = Date.now();
+  const tick = () => {
+    const w = frame.contentWindow;
+    if (w && w.MJDev && w.MJKingdoms) { enable(true); status('就緒。按「模擬一輪」或 R。'); return; }
+    if (Date.now() - t0 > 15000) { status('15 秒內等不到遊戲的 MJDev（預覽模式沒啟動？）', true); return; }
+    setTimeout(tick, 150);
+  };
+  tick();
+}
+
+function applyViewport() {
+  if (!frame) return;
+  const [vw, vh] = $('vp').value.split('x').map(Number);
+  frame.style.width = vw + 'px'; frame.style.height = vh + 'px';
+  const st = $('stage').getBoundingClientRect();
+  const k = Math.min((st.width - 32) / vw, (st.height - 32) / vh, 1);
+  const wrap = $('frameWrap');
+  wrap.style.transform = `scale(${k})`;
+  wrap.style.left = ((st.width - vw * k) / 2) + 'px';
+  wrap.style.top = ((st.height - vh * k) / 2) + 'px';
+  $('size').textContent = `${vw}×${vh}　顯示 ${(k * 100).toFixed(0)}%`;
+}
+
+/* ── 每次播放都重新注入副本 —— 改了 js 不必重新整理 ── */
+function inject() {
+  const w = frame.contentWindow, d = w.document;
+  return new Promise((ok, bad) => {
+    const old = d.getElementById('mj-lord-entrance');
+    if (old) old.remove();
+    const s = d.createElement('script');
+    s.id = 'mj-lord-entrance';
+    s.src = SRC + '?t=' + Date.now();
+    s.onload = () => w[GLOBAL] ? ok(w[GLOBAL]) : bad(new Error('載入了，但沒有掛上 ' + GLOBAL));
+    s.onerror = () => bad(new Error('載不到 ' + SRC));
+    d.head.appendChild(s);
+  });
+}
+
+/* 「修正淡入重播」：在 iframe 裡蓋一條樣式把 lordIn 關掉 */
+function applyFix() {
+  const d = frame.contentWindow.document;
+  let st = d.getElementById('mj-lord-fix');
+  if ($('fix').checked) {
+    if (!st) { st = d.createElement('style'); st.id = 'mj-lord-fix'; d.head.appendChild(st); }
+    st.textContent = '#center-lord .lord-img{animation:none !important}';
+  } else if (st) st.remove();
+}
+
+/* ── 準備：注入副本、擺牌桌、套用面板上的數值 ── */
+async function prepare() {
+  const w = frame.contentWindow;
+  const old = lab;
+  if (old) { try { old.stop(w.document.getElementById('center-lord')); } catch (_) {} }
+  lab = await inject();
+  const key = $('scene').value + '/' + $('kingdom').value;
+  if (sceneShown !== key) {
+    w.MJDev.scenario($('scene').value, $('kingdom').value);
+    sceneShown = key;
+    await new Promise(r => setTimeout(r, 120));
+  }
+  applyFix();
+  if (!base) buildTune(lab.T_);
+  Object.assign(lab.T_, effective());
+  lab.SIZE.bigScale = Number($('scale').value);
+  lab.SIZE.punch = Number($('punch').value);
+  lab.SIZE.spareHand = $('spare').checked;
+  return w;
+}
+
+/* 誰的回合 → 要播的東西。電腦座位用守將（同 render.js 的 asGeneral） */
+function who(w, kingdomId, general) {
+  const K = w.MJKingdoms, kd = K.get(kingdomId);
+  return {
+    node: w.document.getElementById('center-lord'),
+    frames: K.warFrames(kd.id, general),
+    title: general ? K.generalTitle(kd.id) : (kd.kingName || kd.name),
+    color: kd.color,
+  };
+}
+function bigFor(isMe) {
+  const m = $('mode').value;
+  return m === 'all' || (m === 'me' && isMe);
+}
+
+async function turn(isMe, kingdomId) {
+  const w = await prepare();
+  const o = who(w, kingdomId || $('kingdom').value, !isMe);
+  o.big = bigFor(isMe);
+  const t0 = performance.now();
+  const r = await lab.play(o);
+  return { r, ms: Math.round(performance.now() - t0) };
+}
+
+/* ── 模擬一輪：下家、對家、上家（電腦）各一手，然後輪到自己 ── */
+async function simulate() {
+  if (!frame) return;
+  const tok = ++simTok;
+  try {
+    const mine = $('kingdom').value;
+    const all = ['qi', 'chu', 'yan', 'han', 'wei', 'zhao', 'qin'].filter(k => k !== mine);
+    const foes = [];
+    while (foes.length < 3) { const k = all.splice(Math.floor(Math.random() * all.length), 1)[0]; foes.push(k); }
+    const pace = Math.max(100, Math.round((Number($('pace').value) || 650) / (Number($('speed').value) || 1)));
+    await prepare();
+    for (let i = 0; i < 3; i++) {
+      if (tok !== simTok) return;
+      status(`電腦回合 ${i + 1}／3`);
+      turn(false, foes[i]);                    // 不等它播完 —— 遊戲裡也是時間到就換下一家
+      await new Promise(r => setTimeout(r, pace));
+    }
+    if (tok !== simTok) return;
+    status('輪到自己⋯');
+    const { r, ms } = await turn(true);
+    if (tok !== simTok) return;
+    status(`輪到自己：${r}　${(ms / 1000).toFixed(2)} 秒（從換人到縮回中央）`);
+  } catch (e) { status('失敗：' + (e && e.message || e), true); }
+}
+
+async function single(isMe) {
+  if (!frame) return;
+  simTok++;
+  try {
+    status(isMe ? '輪到自己⋯' : '輪到電腦⋯');
+    const k = isMe ? $('kingdom').value : ['qi', 'chu', 'yan', 'han', 'wei', 'zhao'].filter(x => x !== $('kingdom').value)[Math.floor(Math.random() * 5)];
+    const { r, ms } = await turn(isMe, k);
+    status(`${isMe ? '自己' : '電腦'}：${r}　${(ms / 1000).toFixed(2)} 秒`);
+  } catch (e) { status('失敗：' + (e && e.message || e), true); }
+}
+
+/* ── 重畫測試：數主公像的淡入被重新觸發幾次 ──
+   樣式動畫（lordIn）每次重新開始都會發 animationstart；
+   程式播的（animate()）不會被 display:none 打斷，所以只看樣式那一種就夠。 */
+async function redrawTest() {
+  if (!frame) return;
+  simTok++;
+  try {
+    const w = await prepare();
+    const node = w.document.getElementById('center-lord');
+    // 先讓自己的主公到位（沒有放大，免得混在一起看不清楚）
+    const o = who(w, $('kingdom').value, false); o.big = false;
+    await lab.play(o);
+    await new Promise(r => setTimeout(r, 500));
+    let n = 0;
+    const on = e => { if (node.contains(e.target) && e.animationName === 'lordIn') n++; };
+    w.document.addEventListener('animationstart', on, true);
+    for (let i = 0; i < 3; i++) {
+      status(`重畫第 ${i + 1} 次⋯`);
+      w.MJDev.redraw();
+      await new Promise(r => setTimeout(r, 700));
+    }
+    w.document.removeEventListener('animationstart', on, true);
+    status(`重畫 3 次：淡入重播 ${n} 次` + ($('fix').checked
+      ? (n ? '　⚠ 修正沒有生效' : '　✓ 修正有效')
+      : '　（這就是遊戲現在的毛病；勾「修正淡入重播」再試一次）'));
+  } catch (e) { status('失敗：' + (e && e.message || e), true); }
+}
+
+/* ── 節奏欄位 ── */
+function buildTune(T) {
+  if (!fileDefaults) fileDefaults = Object.assign({}, T);
+  if (!base) base = Object.assign({}, T);
+  const g = $('tune'); g.innerHTML = '';
+  Object.keys(T).forEach(k => {
+    const sp = document.createElement('span'); sp.textContent = (LABELS[k] || k) + '　' + k;
+    const inp = document.createElement('input'); inp.type = 'number'; inp.min = 0; inp.step = 10; inp.value = base[k];
+    inp.addEventListener('input', () => { base[k] = Math.max(0, Number(inp.value) || 0); });
+    g.appendChild(sp); g.appendChild(inp);
+  });
+}
+function effective() {
+  const sp = Number($('speed').value) || 1, e = {};
+  Object.keys(base).forEach(k => { e[k] = Math.round(base[k] / sp); });
+  return e;
+}
+function copyOut() {
+  if (!base) { status('先播一次，才讀得到副本的數值', true); return; }
+  const e = effective();
+  const txt = 'const T_ = {\n' + Object.keys(e).map(k =>
+    `  ${(k + ':').padEnd(13)}${String(e[k]).padStart(4)},   // ${LABELS[k] || ''}`).join('\n') + '\n};\n'
+    + `const SIZE = { bigScale: ${$('scale').value}, punch: ${$('punch').value}, spareHand: ${$('spare').checked} };`;
+  $('out').hidden = false; $('out').textContent = txt;
+  try { navigator.clipboard.writeText(txt); status('已複製（速度倍率已經算進去）'); } catch (_) { status('複製失敗，請手動選取下面的文字'); }
+}
+
+$('sim').addEventListener('click', simulate);
+$('me').addEventListener('click', () => single(true));
+$('ai').addEventListener('click', () => single(false));
+$('redraw').addEventListener('click', redrawTest);
+$('vp').addEventListener('change', () => { applyViewport(); sceneShown = null; });
+$('scene').addEventListener('change', () => { sceneShown = null; });
+$('kingdom').addEventListener('change', () => { sceneShown = null; });
+$('fix').addEventListener('change', () => { if (frame) applyFix(); });
+$('speed').addEventListener('input', () => { $('speedVal').textContent = Number($('speed').value).toFixed(2) + '×'; });
+$('scale').addEventListener('input', () => { $('scaleVal').textContent = Math.round($('scale').value * 100) + '%'; });
+$('punch').addEventListener('input', () => { $('punchVal').textContent = Number($('punch').value).toFixed(2) + '×'; });
+$('copy').addEventListener('click', copyOut);
+$('reset').addEventListener('click', () => {
+  if (!fileDefaults) return;
+  base = Object.assign({}, fileDefaults);
+  $('speed').value = 1; $('speedVal').textContent = '1.00×';
+  buildTune(fileDefaults); status('已回到檔案裡的數值');
+});
+window.addEventListener('resize', applyViewport);
+document.addEventListener('keydown', e => { if ((e.key === 'r' || e.key === 'R') && !e.metaKey && !e.ctrlKey) simulate(); });
+
+mount();
+</script>
+</body>
+</html>
