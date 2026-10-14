@@ -55,6 +55,8 @@ h2{font-size:12px;color:var(--gold);margin:16px 0 4px;font-weight:600;}
 #status.err{color:#f0a08a;}
 pre{background:#0e1611;border:1px solid var(--line);border-radius:4px;padding:8px;font-size:11px;white-space:pre-wrap;color:var(--ink);}
 #stage{position:relative;overflow:hidden;display:flex;align-items:center;justify-content:center;}
+#stage:fullscreen{background:#000;}
+#stage:fullscreen #size{display:none;}
 #frameWrap{position:absolute;transform-origin:0 0;box-shadow:0 0 0 1px var(--line);}
 #frameWrap iframe{border:0;display:block;background:#000;}
 #size{position:absolute;right:10px;bottom:8px;color:var(--quiet);font-size:11px;}
@@ -86,6 +88,7 @@ pre{background:#0e1611;border:1px solid var(--line);border-radius:4px;padding:8p
 
   <label class="row"><input type="checkbox" id="fix" checked> 修正淡入重播（關掉樣式裡的 lordIn）</label>
   <label class="row"><input type="checkbox" id="spare"> 大圖不蓋到自己的手牌</label>
+  <label class="row"><input type="checkbox" id="fsSim" checked> 「模擬一輪」用全螢幕播（實際螢幕大小，播完自動退出）</label>
 
   <label>大圖大小：可用高度的 <b id="scaleVal">82%</b>（100%＝撐滿畫面高度；勾了「不蓋手牌」就是撐到手牌上緣）</label>
   <div class="row"><input type="range" id="scale" min="0.4" max="1" step="0.02" value="0.82"></div>
@@ -173,8 +176,20 @@ function waitReady() {
   tick();
 }
 
+/* 全螢幕：iframe 直接開成整個螢幕大、不縮放 —— 跟實際玩的時候一樣大。
+   2026-10-14 使用者：「按下模擬一輪把顯示改全螢幕，我實際玩發現動畫太大」——
+   縮在右邊小框裡看，大圖的魄力跟實際螢幕上差很多，調不準。 */
+const isFs = () => document.fullscreenElement === $('stage');
 function applyViewport() {
   if (!frame) return;
+  if (isFs()) {
+    const vw = innerWidth, vh = innerHeight;
+    frame.style.width = vw + 'px'; frame.style.height = vh + 'px';
+    const wrap = $('frameWrap');
+    wrap.style.transform = 'none'; wrap.style.left = '0px'; wrap.style.top = '0px';
+    $('size').textContent = `全螢幕 ${vw}×${vh}`;
+    return;
+  }
   const [vw, vh] = $('vp').value.split('x').map(Number);
   frame.style.width = vw + 'px'; frame.style.height = vh + 'px';
   const st = $('stage').getBoundingClientRect();
@@ -260,7 +275,24 @@ async function turn(isMe, kingdomId) {
 async function simulate() {
   if (!frame) return;
   const tok = ++simTok;
+  let enteredFs = false;
   try {
+    /* 全螢幕要在按鈕（或 R 鍵）的那一下要求，晚了瀏覽器不准 */
+    if ($('fsSim').checked && !isFs() && $('stage').requestFullscreen) {
+      /* ⚠️ 有些環境（內嵌的瀏覽器窗格）要求全螢幕之後 promise 永遠不回來，整個模擬就卡住不播。
+         最多等 1 秒，等不到就照原本的縮放畫面播。 */
+      try {
+        await Promise.race([$('stage').requestFullscreen(), new Promise((_, no) => setTimeout(() => no(new Error('timeout')), 1000))]);
+        enteredFs = isFs();
+      } catch (_) {}
+      if (!enteredFs) status('這個瀏覽器不讓切全螢幕，改用縮放畫面播');
+      if (enteredFs) {
+        await new Promise(r => setTimeout(r, 350));       // 等 iframe 換成全螢幕大小、遊戲重算版面
+        applyViewport();
+        try { frame.contentWindow.MJDev.redraw(); } catch (_) {}
+        await new Promise(r => setTimeout(r, 150));
+      }
+    }
     const mine = $('kingdom').value;
     const all = ['qi', 'chu', 'yan', 'han', 'wei', 'zhao', 'qin'].filter(k => k !== mine);
     const foes = [];
@@ -279,6 +311,10 @@ async function simulate() {
     if (tok !== simTok) return;
     status(`輪到自己：${r}　${(ms / 1000).toFixed(2)} 秒（從換人到縮回中央）`);
   } catch (e) { status('失敗：' + (e && e.message || e), true); }
+  finally {
+    // 播完停一下再退出全螢幕，看得到縮回中央之後的樣子
+    if (enteredFs) setTimeout(() => { if (isFs()) document.exitFullscreen().catch(() => {}); }, 900);
+  }
 }
 
 async function single(isMe) {
@@ -366,6 +402,10 @@ $('reset').addEventListener('click', () => {
   buildTune(fileDefaults); status('已回到檔案裡的數值');
 });
 window.addEventListener('resize', applyViewport);
+document.addEventListener('fullscreenchange', () => {
+  applyViewport();
+  try { frame.contentWindow.MJDev.redraw(); } catch (_) {}
+});
 document.addEventListener('keydown', e => { if ((e.key === 'r' || e.key === 'R') && !e.metaKey && !e.ctrlKey) simulate(); });
 
 mount();
