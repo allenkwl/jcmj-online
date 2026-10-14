@@ -65,8 +65,9 @@ pre{background:#0e1611;border:1px solid var(--line);border-radius:4px;padding:8p
   <h1>主公出場實驗台</h1>
   <p class="sub" id="ver">載入中⋯</p>
 
-  <div class="note">跑的是副本 <code>devtools/主公出場/lord-entrance.js</code>，
-  遊戲本體沒有改。改了程式碼不用重新整理，按任何一顆播放鈕就會重新載入。</div>
+  <div class="note">跑的是副本 <code>devtools/主公出場/lord-entrance.js</code>。
+  v1.55 起已經搬進遊戲（<code>src/lord-entrance.js</code>）；在這裡調好要抄回去才會上線。
+  改了程式碼不用重新整理，按任何一顆播放鈕就會重新載入。</div>
 
   <div class="btns">
     <button class="main wide" id="sim" disabled>▶ 模擬一輪（R）：三家電腦 → 輪到自己</button>
@@ -86,8 +87,8 @@ pre{background:#0e1611;border:1px solid var(--line);border-radius:4px;padding:8p
   <label class="row"><input type="checkbox" id="fix" checked> 修正淡入重播（關掉樣式裡的 lordIn）</label>
   <label class="row"><input type="checkbox" id="spare"> 大圖不蓋到自己的手牌</label>
 
-  <label>大圖大小：可用高度的 <b id="scaleVal">92%</b>（100%＝撐滿畫面高度；勾了「不蓋手牌」就是撐到手牌上緣）</label>
-  <div class="row"><input type="range" id="scale" min="0.4" max="1" step="0.02" value="0.92"></div>
+  <label>大圖大小：可用高度的 <b id="scaleVal">82%</b>（100%＝撐滿畫面高度；勾了「不蓋手牌」就是撐到手牌上緣）</label>
+  <div class="row"><input type="range" id="scale" min="0.4" max="1" step="0.02" value="0.82"></div>
   <label>出招往前衝 <b id="punchVal">1.08×</b></label>
   <div class="row"><input type="range" id="punch" min="1" max="1.3" step="0.01" value="1.08"></div>
 

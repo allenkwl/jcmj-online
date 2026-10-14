@@ -272,7 +272,11 @@ function playWar(node, img, frames) {
   playFrames(node, img, frames, WAR_MS);
 }
 
-function renderCenterLord(node, match, hand) {
+/* v1.55 起有載入 lord-entrance.js 就交給它（輪到自己時放大出場、淡入不會被重畫重播）。
+   舊版頁面沒載入那一支，照舊走下面的 playFrames ＋ 樣式裡的 lordIn。 */
+const lordFx = () => (typeof window !== 'undefined' && window.MJLordEntrance) || null;
+
+function renderCenterLord(node, match, hand, mySeat, ui) {
   if (!node || !K) return;
   preloadWar(match);
   const seat = hand.turn;
@@ -282,6 +286,7 @@ function renderCenterLord(node, match, hand) {
   const url = kd && K.avatarUrl(kd.id, true, g);
 
   if (!url || hand.phase === 'over') {
+    if (lordFx()) lordFx().stop(node);       // 放大的那一層還在播的話一起收掉
     clearTimeout(node._warTimer);
     node.removeAttribute('data-k'); clear(node); return;
   }
@@ -290,9 +295,23 @@ function renderCenterLord(node, match, hand) {
   if (node.getAttribute('data-k') === key) return;     // 同一位就不重畫，避免閃（動畫也不會重播）
 
   node.setAttribute('data-k', key);
+  const title = g ? K.generalTitle(kd.id) : (kd.kingName || kd.name);
+
+  const LE = lordFx();
+  if (LE) {
+    clearTimeout(node._warTimer); clearTimeout(node._warWait);
+    /* 放大只在**輪到自己**（真人、不是守將代打）時播 —— 電腦連打時每 0.65 秒換一家，每家都放大會一直閃。
+       ⚠️ 發牌動畫還在跑（#deal-anim 在）時不放大：開局第一個 render 就會換到莊家，
+          莊家是自己的話大圖會蓋在牌牆上。
+       ⚠️ 預覽模式（對戰畫面編輯器、各實驗台）由呼叫的人用 ui.noBigLord 關掉 —— 編輯器要看的是牌桌。 */
+    const big = seat === mySeat && !g && !(ui && ui.noBigLord)
+             && !(typeof document !== 'undefined' && document.getElementById('deal-anim'));
+    LE.play({ node, frames: K.warFrames ? K.warFrames(kd.id, g) : [url], title, color: kd.color, big });
+    return;
+  }
+
   clear(node);
   const img = el('img', 'lord-img', node);
-  const title = g ? K.generalTitle(kd.id) : (kd.kingName || kd.name);
   img.alt = title;
   playWar(node, img, K.warFrames ? K.warFrames(kd.id, g) : [url]);
   if (kd.color) node.style.setProperty('--k-color', kd.color);
@@ -676,7 +695,7 @@ function paint(dom, match, ui, mySeat) {
   });
 
   renderCenterInfo(dom.centerInfo, match, hand);
-  renderCenterLord(dom.centerLord, match, hand);
+  renderCenterLord(dom.centerLord, match, hand, mySeat, ui);
   renderSelfInfo(dom.selfInfo, hand, mySeat);
 }
 
