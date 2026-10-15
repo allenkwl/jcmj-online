@@ -559,6 +559,48 @@ console.log('═══ Firebase 往返 ═══');
   eq(C.pendingSeats(w3).join(','), '1,3', '還沒回的座位算得對');
 }
 
+console.log('═══ 畫面看到的選項（seatOptions）═══');
+/* 2026-10-15：畫面拿 win.eligible[我] 直接用、再用 !opt.any 判斷要不要替玩家自動過 ——
+   但 openWindow 會把 any 刪掉，結果單機的每一個宣告視窗都被自動過掉（v1.05～v1.63，榮和／碰／吃全部沒機會）。
+   這幾項釘住：不管視窗裡有沒有 any，畫面拿到的 any 都要對。 */
+{
+  // 聽 3萬／6萬，上家打 6萬 → 單機視窗裡我能榮和
+  const h = table([WAIT36, null, null, null]);
+  discardFrom(h, 3, '6萬');
+  const win = C.openWindow(h, { now: 0 });
+  ok(win && win.eligible['0'], '單機：視窗有開、我在名單裡');
+  eq(win.eligible['0'].any, undefined, '單機：視窗裡存的選項沒有 any（就是這個讓畫面誤判）');
+  const o = C.seatOptions(win, h, 0);
+  ok(o.ron, '單機：畫面看到能榮和');
+  ok(o.any, '單機：畫面看到「有得宣告」—— 不會被自動過掉');
+}
+{
+  // 手上一對發，對家打發 → 能碰
+  const h = table([null, null, '發 發 1萬 9筒', null]);
+  discardFrom(h, 0, '發');
+  const win = C.openWindow(h, { now: 0 });
+  const o = C.seatOptions(win, h, 2);
+  ok(o.pong && o.any, '單機：能碰時 any 也要是 true');
+  eq(C.seatOptions(win, h, 1).any, false, '單機：不在名單裡的座位 any 是 false');
+}
+{
+  // 下家能吃
+  const h = table([null, '4萬 5萬 9筒', null, null]);
+  discardFrom(h, 0, '3萬');
+  const o = C.seatOptions(C.openWindow(h, { now: 0 }), h, 1);
+  ok(o.chi.length === 1 && o.any, '單機：能吃時 any 也要是 true');
+}
+{
+  // 連線（群主模式）：用自己的手牌算
+  const h = table([WAIT36, null, null, null]);
+  discardFrom(h, 3, '3萬');
+  const win = C.openWindow(h, { now: 0, announce: true, seats: [0, 1, 2] });
+  const o = C.seatOptions(win, h, 0);
+  ok(o.ron && o.any, '連線：自己的手牌算出能榮和');
+  eq(C.seatOptions(win, h, 1).any, false, '連線：沒牌可鳴的 any 是 false');
+}
+eq(C.seatOptions(null, null, 0).any, false, '沒有視窗：any 是 false');
+
 console.log('\n─────────────────────────');
 console.log(`通過 ${pass}　失敗 ${fail}`);
 if (fail) { fails.forEach(f => console.log('  ✗ ' + f)); process.exit(1); }

@@ -91,6 +91,30 @@ function buildOptions(hand, seat, opts) {
   return { ron, pong, kong, chi, any: ron || pong || kong || chi.length > 0 };
 }
 
+/* ── 某一家在這個視窗裡能做什麼（給畫面用）──────────────────
+   畫面要的是「這一家能不能鳴、能鳴什麼」，兩種視窗算法不一樣：
+     ‧ 中央模式（單機）：開窗時已經算好，存在 win.eligible —— 但**沒有 any**（下面 openWindow 刻意刪掉的）
+     ‧ 群主模式（連線）：視窗不知道誰能鳴（群主不看手牌），由這一家用自己的手牌算
+   ⚠️ 一律從 ron／pong／kong／chi 算回 any，不信任傳進來的 any。
+      2026-10-15 抓到的大錯：畫面直接拿 win.eligible[我] 來用、再用 !opt.any 判斷「鳴不了就替他回過」——
+      eligible 裡沒有 any，於是 v1.05～v1.63 單機的每一個宣告視窗都被自動過掉，榮和、碰、吃、明槓全部沒機會。
+      這個函式就是為了讓那段判斷有測試釘著（test/claim-arbiter.test.js、test/e2e-claims.test.js）。 */
+function seatOptions(win, hand, seat) {
+  const none = { ron: false, pong: false, kong: false, chi: [], any: false };
+  if (!win) return none;
+  let o;
+  if (win.announce) {
+    o = buildOptions(hand, seat, { kongAdded: win.kind === 'kong_added' });
+    if (win.kind === 'kong_added' || win.guarded) o = { ron: o.ron, pong: false, kong: false, chi: [] };
+  } else {
+    o = win.eligible && win.eligible[String(seat)];
+    if (!o) return none;
+  }
+  const chi = Array.isArray(o.chi) ? o.chi : [];
+  return { ron: !!o.ron, pong: !!o.pong, kong: !!o.kong, chi,
+           any: !!(o.ron || o.pong || o.kong || chi.length) };
+}
+
 /* ── 開窗 ──────────────────────────────────────────────────
    seats：要問哪幾家。單機傳 [0,1,2,3]（自己那家會被 buildOptions 濾掉）；
    線上由 driver 傳。沒有人能宣告就回 null —— **這就是不跳窗的那道閘**。 */
@@ -517,7 +541,7 @@ function normalizeWindow(win) {
 
 return {
   DEFAULT_TIMEOUT_MS, DEFAULT_MULTI_RON,
-  buildOptions, openWindow,
+  buildOptions, seatOptions, openWindow,
   respond, pendingSeats, askedSeats, isTimedOut, isSettled, fillTimeouts,
   selfResponse,
   resolve,
