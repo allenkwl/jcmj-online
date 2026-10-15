@@ -16,44 +16,9 @@
    不能靜靜跳過，跳過就等於沒有這道防線。
    執行： node test/e2e-claims.test.js                                         */
 'use strict';
-const fs = require('fs');
-const os = require('os');
-const path = require('path');
-const http = require('http');
-
-const ROOT = path.join(__dirname, '..');
-let pass = 0, fail = 0;
-const fails = [];
-function ok(cond, name, detail) {
-  if (cond) pass++;
-  else { fail++; fails.push(name + (detail ? '　→ ' + detail : '')); }
-}
-function finish() {
-  console.log('\n─────────────────────────');
-  console.log(`通過 ${pass}　失敗 ${fail}`);
-  if (fail) { fails.forEach(f => console.log('  ✗ ' + f)); process.exitCode = 1; return; }
-  console.log('全部通過 ✓');
-}
-
-let chromium = null;
-for (const p of ['playwright', path.join(os.homedir(), 'Documents/DILA/戰國麻將宣傳片/node_modules/playwright')]) {
-  try { chromium = require(p).chromium; break; } catch (_) {}
-}
-
-/* 靜態伺服器：只送檔案，不快取 */
-const MIME = { '.html': 'text/html; charset=utf-8', '.js': 'text/javascript; charset=utf-8', '.json': 'application/json',
-  '.css': 'text/css', '.webp': 'image/webp', '.png': 'image/png', '.jpg': 'image/jpeg', '.mp3': 'audio/mpeg',
-  '.mp4': 'video/mp4', '.svg': 'image/svg+xml', '.woff2': 'font/woff2' };
-function serve() {
-  const srv = http.createServer((req, res) => {
-    const rel = decodeURIComponent(req.url.split('?')[0].split('#')[0]).replace(/^\/+/, '');
-    const file = path.join(ROOT, rel || 'index.html');
-    if (!file.startsWith(ROOT) || !fs.existsSync(file) || fs.statSync(file).isDirectory()) { res.writeHead(404); res.end(); return; }
-    res.writeHead(200, { 'Content-Type': MIME[path.extname(file)] || 'application/octet-stream', 'Cache-Control': 'no-store' });
-    fs.createReadStream(file).pipe(res);
-  });
-  return new Promise(r => srv.listen(0, '127.0.0.1', () => r(srv)));
-}
+const E = require('./_e2e.js');      // 共用：計數、找 Playwright、靜態伺服器、開遊戲
+const { ok, finish } = E.counter();
+const chromium = E.findChromium();
 
 /* ── 在頁面裡跑的部分 ── */
 async function scenario(page, s) {
@@ -143,19 +108,11 @@ async function scenario(page, s) {
     ok(false, '找得到 Playwright', '請在專案資料夾跑：npm i -D playwright && npx playwright install chromium');
     return finish();
   }
-  // E2E_FILE 可以指定別的檔（例如拿有問題的舊版來確認這支測試抓得到錯）
-  const latest = process.env.E2E_FILE || JSON.parse(fs.readFileSync(path.join(ROOT, 'latest.json'), 'utf8')).file;
-  const srv = await serve();
-  const port = srv.address().port;
-  const browser = await chromium.launch({ headless: true, args: ['--autoplay-policy=no-user-gesture-required'] });
   const kill = setTimeout(() => { console.log('超過 3 分鐘，強制結束'); process.exit(1); }, 180000);
+  let g = null;
   try {
-    const page = await browser.newPage({ viewport: { width: 1280, height: 720 } });
-    const errors = [];
-    page.on('pageerror', e => errors.push(String(e)));
-    if (process.env.E2E_DEBUG) page.on('console', m => console.log('  [console]', m.type(), m.text().slice(0, 200)));
-    await page.goto(`http://127.0.0.1:${port}/${encodeURI(latest)}#test&mute`);
-    await page.waitForFunction(() => window.MJDev && window.__test, null, { timeout: 20000 });
+    g = await E.openGame(chromium);
+    const { page, errors, latest } = g;
     console.log('═══ 端對端：宣告視窗（' + latest + '）═══');
 
     const WAIT7 = ['1條', '2條', '3條', '4條', '5條', '6條', '8條', '9條', '發', '發', '白', '白', '白'];
@@ -190,8 +147,7 @@ async function scenario(page, s) {
     ok(false, '端對端測試跑完', String(e && e.message || e));
   } finally {
     clearTimeout(kill);
-    await browser.close();
-    srv.close();
+    if (g) await g.close();
     finish();
   }
 })();

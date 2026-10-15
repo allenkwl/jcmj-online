@@ -24,17 +24,22 @@ window.MJDevtools = [
   "family": "亡國動畫",
   "all": [
    {
+    "ver": "0.2",
+    "rel": "devtools/亡國動畫v0.2.html"
+   },
+   {
     "ver": "0.1",
     "rel": "devtools/亡國動畫v0.1.html"
    }
   ],
   "newest": {
-   "ver": "0.1",
-   "rel": "devtools/亡國動畫v0.1.html"
+   "ver": "0.2",
+   "rel": "devtools/亡國動畫v0.2.html"
   },
-  "count": 1,
+  "count": 2,
+  "needsServer": true,
   "title": "亡國動畫",
-  "sub": "國庫見底的亡國動畫＋配樂（直接在遊戲本體裡播，可選國家）；影片是 ComfyUI 做的",
+  "sub": "亡國的測試台：不用打到破產，直接跑「一場結算 → 國庫變負 → 亡國動畫 → 回標題」整段並逐項檢查；也能只播動畫、檢查七國素材。不碰存檔",
   "ico": "🏚️",
   "cat": "動畫"
  },

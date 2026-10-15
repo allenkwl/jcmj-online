@@ -1,0 +1,276 @@
+<!doctype html>
+<html lang="zh-Hant">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>亡國動畫</title>
+<meta name="description" content="亡國的測試台：不用打到破產，直接跑「一場結算 → 國庫變負 → 亡國動畫 → 回標題」整段並逐項檢查；也能只播動畫、檢查七國素材。不碰存檔">
+<meta name="launcher-icon" content="🏚️">
+<meta name="launcher-cat" content="動畫">
+<meta name="launcher-needs-server" content="1">
+<!--
+  亡國動畫的測試台（v0.2，2026-10-15）。
+  使用者：「幫我將敗北動畫做成測試程式掛進啟動台，不可能讓我全部用遊戲測試」。
+
+  v0.1 只能播動畫本身（載遊戲的 #fallen）。這一版用 iframe 載最新版遊戲的 #test，
+  透過遊戲的 MJDev.testCampaign（只在記憶體裡的戰役、curSlot＝null，**不開存檔格也不寫存檔**）
+  走真的流程：奏章 → 天下形勢 → 發牌 → 占卜 → MJDev.finishMatch([分數]) 結算 → 分封 → 亡國 → 回標題，
+  每一步都檢查，最後比對存檔前後一字不差。
+  ⚠️ 要跨框操作，所以**一定要經開發伺服器開**（http://）。
+-->
+<style>
+:root{--bg:#0b0907;--panel:#17110d;--line:#3a2b20;--ink:#eadfcb;--quiet:#a99a85;--gold:#e8c46a;--red:#e0634e;--ok:#7fd18b;}
+*{box-sizing:border-box;}
+html,body{height:100%;margin:0;background:var(--bg);color:var(--ink);font:13px/1.5 -apple-system,'PingFang TC','Noto Sans TC',sans-serif;}
+body{display:grid;grid-template-columns:320px 1fr;}
+#panel{background:var(--panel);border-right:1px solid var(--line);padding:16px;overflow:auto;}
+h1{font-size:16px;margin:0 0 4px;color:var(--gold);}
+.sub{color:var(--quiet);font-size:12px;margin:0 0 14px;}
+.note{border:1px solid var(--line);border-radius:6px;padding:8px 10px;color:var(--quiet);font-size:12px;margin-bottom:14px;}
+label{display:block;margin:9px 0 3px;color:var(--quiet);font-size:12px;}
+select,input[type=number]{width:100%;background:#100b08;color:var(--ink);border:1px solid var(--line);border-radius:4px;padding:5px 6px;font:inherit;}
+.two{display:grid;grid-template-columns:1fr 1fr;gap:8px;}
+.row{display:flex;gap:8px;align-items:center;}
+button{background:#2a1d14;color:var(--ink);border:1px solid #5a4030;border-radius:6px;padding:8px 10px;font:inherit;cursor:pointer;width:100%;margin-top:6px;}
+button.main{background:var(--gold);color:#20160a;border-color:var(--gold);font-weight:600;font-size:14px;padding:10px;}
+button:disabled{opacity:.5;cursor:default;}
+#calc{margin-top:8px;font-size:12px;color:var(--quiet);}
+#calc b{color:var(--ink);}
+#calc .neg{color:var(--red);}
+#checks{margin-top:12px;font-size:12px;}
+#checks div{padding:2px 0;}
+#checks .ok{color:var(--ok);}
+#checks .bad{color:var(--red);}
+#checks .run{color:var(--gold);}
+table{width:100%;border-collapse:collapse;font-size:11.5px;margin-top:6px;}
+td,th{border-bottom:1px solid var(--line);padding:3px 4px;text-align:left;}
+#stage{position:relative;overflow:hidden;}
+#frameWrap{position:absolute;transform-origin:0 0;box-shadow:0 0 0 1px var(--line);}
+#frameWrap iframe{border:0;display:block;background:#000;width:1280px;height:720px;}
+</style>
+</head>
+<body>
+<div id="panel">
+  <h1>亡國動畫測試台</h1>
+  <p class="sub" id="ver">載入中⋯</p>
+  <div class="note">不用真的打到破產。走的是遊戲本體的流程，戰役只存在記憶體裡，
+  <b>不開存檔格、不寫存檔</b>（每次跑完會比對存檔前後一字不差）。</div>
+
+  <label>本國</label>
+  <select id="kingdom">
+    <option value="qi">齊</option><option value="chu">楚</option><option value="yan">燕</option>
+    <option value="han">韓</option><option value="wei">魏</option><option value="zhao">趙</option>
+    <option value="qin" selected>秦</option>
+  </select>
+  <div class="two">
+    <div><label>已經打過幾場</label><input type="number" id="matches" value="6" min="0" max="99"></div>
+    <div><label>已征服幾國</label><input type="number" id="conq" value="2" min="0" max="5"></div>
+  </div>
+  <div class="two">
+    <div><label>結算前國庫（兩）</label><input type="number" id="gold" value="300" step="50"></div>
+    <div><label>這一場輸贏（兩）</label><input type="number" id="net" value="-600" step="20"></div>
+  </div>
+  <div id="calc"></div>
+  <label class="row"><input type="checkbox" id="sound"> 有聲音（不勾＝靜音，換了會重載遊戲）</label>
+
+  <button class="main" id="flow" disabled>▶ 走一次完整亡國流程（含檢查）</button>
+  <button id="play" disabled>▶ 只播亡國動畫（照上面的設定）</button>
+  <button id="assets" disabled>✓ 檢查七國素材</button>
+  <div id="checks"></div>
+</div>
+<div id="stage"><div id="frameWrap"></div></div>
+
+<script src="../latest.js"></script>
+<script>
+'use strict';
+const $ = id => document.getElementById(id);
+const file = window.MJ_LATEST && window.MJ_LATEST.file;
+const ORDER = ['qi', 'chu', 'yan', 'han', 'wei', 'zhao', 'qin'];
+const NAME = { qi: '齊', chu: '楚', yan: '燕', han: '韓', wei: '魏', zhao: '趙', qin: '秦' };
+let frame = null;
+const W = () => frame && frame.contentWindow;
+const wait = ms => new Promise(r => setTimeout(r, ms));
+const BTNS = ['flow', 'play', 'assets'];
+const enable = on => BTNS.forEach(id => { $(id).disabled = !on; });
+
+/* ── 設定 → 算出來的結果 ── */
+function cfg() {
+  const net = Number($('net').value) || 0;
+  // 其他三家分掉我的輸贏（四家總和為 0）；我輸的話排最後 → 沒有征服、沒有戰利品
+  const rest = -net, a = Math.round(rest * .5), b = Math.round(rest * .3), c = rest - a - b;
+  const scores = [net, a, b, c];
+  const rank = scores.slice().sort((x, y) => y - x).indexOf(net) + 1;
+  const spoils = rank <= 3 ? 300 : 0;
+  const before = Number($('gold').value) || 0;
+  const k = $('kingdom').value;
+  const conq = ORDER.filter(id => id !== k).slice(0, Math.max(0, Math.min(5, Number($('conq').value) || 0)));
+  return { k, before, net, scores, rank, spoils, after: before + net + spoils, conq, matches: Number($('matches').value) || 0 };
+}
+function showCalc() {
+  const c = cfg();
+  $('calc').innerHTML = `這一場排第 <b>${c.rank}</b>${c.spoils ? '（征服一國，戰利品 +300）' : '（墊底，沒有戰利品）'}<br>`
+    + `結算後國庫 <b class="${c.after < 0 ? 'neg' : ''}">${c.after.toLocaleString()}</b> 兩　→　`
+    + (c.after < 0 ? '<b class="neg">亡國</b>' : '<b>不會亡國</b>（要測亡國請調成負的）');
+}
+['kingdom', 'matches', 'conq', 'gold', 'net'].forEach(id => $(id).addEventListener('input', showCalc));
+
+/* ── 檢查清單 ── */
+function checks() { $('checks').innerHTML = ''; }
+function check(text, state, detail) {
+  const d = document.createElement('div');
+  d.className = state === true ? 'ok' : state === false ? 'bad' : 'run';
+  d.textContent = (state === true ? '✓ ' : state === false ? '✗ ' : '… ') + text + (detail ? '　' + detail : '');
+  $('checks').appendChild(d);
+  return d;
+}
+
+/* ── iframe ── */
+function mount() {
+  if (!file) { check('讀不到 ../latest.js', false); return; }
+  if (location.protocol === 'file:') { check('要經開發伺服器開（http://）：雙擊「啟動戰國麻將.command」再從啟動台點進來', false); return; }
+  $('ver').textContent = '遊戲：' + file;
+  $('frameWrap').innerHTML = '';
+  enable(false);
+  frame = document.createElement('iframe');
+  frame.allow = 'autoplay';
+  frame.src = '../' + encodeURI(file) + '#test' + ($('sound').checked ? '' : '&mute');
+  frame.addEventListener('load', async () => {
+    for (let i = 0; i < 200; i++) { if (W().MJDev && W().MJFallen && W().MJDev.testCampaign) { enable(true); return; } await wait(100); }
+    check('遊戲沒有 MJDev.testCampaign（要 v1.66 以後）', false);
+  });
+  $('frameWrap').appendChild(frame);
+  fit();
+}
+function fit() {
+  const st = $('stage').getBoundingClientRect();
+  const k = Math.min((st.width - 24) / 1280, (st.height - 24) / 720, 1);
+  const w = $('frameWrap');
+  w.style.transform = `scale(${k})`;
+  w.style.left = ((st.width - 1280 * k) / 2) + 'px';
+  w.style.top = ((st.height - 720 * k) / 2) + 'px';
+}
+window.addEventListener('resize', fit);
+$('sound').addEventListener('change', mount);
+
+/* 存檔的指紋：跑之前、跑之後要一模一樣 */
+function saveFingerprint() {
+  try { const w = W(); return JSON.stringify(w.MJSoloSlots.load(w.localStorage)); } catch (e) { return 'ERR ' + e; }
+}
+
+/* ── 一、完整流程 ── */
+async function runFlow() {
+  enable(false); checks();
+  const c = cfg(), w = W(), d = w.document;
+  const vis = el => el && el.offsetParent;
+  const savesBefore = saveFingerprint();
+  try {
+    const info = w.MJDev.testCampaign({ kingdom: c.k, gold: c.before, conquered: c.conq, matches: c.matches });
+    check('開測試戰役', true, `${NAME[info.kingdom]}・國庫 ${info.gold}・征服 ${info.conquered.length}・${info.matches} 場`);
+
+    // 奏章 → 天下形勢 → 發牌動畫 → 占卜
+    const s1 = check('奏章、天下形勢、發牌、占卜');
+    let ok1 = false;
+    for (let i = 0; i < 600; i++) {
+      ['dc-ok', 'map-ok'].forEach(id => { const b = d.getElementById(id); if (vis(b)) b.click(); });
+      const fb = d.querySelector('#fortune-ov.show #f-bets button[data-bet="normal"]');
+      if (fb) { fb.click(); ok1 = true; break; }
+      await wait(50);
+    }
+    s1.remove(); check('奏章、天下形勢、發牌、占卜', ok1);
+    if (!ok1) throw new Error('走不到占卜');
+    await wait(400);
+
+    // 結算
+    w.MJDev.finishMatch(c.scores);
+    check('一場結算', true, `四家 ${c.scores.join(' / ')}`);
+
+    // 分封動畫（停在結果要按確認）→ 亡國動畫
+    const s2 = check('分封領地 → 亡國動畫');
+    let fal = null;
+    for (let i = 0; i < 300; i++) {
+      const ok = d.querySelector('#enf-ov.wait .enf-ok'); if (ok) ok.click();
+      fal = d.querySelector('#fal-ov.show'); if (fal) break;
+      if (vis(d.getElementById('end-pop')) && !fal && i > 40) break;   // 沒亡國：出的是一般結算框
+      await wait(100);
+    }
+    s2.remove();
+    if (c.after >= 0) {
+      check('國庫沒有變負 → 不該亡國', !fal, fal ? '卻播了亡國動畫' : '出的是一般結算框');
+      return finish(savesBefore);
+    }
+    check('出現亡國動畫', !!fal);
+    if (!fal) throw new Error('沒有出現亡國動畫');
+
+    // 影片、標題、戰績
+    await wait(1500);
+    const v = fal.querySelector('video'), img = fal.querySelector('.f-stage img');
+    check('主公倒下的影片', !!(v && v.videoWidth && !v.error),
+          v ? `${(v.src || '').split('/').pop()}　${v.videoWidth}px　${(v.duration || 0).toFixed(1)} 秒` : (img ? '改用圖片：' + img.src.split('/').pop() : '沒有影片也沒有圖'));
+    const tImg = fal.querySelector('.f-title img');
+    check('「○亡」大字', !!(tImg && tImg.complete && tImg.naturalWidth), tImg ? tImg.alt : '');
+    fal.click();                                  // 跳到戰績
+    await wait(1200);
+    const lines = [...fal.querySelectorAll('.f-epi div')].map(x => x.textContent);
+    const goldLine = lines.find(t => t.startsWith('國庫')) || '';
+    check('戰績：國庫數字', goldLine.includes(c.after.toLocaleString()), goldLine);
+    check('戰績：場數與征服', (lines[1] || '').includes((c.matches + 1) + ' 場') && (lines[1] || '').includes(c.conq.length + ' / 6'), lines[1] || '');
+    fal.click();                                  // 回標題
+    await wait(1000);
+    check('回到標題畫面', !!d.querySelector('#title-screen.show') && !d.querySelector('#fal-ov.show'));
+  } catch (e) {
+    check('中斷：' + (e && e.message || e), false);
+  }
+  finish(savesBefore);
+}
+function finish(savesBefore) {
+  check('存檔完全沒被動到', saveFingerprint() === savesBefore);
+  enable(true);
+}
+
+/* ── 二、只播動畫 ── */
+async function playOnly() {
+  enable(false); checks();
+  const c = cfg(), w = W();
+  const kd = w.MJKingdoms.get(c.k);
+  const name = (kd.kingName || '').slice(0, (kd.kingName || '').lastIndexOf('王') + 1) || kd.name;
+  check('播放中（點畫面跳到戰績，再點一下結束）');
+  await w.MJFallen.play({ kingdom: c.k, name, matches: c.matches + 1, conquered: c.conq, gold: { before: c.before, after: c.after } });
+  checks(); check('播完了', true);
+  enable(true);
+}
+
+/* ── 三、七國素材 ── */
+async function checkAssets() {
+  enable(false); checks();
+  const base = new URL('../', location.href);
+  const tbl = document.createElement('table');
+  tbl.innerHTML = '<tr><th>國</th><th>影片</th><th>跪地圖</th><th>大字</th></tr>';
+  $('checks').appendChild(tbl);
+  let all = true;
+  for (const k of ORDER) {
+    const vid = await new Promise(res => {
+      const v = document.createElement('video'); v.muted = true; v.preload = 'metadata';
+      v.onloadedmetadata = () => res(`✓ ${v.videoWidth}px ${v.duration.toFixed(1)}秒`);
+      v.onerror = () => res('✗ 載不到');
+      v.src = new URL(`assets/fallen/${k}.mp4`, base).href;
+      setTimeout(() => res('✗ 逾時'), 8000);
+    });
+    const img = u => new Promise(res => { const i = new Image(); i.onload = () => res(`✓ ${i.naturalWidth}px`); i.onerror = () => res('✗ 載不到'); i.src = new URL(u, base).href; });
+    const still = await img(`assets/fallen/${k}.webp`), title = await img(`assets/titles/fallen-${k}.webp`);
+    [vid, still, title].forEach(x => { if (x.startsWith('✗')) all = false; });
+    const tr = document.createElement('tr');
+    tr.innerHTML = `<td>${NAME[k]}</td><td>${vid}</td><td>${still}</td><td>${title}</td>`;
+    tbl.appendChild(tr);
+  }
+  check('七國素材', all);
+  enable(true);
+}
+
+$('flow').addEventListener('click', runFlow);
+$('play').addEventListener('click', playOnly);
+$('assets').addEventListener('click', checkAssets);
+showCalc();
+mount();
+</script>
+</body>
+</html>
