@@ -214,9 +214,13 @@ async function runFlow() {
     const goldLine = lines.find(t => t.startsWith('國庫')) || '';
     check('戰績：國庫數字', goldLine.includes(c.after.toLocaleString()), goldLine);
     check('戰績：場數與征服', (lines[1] || '').includes((c.matches + 1) + ' 場') && (lines[1] || '').includes(c.conq.length + ' / 6'), lines[1] || '');
-    fal.click();                                  // 回標題
+    const okBtn = fal.querySelector('.f-ok.on');
+    check('戰績畫面有「確定」按鈕', !!okBtn);
+    fal.click(); await wait(1500);                // 點背景不能離開
+    check('點背景不會自己回標題', !!d.querySelector('#fal-ov.show'));
+    if (okBtn) okBtn.click();
     await wait(1000);
-    check('回到標題畫面', !!d.querySelector('#title-screen.show') && !d.querySelector('#fal-ov.show'));
+    check('按「確定」才回到標題畫面', !!d.querySelector('#title-screen.show') && !d.querySelector('#fal-ov.show'));
   } catch (e) {
     check('中斷：' + (e && e.message || e), false);
   }

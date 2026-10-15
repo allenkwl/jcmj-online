@@ -11,7 +11,8 @@
      3.0– 8.0  灰燼飄落，畫面慢慢褪成灰
      8.0       「○亡」大字砸下：大鑼
      8.6–14.0  戰績：主公、打了幾場、征服幾國、國庫
-   點一下跳到最後的戰績，再點一下（或時間到）結束。
+   點一下跳到最後的戰績；戰績畫面出現「確定，回到標題」，**玩家按了才結束**，不會自己離開
+   （2026-10-15 使用者：「播完要讓玩家要確定才回主選單畫面」）。
 
    影片：assets/fallen/<國>.mp4 —— tools/build-fallen-art.py 用伺服器上的 ComfyUI 做的：
      FLUX.2 參考出征圖畫「踉蹌劍斷」與「跪地」兩張，LTX-2.5 用出征／踉蹌／跪地三張圖生 5 秒影片。
@@ -70,6 +71,12 @@ const CSS = `
 #fal-ov .f-hint{position:absolute;bottom:2%;left:0;right:0;text-align:center;font-size:11px;color:rgba(233,220,196,.35);
   letter-spacing:.25em;z-index:9;opacity:0;transition:opacity .8s;}
 #fal-ov .f-hint.on{opacity:1;}
+#fal-ov .f-ok{position:absolute;left:50%;bottom:7%;transform:translateX(-50%);z-index:10;
+  font:700 clamp(14px,2.6vh,19px)/1 'Noto Serif TC','Songti TC',serif;letter-spacing:.2em;color:#20160a;
+  background:linear-gradient(#f3d98a,#c9a44c);border:1px solid #f6e3a6;border-radius:8px;padding:.75em 1.6em;
+  box-shadow:0 4px 18px rgba(0,0,0,.6);cursor:pointer;opacity:0;pointer-events:none;transition:opacity .8s;}
+#fal-ov .f-ok.on{opacity:1;pointer-events:auto;}
+#fal-ov .f-ok.kbfocus,#fal-ov .f-ok:focus-visible{outline:2px solid #fff4d6;outline-offset:3px;}
 `;
 
 /* ── 配樂 ───────────────────────────────────────────────── */
@@ -276,13 +283,23 @@ function build(o, skipTo) {
   const title = el('f-title', ov, '<img src="assets/titles/fallen-' + home.id + '.webp" alt="' + esc(home.char) + '亡">');
   const epi = el('f-epi', ov);
   const lines = epitaphLines(o, home).map(([cls, html]) => el(cls, epi, html));
-  const hint = el('f-hint', ov, '點一下回到標題');
+  const hint = el('f-hint', ov, '');
+  // 「確定」：戰績出來才亮；按了才結束（play() 裡掛 click）
+  const okBtn = document.createElement('button');
+  okBtn.type = 'button'; okBtn.className = 'f-ok'; okBtn.textContent = '確定，回到標題';
+  ov.appendChild(okBtn);
+  const showOk = () => {
+    okBtn.classList.add('on'); hint.textContent = 'Enter／A／B 也可以'; hint.classList.add('on');
+    /* ⚠️ 按鈕亮了要叫輸入層重抓焦點清單：它只在重畫牌桌時才抓，這時沒有重畫 ——
+       不叫的話鍵盤焦點不在按鈕上，Enter／手把 A 按了沒反應（端對端測試抓到的） */
+    try { if (window.MJInput) window.MJInput.refresh(0); } catch (_) {}
+  };
 
   if (skipTo) {
     stage.classList.add('gray', 'back');
     title.style.opacity = '1'; title.classList.add('up');
     lines.forEach(l => l.classList.add('on'));
-    hint.classList.add('on');
+    showOk();
     ash(30, 3);
     return;
   }
@@ -298,10 +315,11 @@ function build(o, skipTo) {
     title.classList.remove('slam'); title.style.opacity = '1'; void title.offsetWidth; title.classList.add('up');
   }, T.epitaph - 0.1);
   lines.forEach((l, i) => later(() => l.classList.add('on'), T.epitaph + 0.3 + i * 0.75));
-  later(() => hint.classList.add('on'), T.hint);
+  later(showOk, T.hint);
 }
 
-/* 點一下：跳到戰績；再點一下（或時間到）：結束 */
+/* 點一下：跳到戰績。戰績畫面只有「確定」能結束 —— 點背景、等多久都不會自己離開。
+   鍵盤／手把：遊戲的 focusables 會把亮著的 .f-ok 放進焦點清單（Enter／A），B 也是按它。 */
 function play(o) {
   ensureCss();
   if (!ov) {
@@ -318,7 +336,6 @@ function play(o) {
   musicStart(0);
   return new Promise(resolve => {
     let done = false, skipped = false;
-    const startedAt = Date.now();
     const finish = () => {
       if (done) return; done = true;
       ov.removeEventListener('click', onTap);
@@ -327,14 +344,14 @@ function play(o) {
       const v = ov.querySelector('video'); if (v) { try { v.pause(); } catch (_) {} }
       resolve();
     };
-    const onTap = () => {
-      if (skipped || Date.now() - startedAt > T.hint * 1000) { finish(); return; }
+    const onTap = e => {
+      const okBtn = ov.querySelector('.f-ok');
+      if (okBtn && e && e.target === okBtn) { if (okBtn.classList.contains('on')) finish(); return; }
+      if (skipped || (okBtn && okBtn.classList.contains('on'))) return;    // 已經在戰績畫面：只認「確定」
       skipped = true;
       stop(); build(o, true);
-      later(finish, 6);              // 跳到戰績之後停 6 秒，沒點也會結束
     };
     ov.addEventListener('click', onTap);
-    later(finish, T.end + 2.5);
   });
 }
 function stop() { timers.forEach(clearTimeout); timers = []; }

@@ -49,7 +49,14 @@ async function runCase(page, c) {
       out.title = t ? { alt: t.alt, ok: t.complete && t.naturalWidth > 0 } : null;
       fal.click(); await wait(1200);
       out.epitaph = [...fal.querySelectorAll('.f-epi div')].map(x => x.textContent);
-      fal.click(); await wait(1000);
+      // 播完要玩家按「確定」才回標題（2026-10-15）：點背景、等一下都不能自己離開
+      out.okShown = !!fal.querySelector('.f-ok.on');
+      fal.click(); await wait(2500);
+      out.stayedWithoutOk = !!document.querySelector('#fal-ov.show');
+      out.focusOnOk = (MJInput.current() || {}).className === fal.querySelector('.f-ok') .className;
+      // 用 B 鍵確定（鍵盤／手把的路徑；滑鼠點按鈕由 devtools/亡國動畫v0.2 那邊測）
+      document.dispatchEvent(new KeyboardEvent('keydown', { key: 'b', bubbles: true }));
+      await wait(1000);
       out.backToTitle = !!document.querySelector('#title-screen.show') && !document.querySelector('#fal-ov.show');
     }
     out.savesUntouched = fp() === before;
@@ -78,7 +85,10 @@ async function runCase(page, c) {
     ok(a.title && a.title.ok && a.title.alt === '秦亡', 'A 「秦亡」大字', JSON.stringify(a.title));
     ok((a.epitaph || []).some(t => t.includes('國庫') && t.includes('-300')), 'A 戰績上的國庫是 -300', JSON.stringify(a.epitaph));
     ok((a.epitaph || []).some(t => t.includes('7 場') && t.includes('2 / 6')), 'A 戰績：第 7 場、征服 2 國', JSON.stringify(a.epitaph));
-    ok(a.backToTitle, 'A 點兩下回到標題');
+    ok(a.okShown, 'A 戰績畫面有「確定」按鈕');
+    ok(a.stayedWithoutOk, 'A 沒按「確定」不會自己回標題（點背景、等 2.5 秒）');
+    ok(a.focusOnOk, 'A 鍵盤焦點在「確定」上（Enter／A 可以按）');
+    ok(a.backToTitle, 'A 按 B 鍵確定才回到標題');
     ok(a.savesUntouched, 'A 存檔完全沒被動到');
 
     // B 不會亡國：國庫 2000、同樣輸 600 → 1400
