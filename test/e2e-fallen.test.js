@@ -18,6 +18,9 @@ const chromium = E.findChromium();
 async function runCase(page, c) {
   return page.evaluate(async (c) => {
     const wait = ms => new Promise(r => setTimeout(r, ms));
+    /* ⚠️ 用「等到條件成立」，不要固定等幾秒：第一版固定等 1.5 秒看影片，電腦一忙就偶爾早一步檢查、整套測試失敗一次
+       （2026-10-15 跑整套時出現過一次，單跑八次都過）。上限放寬，真的壞掉時照樣在上限到時失敗。 */
+    const until = async (cond, max) => { const t0 = Date.now(); while (Date.now() - t0 < max) { if (cond()) return true; await wait(50); } return !!cond(); };
     const vis = el => el && el.offsetParent;
     const fp = () => JSON.stringify(MJSoloSlots.load(localStorage));
     const before = fp();
@@ -42,21 +45,23 @@ async function runCase(page, c) {
     out.fallen = !!fal;
     out.endPopTitle = (document.querySelector('#end-pop.show .ptitle') || {}).textContent || null;
     if (fal) {
-      await wait(1500);
+      await until(() => { const v = fal.querySelector('video'); return v && (v.videoWidth > 0 || v.error); }, 10000);
+      await until(() => { const t = fal.querySelector('.f-title img'); return t && t.complete && t.naturalWidth > 0; }, 6000);
       const v = fal.querySelector('video');
       out.video = v ? { src: v.src.split('/').pop(), w: v.videoWidth, err: !!v.error } : null;
       const t = fal.querySelector('.f-title img');
       out.title = t ? { alt: t.alt, ok: t.complete && t.naturalWidth > 0 } : null;
-      fal.click(); await wait(1200);
+      fal.click();
+      await until(() => fal.querySelector('.f-ok.on') && fal.querySelectorAll('.f-epi div.on').length >= 4, 6000);
       out.epitaph = [...fal.querySelectorAll('.f-epi div')].map(x => x.textContent);
       // 播完要玩家按「確定」才回標題（2026-10-15）：點背景、等一下都不能自己離開
       out.okShown = !!fal.querySelector('.f-ok.on');
       fal.click(); await wait(2500);
       out.stayedWithoutOk = !!document.querySelector('#fal-ov.show');
-      out.focusOnOk = (MJInput.current() || {}).className === fal.querySelector('.f-ok') .className;
+      out.focusOnOk = MJInput.current() === fal.querySelector('.f-ok');
       // 用 B 鍵確定（鍵盤／手把的路徑；滑鼠點按鈕由 devtools/亡國動畫v0.2 那邊測）
       document.dispatchEvent(new KeyboardEvent('keydown', { key: 'b', bubbles: true }));
-      await wait(1000);
+      await until(() => document.querySelector('#title-screen.show') && !document.querySelector('#fal-ov.show'), 6000);
       out.backToTitle = !!document.querySelector('#title-screen.show') && !document.querySelector('#fal-ov.show');
     }
     out.savesUntouched = fp() === before;
