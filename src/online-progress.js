@@ -99,6 +99,32 @@ function snapshot(player) {
   };
 }
 
+/* ── 合併：這台瀏覽器的進度 ＋ 雲端的進度（登入時，v1.69）──
+   同一國兩邊都有：取**打過比較多場**的那一份；一樣多取比較新的（updatedAt）；再一樣就用雲端的。
+   只有一邊有：照用。
+   回傳 { data, notes, cloudChanged, localChanged }：
+     notes        兩邊都有、而且不一樣的國：[{ kingdom, from:'local'|'cloud', matches, other }] —— 畫面上告訴玩家用了哪一份
+     cloudChanged 雲端要不要寫回（這台有雲端沒有的、或這台比較新）
+     localChanged 這台要不要更新 */
+function merge(local, cloud) {
+  const L = (local && local.kingdoms) || {}, C = cloud || {};
+  const out = {}, notes = [];
+  let cloudChanged = false, localChanged = false;
+  const ids = Object.keys(L).concat(Object.keys(C)).filter((k, i, a) => a.indexOf(k) === i);
+  ids.forEach(k => {
+    const l = L[k], c = C[k];
+    if (l && !c) { out[k] = l; cloudChanged = true; return; }
+    if (c && !l) { out[k] = c; localChanged = true; return; }
+    const lm = l.matches || 0, cm = c.matches || 0;
+    const useLocal = lm > cm || (lm === cm && (l.updatedAt || 0) > (c.updatedAt || 0));
+    if (JSON.stringify(l) === JSON.stringify(c)) { out[k] = c; return; }
+    out[k] = useLocal ? l : c;
+    if (useLocal) cloudChanged = true; else localChanged = true;
+    notes.push({ kingdom: k, from: useLocal ? 'local' : 'cloud', matches: useLocal ? lm : cm, other: useLocal ? cm : lm });
+  });
+  return { data: { v: 1, kingdoms: out }, notes, cloudChanged, localChanged };
+}
+
 /* ── 舊的一桌一段存檔：清掉 ── */
 function clearOld(store) {
   let had = false;
@@ -140,7 +166,7 @@ function unlock(store, tab) {
 
 return {
   KEY, LOCK_KEY, OLD_KEYS, LOCK_TTL,
-  load, save, get, forTable, put, drop, summary, snapshot,
+  load, save, get, forTable, put, drop, summary, snapshot, merge,
   clearOld, readLock, lockedByOther, lock, unlock,
 };
 });

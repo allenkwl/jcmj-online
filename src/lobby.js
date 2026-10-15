@@ -75,11 +75,21 @@ function otherTab() { try { return OP() ? OP().lockedByOther(localStorage, TAB) 
 function takeLock(info) {
   if (!OP()) return true;
   if (!OP().lock(localStorage, TAB, info)) return false;
+  // 登入的人：雲端也記一筆「這個帳號正在哪一桌」，另一台裝置就擋得到（v1.69）
+  Net.claimSession({ tab: TAB, table: (info && info.table) || '' });
   clearInterval(lockTimer);
-  lockTimer = setInterval(() => { try { OP().lock(localStorage, TAB, {}); } catch (_) {} }, 10000);
+  lockTimer = setInterval(() => {
+    try { OP().lock(localStorage, TAB, {}); } catch (_) {}
+    const l = OP().readLock(localStorage);
+    Net.claimSession({ tab: TAB, table: (l && l.table) || '' });
+  }, 10000);
   return true;
 }
-function dropLock() { clearInterval(lockTimer); lockTimer = null; try { OP() && OP().unlock(localStorage, TAB); } catch (_) {} }
+function dropLock() {
+  clearInterval(lockTimer); lockTimer = null;
+  try { OP() && OP().unlock(localStorage, TAB); } catch (_) {}
+  Net.releaseSession(TAB);
+}
 if (typeof window !== 'undefined') window.addEventListener('pagehide', dropLock);
 /* 擋第二個分頁：回 true＝擋下了 */
 function blockedByOtherTab() {
@@ -87,6 +97,96 @@ function blockedByOtherTab() {
   if (!l) return false;
   toast('你已經在「' + (l.table || '另一桌') + '」了（另一個分頁）—— 同一個瀏覽器一次只能在一桌');
   return true;
+}
+/* 登入的人：同一個帳號在別台裝置上桌了 → 擋（uid 一樣，兩台同時上桌會撞身分）。回 Promise<是否擋下> */
+const SESSION_TTL = 30000;
+function blockedElsewhere() {
+  if (blockedByOtherTab()) return Promise.resolve(true);
+  return Net.readSession().then(v => {
+    if (!v || v.tab === TAB) return false;
+    const now = Date.now() + (Net.timeOffset || 0);
+    if (now - (v.at || 0) > SESSION_TTL) return false;           // 過期（那台關掉了、網路斷了）
+    toast('你的帳號正在「' + (v.table || '另一桌') + '」（另一台裝置或分頁）—— 同一個玩家一次只能在一桌');
+    return true;
+  }).catch(() => false);
+}
+
+/* ── 選用的登入（v1.69，docs/online-kingdoms.md 第十一節）──
+   不登入照樣能玩（進度存這個瀏覽器）；登入之後進度存雲端，換裝置也能接著打。只能在大廳登入／登出。 */
+function renderAccount() {
+  const a = Net.account ? Net.account() : { loggedIn: false };
+  const st = byId('acct-status');
+  if (!st) return;
+  st.textContent = a.loggedIn
+    ? '已登入：' + (a.email || '') + (a.provider === 'google' ? '（Google）' : '（Email）') + '　進度存在雲端，換裝置也能接著打'
+    : '未登入：進度只存在這個瀏覽器。登入之後換裝置也能接著打';
+  show('acct-google', !a.loggedIn);
+  show('acct-email', !a.loggedIn);
+  show('acct-logout', a.loggedIn);
+}
+/* 登入之後（或每次進大廳）：這台的進度跟雲端合併。同一國取打過比較多場的那一份，不一樣的告訴玩家 */
+function syncProgress() {
+  if (!OP() || !Net.account().loggedIn) return Promise.resolve();
+  return Net.loadCloudProgress().then(cloud => {
+    const r = OP().merge(progress(), cloud || {});
+    if (r.localChanged) OP().save(localStorage, r.data);
+    if (r.cloudChanged) Net.saveCloudKingdoms(r.data.kingdoms);
+    const K = window.MJKingdoms;
+    if (r.notes.length) {
+      toast(r.notes.map(n => (K && K.get(n.kingdom) ? K.get(n.kingdom).name : n.kingdom)
+        + '用了' + (n.from === 'cloud' ? '雲端（別台）' : '這台') + '的進度（打過 ' + n.matches + ' 場；另一份 ' + n.other + ' 場）').join('；'));
+    }
+    renderLobby();
+  }).catch(() => {});
+}
+/* 一國的進度變了（一場打完、統一）：登入的話推上雲端。rec＝null 代表那一國刪掉 */
+function pushProgress(kingdom) {
+  if (!OP() || !Net.account || !Net.account().loggedIn) return;
+  Net.saveCloudKingdom(kingdom, OP().get(progress(), kingdom));
+}
+function loginMsg(e) {
+  const c = (e && e.code) || (e && e.message) || '';
+  if (/popup-closed|cancelled-popup/.test(c)) return '登入視窗被關掉了';
+  if (/popup-blocked/.test(c)) return '瀏覽器擋住了登入視窗：請允許這個網站開彈出視窗，再按一次';
+  if (/invalid-email/.test(c)) return 'Email 格式不對';
+  if (/operation-not-allowed/.test(c)) return '這種登入方式還沒開放（Firebase 後台要先打開）';
+  if (/unauthorized-domain/.test(c)) return '這個網址還不能登入（Firebase 後台要把網址加進允許清單）';
+  if (/network/.test(c)) return '網路不通，等一下再試';
+  if (/NOEMAIL/.test(c)) return '沒有輸入 Email，沒登入';
+  return '登入失敗：' + c;
+}
+function afterLogin(a) {
+  renderAccount();
+  toast('已登入：' + (a.email || ''));
+  return syncProgress();
+}
+function doLoginGoogle() {
+  Net.loginGoogle().then(afterLogin).catch(e => toast(loginMsg(e)));
+}
+function doLoginEmail() {
+  ask('輸入你的 Email（會寄一封登入信過去）', '').then(em => {
+    em = String(em || '').trim();
+    if (!em) return;
+    return Net.sendEmailLink(em).then(() => toast('登入信已寄到 ' + em + '：請在**這台裝置**打開信、點連結（找不到就看垃圾信件匣）'));
+  }).catch(e => { if (e && e.message !== 'NOASK') toast(loginMsg(e)); });
+}
+/* 從登入信的連結打開這一頁：完成登入。這台沒記著 email（別台按寄信、這台點連結）就問一次 */
+function finishEmailLogin() {
+  return Net.finishEmailLink(() => ask('確認一下 Email（要跟收到信的那個一樣）', ''))
+    .then(afterLogin).catch(e => toast(loginMsg(e)));
+}
+function doLogout() {
+  const b = byId('acct-logout');
+  if (!b.dataset.armed) {
+    b.dataset.armed = '1';
+    b.textContent = '再按一次登出（這台不會留著你的進度，都在雲端）';
+    setTimeout(() => { delete b.dataset.armed; b.textContent = '登出'; }, 4000);
+    return;
+  }
+  delete b.dataset.armed; b.textContent = '登出';
+  // 登出：這台的連線進度清掉（都在雲端，再登入就回來）—— 公用的電腦不會留給下一個人
+  try { OP() && OP().save(localStorage, { kingdoms: {} }); } catch (_) {}
+  Net.logout().then(() => { renderAccount(); renderLobby(); toast('已登出'); }).catch(e => toast('登出失敗：' + (e && e.code || e)));
 }
 
 /* ── 連線戰役的存檔（src/online-campaign.js，docs/online-campaign.md）── 【v1.68 起不用，保留給舊版頁面】
@@ -238,7 +338,9 @@ function renderGroupList(list) {
    理由：這個遊戲輸一場會掉一個國家，玩家該在進房前就知道風險，
    而不是進去了才發現群主設了高手局。                             */
 function doCreate(presetName) {
-  if (blockedByOtherTab()) return;
+  blockedElsewhere().then(b => { if (!b) doCreate2(presetName); });
+}
+function doCreate2(presetName) {
   const p = presetName ? Promise.resolve(presetName)
                        : ask('這一桌叫什麼名字？（告訴朋友就能加入）', myName + '的牌桌');
   p.then(name => name && finishCreate(name)).catch(() => {});
@@ -285,7 +387,9 @@ function openTable(name, extra) {
 }
 
 function doJoin(key) {
-  if (blockedByOtherTab()) return;
+  blockedElsewhere().then(b => { if (!b) doJoin2(key); });
+}
+function doJoin2(key) {
   Net.joinGroup(key, myName)
     .then(g => { const dn = (g && g.displayName) || key; rememberGroup(dn); enterRoom(key, dn, false); })
     .catch(e => {
@@ -541,6 +645,10 @@ function init(options) {
     }).catch(() => {});
   });
   byId('lobby-create').addEventListener('click', () => doCreate(null));
+  const ag = byId('acct-google'), ae = byId('acct-email'), al = byId('acct-logout');
+  if (ag) ag.addEventListener('click', doLoginGoogle);
+  if (ae) ae.addEventListener('click', doLoginEmail);
+  if (al) al.addEventListener('click', doLogout);
   byId('lobby-back').addEventListener('click', () => { Net.unwatchGroups(); if (cfg.onBack) cfg.onBack(); });
   byId('room-start').addEventListener('click', () => {
     if (!cur || !cur.isHost || byId('room-start').disabled) return;
@@ -561,7 +669,11 @@ function open() {
   return Net.signIn().then(() => {
     // v1.68：舊的一桌一段存檔「清掉重來」（使用者 2026-10-16）。有刪到東西就提示一次
     try { if (OP() && OP().clearOld(localStorage)) toast('連線改成「七國進度」：每一國一份、換桌也帶著。舊的連線存檔已清除'); } catch (_) {}
+    renderAccount();
     renderLobby();
+    // 從登入信的連結打開的：完成登入；已經登入的：跟雲端對一次（別台打過的拿回來）
+    if (Net.isEmailLink && Net.isEmailLink()) finishEmailLogin();
+    else syncProgress();
     screen('net-lobby');
     Net.watchConnection(ok => show('net-offline', !ok));
     Net.watchGroups(renderGroupList);
@@ -610,6 +722,6 @@ function showRoom() {
   if (cur.last) renderRoom(cur.last);
 }
 
-return { init, open, close, hide, leave: quit, backToRoom, showRoom, slots, slotsSave, rosterOf, syncMyProgress, lockKingdom,
+return { init, open, close, hide, leave: quit, backToRoom, showRoom, slots, slotsSave, rosterOf, syncMyProgress, lockKingdom, pushProgress,
          get myName() { return myName; }, get current() { return cur; } };
 });

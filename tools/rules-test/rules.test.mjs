@@ -167,6 +167,26 @@ await env.withSecurityRulesDisabled(c => c.database().ref('groups/tbl/members/' 
 await ok('最後一位成員移除自己',   () => db(B).ref('groups/tbl/members/' + B).remove());
 await ok('走掉之後刪掉空了的桌',   () => db(B).ref('groups/tbl').remove());
 
+/* ══ 9. 玩家的連線進度 /players/{uid}（v1.69，docs/online-kingdoms.md 第十一節：登入之後存雲端）══
+   規則只在 database.rules.next.json 有；拿線上那份（live）跑時這一段會被擋 —— 那是預期的（還沒部署） */
+if (JSON.parse(fs.readFileSync('database.rules.json', 'utf8')).rules.players) {
+  await seed();
+  const rec = { kingdom: 'qin', conquered: ['han'], matches: 3, gold: 2450 };
+  await ok('寫自己的秦國進度',           () => db(A).ref('players/' + A + '/kingdoms/qin').set(rec));
+  await ok('讀自己的進度',               () => db(A).ref('players/' + A + '/kingdoms').once('value'));
+  await ok('刪自己的一國（統一、亡國）', () => db(A).ref('players/' + A + '/kingdoms/qin').remove());
+  await ok('記自己在哪一桌（跨裝置一桌）', () => db(A).ref('players/' + A + '/session').set({ tab: 't1', table: '桌', at: 1 }));
+  await ok('離開時清掉',                 () => db(A).ref('players/' + A + '/session').remove());
+  await no('讀別人的進度',               () => db(B).ref('players/' + A + '/kingdoms').once('value'));
+  await no('寫別人的進度',               () => db(B).ref('players/' + A + '/kingdoms/qin').set(rec));
+  await no('改別人在哪一桌',             () => db(B).ref('players/' + A + '/session').set({ tab: 'x', at: 1 }));
+  await no('沒登入讀進度',               () => env.unauthenticatedContext().database().ref('players/' + A).once('value'));
+  await no('沒登入寫進度',               () => env.unauthenticatedContext().database().ref('players/' + A + '/kingdoms/qin').set(rec));
+  await no('不是七國的鍵',               () => db(A).ref('players/' + A + '/kingdoms/song').set(rec));
+  await no('不認得的欄位',               () => db(A).ref('players/' + A + '/whatever').set(1));
+  await no('session 缺欄位',             () => db(A).ref('players/' + A + '/session').set({ table: '桌' }));
+}
+
 await env.cleanup();
 console.log(`\n通過 ${pass}　失敗 ${fail}`);
 if (fail) { fails.forEach(f => console.log('  ✗ ' + f)); process.exit(1); }

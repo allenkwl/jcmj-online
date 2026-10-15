@@ -68,6 +68,39 @@ console.log('═══ 七國進度 ═══');
   eq(Object.keys(OP.load(store({ jcmj_online_kingdoms: '{壞掉' })).kingdoms).length, 0, '壞掉的 JSON：當成空的');
 }
 
+console.log('═══ 合併：這台＋雲端（登入時）═══');
+{
+  const local = { kingdoms: {
+    qin:  { kingdom: 'qin', matches: 2, conquered: ['han'], updatedAt: 50 },       // 雲端打得比較多 → 用雲端
+    zhao: { kingdom: 'zhao', matches: 4, conquered: [], updatedAt: 10 },          // 這台打得比較多 → 用這台
+    chu:  { kingdom: 'chu', matches: 1, conquered: [], updatedAt: 5 },             // 只有這台有
+  } };
+  const cloud = {
+    qin:  { kingdom: 'qin', matches: 5, conquered: ['han', 'wei'], updatedAt: 40 },
+    zhao: { kingdom: 'zhao', matches: 3, conquered: ['qi'], updatedAt: 99 },
+    yan:  { kingdom: 'yan', matches: 7, conquered: [], updatedAt: 1 },              // 只有雲端有
+  };
+  const r = OP.merge(local, cloud);
+  eq(r.data.kingdoms.qin.matches, 5, '同一國：雲端打得比較多 → 用雲端的');
+  eq(r.data.kingdoms.zhao.matches, 4, '同一國：這台打得比較多 → 用這台的（就算雲端比較新）');
+  ok(r.data.kingdoms.chu && r.data.kingdoms.yan, '只有一邊有的國：照用');
+  eq(Object.keys(r.data.kingdoms).sort().join(','), 'chu,qin,yan,zhao', '四國都在');
+  ok(r.cloudChanged && r.localChanged, '兩邊都要更新');
+  const nq = r.notes.find(n => n.kingdom === 'qin'), nz = r.notes.find(n => n.kingdom === 'zhao');
+  ok(nq && nq.from === 'cloud' && nq.matches === 5 && nq.other === 2, '提示：秦國用了雲端的（第 5 場，這台是第 2 場）', JSON.stringify(nq));
+  ok(nz && nz.from === 'local', '提示：趙國用了這台的', JSON.stringify(nz));
+  eq(r.notes.length, 2, '只有兩邊都有、而且不一樣的才提示');
+}
+{
+  const same = { kingdom: 'qin', matches: 3, conquered: [], updatedAt: 7 };
+  const r = OP.merge({ kingdoms: { qin: same } }, { qin: JSON.parse(JSON.stringify(same)) });
+  ok(!r.cloudChanged && !r.localChanged && r.notes.length === 0, '兩邊一模一樣：什麼都不用動');
+  const r2 = OP.merge({ kingdoms: {} }, null);
+  ok(!r2.cloudChanged && !r2.localChanged, '兩邊都沒有：什麼都不用動');
+  const r3 = OP.merge({ kingdoms: { qin: same } }, {});
+  ok(r3.cloudChanged && !r3.localChanged, '第一次登入：這台的進度整份上雲端');
+}
+
 console.log('═══ 清掉舊的一桌一段存檔 ═══');
 {
   const s = store({ jcmj_online_saves: '[{"id":"a"}]', jcmj_pending_quits: '[]', other: 'keep' });

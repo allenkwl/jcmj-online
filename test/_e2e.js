@@ -67,10 +67,12 @@ async function openGame(chromium) {
 /* ── 本機 Firebase 模擬器（連線的端對端測試用）──
    用線上同一份規則（database.rules.json），完全在本機，不碰線上資料庫。
    要 Java（brew install openjdk）與 firebase CLI。回傳 { stop() } */
-async function startEmulators() {
+async function startEmulators(opts) {
   const { spawn } = require('child_process');
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'jcmj-emu-'));
-  fs.copyFileSync(path.join(ROOT, 'database.rules.json'), path.join(dir, 'database.rules.json'));
+  // rules：預設用線上那份；要測還沒部署的規則（例如登入的 /players）傳 'database.rules.next.json'
+  const rules = (opts && opts.rules) || 'database.rules.json';
+  fs.copyFileSync(path.join(ROOT, fs.existsSync(path.join(ROOT, rules)) ? rules : 'database.rules.json'), path.join(dir, 'database.rules.json'));
   fs.writeFileSync(path.join(dir, 'firebase.json'), JSON.stringify({
     database: { rules: 'database.rules.json' },
     emulators: { database: { port: 9123, host: '127.0.0.1' }, auth: { port: 9099, host: '127.0.0.1' }, ui: { enabled: false } },

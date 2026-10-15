@@ -180,7 +180,10 @@ const Net = {
     const ready = perTab
       ? firebase.auth().setPersistence(firebase.auth.Auth.Persistence.SESSION)
       : Promise.resolve();
-    this._signInPromise = ready.then(() => firebase.auth().signInAnonymously())
+    /* ⚠️ 已經登入過（Google／信箱，v1.69 起）就沿用那個身分，**不要**再匿名登入一次 ——
+       signInAnonymously 會把登入的帳號換成一個全新的匿名身分，玩家一重整就被登出、雲端進度也對不上 */
+    this._signInPromise = ready.then(() => this._authReady())
+      .then(u => (u ? { user: u } : firebase.auth().signInAnonymously()))
       .then(res => {
         const uid = (res && res.user && res.user.uid) || (firebase.auth().currentUser || {}).uid;
         if (!uid) throw new Error('NOUID');
@@ -196,6 +199,133 @@ const Net = {
   signedIn: false,
   uid: null,
   _signInPromise: null,
+
+  /* Firebase 第一次回報登入狀態（重整後要等它把上次的登入讀回來，不然 currentUser 是 null） */
+  _authReady() {
+    return new Promise(res => {
+      const off = firebase.auth().onAuthStateChanged(u => { off(); res(u || null); });
+    });
+  },
+
+  /* ══ 選用的登入（v1.69，docs/online-kingdoms.md 第十一節）══════════════
+     不登入照樣能玩（匿名，進度存瀏覽器）；登入之後進度存雲端，換裝置也能接著打。
+     ‧ Google：彈出視窗（GitHub Pages 跟 Firebase 的登入網域不同，iPhone Safari 對跳轉回來的流程限制多 → 不用 redirect）
+     ‧ 信箱連結：輸入 email → 寄信 → 在同一台點連結就登入，不用記密碼
+     ‧ **匿名升級**：現在的匿名身分「連結」到帳號，uid 不變 —— 已經打的進度直接跟著帳號走。
+       那個帳號已經在別台用過（credential-already-in-use）→ 改成登入那個帳號（uid 會換），
+       這台的匿名進度由呼叫端合併進雲端（online-progress 的 merge）
+     ⚠️ uid 就是遊戲裡的身分（clientId）：只能在大廳登入／登出，不能在牌桌上換身分 */
+  account() {
+    const u = (typeof firebase !== 'undefined' && firebase.auth && firebase.auth().currentUser) || null;
+    if (!u || u.isAnonymous) return { loggedIn: false };
+    const prov = (u.providerData || []).map(p => p.providerId);
+    return {
+      loggedIn: true, uid: u.uid,
+      email: u.email || ((u.providerData || []).find(p => p.email) || {}).email || '',
+      provider: prov.indexOf('google.com') >= 0 ? 'google' : 'email',
+    };
+  },
+  _afterLogin(user) {
+    this.uid = user.uid;
+    const forced = (() => { try { return new URLSearchParams(location.search).get('cid'); } catch (_) { return null; } })();
+    this.clientId = forced || user.uid;
+    this.signedIn = true;
+    this._signInPromise = Promise.resolve(this.clientId);
+    return this.account();
+  },
+  /* 連結失敗是因為「這個帳號別台用過了」→ 改成登入那個帳號 */
+  _inUse(e) {
+    return e && /credential-already-in-use|email-already-in-use|account-exists-with-different-credential/.test(e.code || '');
+  },
+  loginGoogle() {
+    const auth = firebase.auth();
+    const provider = new firebase.auth.GoogleAuthProvider();
+    provider.setCustomParameters({ prompt: 'select_account' });
+    const u = auth.currentUser;
+    const p = u && u.isAnonymous
+      ? u.linkWithPopup(provider).catch(e => {
+          if (this._inUse(e) && e.credential) return auth.signInWithCredential(e.credential);
+          throw e;
+        })
+      : auth.signInWithPopup(provider);
+    return p.then(r => this._afterLogin(r.user));
+  },
+  /* 寄登入連結。continueUrl 是現在這一頁（留著 ?emu=1 之類的參數，# 拿掉） */
+  EMAIL_KEY: 'jcmj_login_email',
+  sendEmailLink(email) {
+    const url = location.origin + location.pathname + location.search;
+    return firebase.auth().sendSignInLinkToEmail(email, { url, handleCodeInApp: true })
+      .then(() => { try { localStorage.setItem(this.EMAIL_KEY, email); } catch (_) {} });
+  },
+  /* 這一頁是不是從登入信的連結打開的 */
+  isEmailLink() {
+    try { return typeof firebase !== 'undefined' && !!firebase.auth && firebase.auth().isSignInWithEmailLink(location.href); }
+    catch (_) { return false; }
+  },
+  /* 用信裡的連結完成登入。askEmail()：這台沒記著 email（在別台按寄信、這台點連結）時要問玩家，回 Promise<email> */
+  finishEmailLink(askEmail) {
+    const auth = firebase.auth();
+    const href = location.href;
+    let email = null;
+    try { email = localStorage.getItem(this.EMAIL_KEY); } catch (_) {}
+    const go = em => {
+      // ⚠️ 不走「匿名帳號升級連結」：信裡的 oobCode 只能用一次，這個 Email 已經有帳號時，
+      //    升級會失敗、而且 oobCode 已經被用掉，退回去直接登入就變成「連結無效」（模擬器實測）。
+      //    事先也查不到帳號在不在（新專案預設開啟防 Email 列舉）。所以一律直接登入 ——
+      //    匿名身分不保留沒關係：這台的進度在 afterLogin 合併上雲端，登入只在大廳做、不在桌上。
+      return auth.signInWithEmailLink(em, href).then(r => {
+        try { localStorage.removeItem(this.EMAIL_KEY); } catch (_) {}
+        // 網址上的登入參數拿掉（重整時不要再跑一次）
+        try {
+          const q = new URLSearchParams(location.search);
+          ['apiKey', 'oobCode', 'mode', 'lang', 'continueUrl', 'tenantId'].forEach(k => q.delete(k));
+          history.replaceState(null, '', location.pathname + (q.toString() ? '?' + q : '') + location.hash);
+        } catch (_) {}
+        return this._afterLogin(r.user);
+      });
+    };
+    return (email ? Promise.resolve(email) : Promise.resolve(askEmail ? askEmail() : null))
+      .then(em => { if (!em) throw new Error('NOEMAIL'); return go(em); });
+  },
+  /* 登出：換回一個全新的匿名身分（這台之後就是沒登入的狀態） */
+  logout() {
+    const auth = firebase.auth();
+    return auth.signOut().then(() => auth.signInAnonymously()).then(r => this._afterLogin(r.user));
+  },
+
+  /* ── 雲端的連線進度（只有登入的人用；規則：/players/{uid} 只有本人讀寫）── */
+  _playerRef(sub) { return this.db.ref('players/' + this.uid + (sub ? '/' + sub : '')); },
+  loadCloudProgress() {
+    if (!this.account().loggedIn) return Promise.resolve(null);
+    return this._playerRef('kingdoms').once('value').then(s => s.val() || {});
+  },
+  saveCloudKingdoms(kingdoms) {
+    if (!this.account().loggedIn) return Promise.resolve();
+    return this._playerRef('kingdoms').set(stripUndefined(kingdoms || {})).catch(() => {});
+  },
+  saveCloudKingdom(k, rec) {
+    if (!this.account().loggedIn || !k) return Promise.resolve();
+    return this._playerRef('kingdoms/' + k).set(rec ? stripUndefined(rec) : null).catch(() => {});
+  },
+  /* ── 跨裝置一桌：這個帳號正在哪一桌（同一個帳號兩台同時上桌會撞身分：uid 一樣）── */
+  readSession() {
+    if (!this.account().loggedIn) return Promise.resolve(null);
+    return this._playerRef('session').once('value').then(s => s.val()).catch(() => null);
+  },
+  claimSession(info) {
+    if (!this.account().loggedIn) return Promise.resolve();
+    const ref = this._playerRef('session');
+    ref.onDisconnect().remove();
+    return ref.set(stripUndefined(Object.assign({}, info, { at: firebase.database.ServerValue.TIMESTAMP }))).catch(() => {});
+  },
+  releaseSession(tab) {
+    if (!this.account().loggedIn) return Promise.resolve();
+    const ref = this._playerRef('session');
+    return ref.once('value').then(s => {
+      const v = s.val();
+      if (!v || v.tab === tab) { ref.onDisconnect().cancel(); return ref.remove(); }
+    }).catch(() => {});
+  },
 
   // 自己這台目前跟 Firebase 連著沒有
   watchConnection(cb) {
