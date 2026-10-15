@@ -63,7 +63,33 @@ function rememberGroup(name) {
   try { localStorage.setItem(RECENT_KEY, JSON.stringify(list.slice(0, 5))); } catch (_) {}
 }
 
-/* ── 連線戰役的存檔（src/online-campaign.js，docs/online-campaign.md）──
+/* ── 七國進度（src/online-progress.js，docs/online-kingdoms.md，2026-10-16）──
+   進度跟著人走、一國一份：加入任何一桌都要擇國，選到有進度的國就帶進來。
+   舊的「一桌一段戰役、十格連線存檔、退出此牌局」整套不用了（使用者：舊存檔「清掉重來」）。 */
+const OP = () => window.MJOnlineProgress;
+function progress() { try { return OP() ? OP().load(localStorage) : { kingdoms: {} }; } catch (_) { return { kingdoms: {} }; } }
+/* 這個分頁的代號（一個瀏覽器只能在一桌：別的分頁拿著鎖就不能上桌） */
+const TAB = Date.now().toString(36) + Math.random().toString(36).slice(2, 8);
+let lockTimer = null;
+function otherTab() { try { return OP() ? OP().lockedByOther(localStorage, TAB) : null; } catch (_) { return null; } }
+function takeLock(info) {
+  if (!OP()) return true;
+  if (!OP().lock(localStorage, TAB, info)) return false;
+  clearInterval(lockTimer);
+  lockTimer = setInterval(() => { try { OP().lock(localStorage, TAB, {}); } catch (_) {} }, 10000);
+  return true;
+}
+function dropLock() { clearInterval(lockTimer); lockTimer = null; try { OP() && OP().unlock(localStorage, TAB); } catch (_) {} }
+if (typeof window !== 'undefined') window.addEventListener('pagehide', dropLock);
+/* 擋第二個分頁：回 true＝擋下了 */
+function blockedByOtherTab() {
+  const l = otherTab();
+  if (!l) return false;
+  toast('你已經在「' + (l.table || '另一桌') + '」了（另一個分頁）—— 同一個瀏覽器一次只能在一桌');
+  return true;
+}
+
+/* ── 連線戰役的存檔（src/online-campaign.js，docs/online-campaign.md）── 【v1.68 起不用，保留給舊版頁面】
    「繼續之前的牌桌」列的是**十格連線存檔**，不再是單純的桌名清單：
    每一格記著唯一序號與整張名冊，點下去用同一個桌名、同一段戰役重開。 */
 const OC = () => window.MJOnlineCampaign;
@@ -140,46 +166,21 @@ function screen(which) {
 
 function renderLobby() {
   byId('lobby-myname').textContent = myName;
-
-  // 之前玩過的：十格連線存檔
-  const list = slots();
+  /* 「繼續之前的牌桌（十格連線存檔）」拿掉了（v1.68）：進度跟著人走，選國時就帶進來。
+     這一區改成列出自己的七國進度，讓玩家知道帶得進來的有哪些 */
+  const d = progress();
+  const ids = Object.keys(d.kingdoms || {});
   const rbox = byId('lobby-recent');
   clear(rbox);
-  show('lobby-recent-wrap', list.length > 0);
-  list.forEach(sl => {
-    const names = toArr(sl.roster).map(m => esc(m.name || '?')).join('、');
-    const n = (sl.me && sl.me.conquered || []).length;
-    // 統一天下的那一段：記錄留著（系統不主動刪），但已經打完了，不能再開
-    const done = sl.finished === 'unified';
-    rbox.appendChild(row('net-row' + (done ? ' full' : ''),
-      `<b>${esc(sl.table || '?')}${done ? '　🏆 已統一' : ''}</b><span>${names || '只有你'}　你已征服 ${n} 國</span>`,
-      done ? null : () => doResume(sl)));
-    // 刪除只有玩家自己按才刪，而且要按兩下
-    const del = document.createElement('button');
-    del.type = 'button';
-    del.className = 'net-del';
-    del.textContent = '刪除';
-    del.title = '刪除這一格存檔＝退出這一段戰役（其他人之後開這一桌就沒有你）';
-    del.addEventListener('click', () => {
-      if (!del.dataset.armed) {
-        del.dataset.armed = '1';
-        del.textContent = '確定退出？';
-        setTimeout(() => { delete del.dataset.armed; del.textContent = '刪除'; }, 3000);
-        return;
-      }
-      slotsSave(OC().dropSlot(slots(), sl.id));
-      markQuit(sl.id, sl.roster, sl.table);
-      toast('已退出「' + (sl.table || '') + '」並刪除存檔 —— 其他人之後開這一桌就沒有你了');
-      renderLobby();
-    });
-    rbox.appendChild(del);
+  show('lobby-recent-wrap', ids.length > 0);
+  const K = window.MJKingdoms;
+  ids.forEach(id => {
+    const sm = OP().summary(d, id);
+    const k = K && K.get(id);
+    rbox.appendChild(row('net-row', `<b>${esc(k ? k.name : id)}</b><span>征服 ${sm.conquered} 國　國庫 ${sm.gold.toLocaleString()} 兩　打過 ${sm.matches} 場</span>`));
   });
-  syncSlotQuits(list);
-  const full = list.length >= (OC() ? OC().MAX_SLOTS : 10);
-  byId('lobby-recent-wrap').querySelector('.net-label').textContent =
-    '繼續之前的牌桌（連線存檔 ' + list.length + ' / ' + (OC() ? OC().MAX_SLOTS : 10) + '）' + (full ? '　已滿，要開新桌請先刪一格' : '　刪除＝退出那一段');
-
-  // 現有群組（由 watchGroups 持續更新）
+  const lb = byId('lobby-recent-wrap').querySelector('.net-label');
+  if (lb) lb.textContent = '你的連線進度（加入牌桌時選同一國就能接著打）';
   byId('lobby-groups-empty').textContent = '搜尋中⋯';
 }
 
@@ -237,6 +238,7 @@ function renderGroupList(list) {
    理由：這個遊戲輸一場會掉一個國家，玩家該在進房前就知道風險，
    而不是進去了才發現群主設了高手局。                             */
 function doCreate(presetName) {
+  if (blockedByOtherTab()) return;
   const p = presetName ? Promise.resolve(presetName)
                        : ask('這一桌叫什麼名字？（告訴朋友就能加入）', myName + '的牌桌');
   p.then(name => name && finishCreate(name)).catch(() => {});
@@ -263,11 +265,8 @@ function doResume(sl) {
 function slotsFullMsg() { toast('連線存檔已滿 ' + (OC() ? OC().MAX_SLOTS : 10) + ' 格，要開新的一段請先在「繼續之前的牌桌」刪掉一格'); }
 
 function finishCreate(name) {
-  // 新開的桌＝新的一段戰役：給一個唯一序號，名冊開局時才填。
-  // 存檔滿了就先擋下來（系統不會自己擠掉舊的存檔）
-  const id = OC() ? OC().newId() : String(Date.now());
-  if (OC() && OC().isFull(slots(), id)) { slotsFullMsg(); return Promise.resolve(); }
-  return openTable(name, { aiLevel: aiLevelNow(), campaign: { id, roster: [] } });
+  // v1.68：牌桌只是房間，不再是一段戰役（沒有序號、沒有名冊）
+  return openTable(name, { aiLevel: aiLevelNow() });
 }
 
 function openTable(name, extra) {
@@ -286,6 +285,7 @@ function openTable(name, extra) {
 }
 
 function doJoin(key) {
+  if (blockedByOtherTab()) return;
   Net.joinGroup(key, myName)
     .then(g => { const dn = (g && g.displayName) || key; rememberGroup(dn); enterRoom(key, dn, false); })
     .catch(e => {
@@ -299,66 +299,64 @@ function doJoin(key) {
 /* ═══════════ 房間 ═══════════ */
 
 function enterRoom(key, displayName, isHost) {
+  // 一個瀏覽器只能在一桌：開桌／加入前已經擋過一次，這裡拿鎖時再擋一次（兩個分頁同時按的情況）
+  if (!takeLock({ table: displayName, kingdom: null })) {
+    blockedByOtherTab();
+    Net.leaveGroup().catch(() => {});
+    return;
+  }
   cur = { key, displayName, isHost };
   byId('room-name').textContent = displayName;
   screen('net-room');
   startWatching();
 }
 
-/* 進房後第一次拿到房間資料：把我在這段戰役的記錄放上成員資料，
-   名冊滿了（四位主公都有人）而我不在裡面 → 進不來 */
+/* 進房後第一次拿到房間資料：一進來就擇國而立（v1.68：不論新桌、進行中，每一桌都要選）。
+   選好了才把那一國的進度快照放上成員資料（syncMyProgress），給同桌看、開局排座位用 */
 function syncMyCamp(g) {
   if (!cur || cur.campSynced || !g) return true;
   cur.campSynced = true;
-  const c = g.campaign;
-  if (!c || !c.id) return true;
-  const roster = rosterOf(g);
-  // 加入別人的一段戰役、我這邊還沒有它的存檔格，而十格都滿了 → 先擋下來
-  if (OC() && OC().isFull(slots(), c.id)) {
-    slotsFullMsg();
-    leave(false);
-    return false;
-  }
-  if (OC() && !OC().canJoin(roster, Net.uid)) {
-    toast('這一桌的名冊滿了（四位主公），要等有人退出才能加入');
-    leave(false);
-    return false;
-  }
-  const sl = OC() ? OC().findSlot(slots(), c.id) : null;
-  Net.updateMyCamp(Object.assign({ id: c.id }, sl ? OC().snapshot(sl.me) : { conquered: [], matches: 0, unified: false }));
-  // 名冊裡的老成員：本國就是名冊上那一國（他的戰役），順手校正成員資料
-  const mine = roster.find(r => r.uid === Net.uid);
-  if (mine && mine.kingdom && mine.kingdom !== Net.prefKingdom) Net.updateMyKingdom(mine.kingdom);
-  // 新成員（包括剛開的新桌）：一進房間先擇國而立
-  if (!mine && cfg.onPickKingdom) setTimeout(pickKingdom, 350);
+  if (cur.picked) { syncMyProgress(); return true; }
+  if (cfg.onPickKingdom) setTimeout(pickKingdom, 350);
   return true;
+}
+/* 把我選的那一國的進度快照放上成員資料（征服地、場數、國庫）。一場打完進度變了也要再放一次 */
+/* 開局時：鎖上記下這一桌分到的國（遊戲那邊呼叫；撞國時群主可能換過） */
+function lockKingdom(k) { try { OP() && OP().lock(localStorage, TAB, { kingdom: k || null }); } catch (_) {} }
+function syncMyProgress() {
+  const k = Net.prefKingdom;
+  if (!k || !OP()) return;
+  Net.updateMyCamp(OP().snapshot(OP().forTable(progress(), k, myName)));
+  try { OP().lock(localStorage, TAB, { kingdom: k }); } catch (_) {}
 }
 
 /* 別人已經用掉的國：名冊上其他人的、房間裡其他人**選好的**（還在選國畫面的人沒選定，不算） */
 function takenKingdoms(g) {
-  const roster = rosterOf(g);
-  return roster.filter(r => r.uid !== Net.uid).map(r => r.kingdom)
-    .concat((g.members || []).filter(m => !m.me && (m.picked || roster.some(r => r.uid === m.uid))).map(m => m.kingdom))
-    .filter(Boolean);
+  // v1.68：沒有名冊了，只看房間裡其他人**選好的**（還在選國畫面的人沒選定，不算）
+  return (g.members || []).filter(m => !m.me && m.picked).map(m => m.kingdom).filter(Boolean);
 }
 
 /* 連線擇國而立 */
 function pickKingdom() {
   const g = cur && cur.last;
   if (!g || !cfg.onPickKingdom) return;
-  const roster = rosterOf(g);
-  if (roster.some(r => r.uid === Net.uid)) return;       // 老成員本國固定
   screen(null);                                          // 選國畫面在大廳底下，先把房間收起來
   cur.picking = true;
   if (cur.ready) setReady(false);                        // 改選國就要重新確認
+  // 每一國的卡片上顯示自己的進度（有進度的選了就帶進來）
+  const d = progress();
+  const prog = {};
+  Object.keys(d.kingdoms || {}).forEach(id => { prog[id] = OP().summary(d, id); });
   cfg.onPickKingdom({
-    taken: takenKingdoms(g), current: Net.prefKingdom,
+    taken: takenKingdoms(g), current: Net.prefKingdom, progress: prog,
     done: k => {
       cur.picking = false;
       if (!k) return;
       cur.picked = true;
       Net.updateMyKingdom(k);
       Net.updateMyPicked && Net.updateMyPicked(true);
+      Net.prefKingdom = k;
+      syncMyProgress();
     },
   });
 }
@@ -372,7 +370,7 @@ function setReady(on) {
 }
 /* 我可以按「準備好了」嗎：老成員隨時可以；新成員要先擇國而立 */
 function canReady(g) {
-  return rosterOf(g).some(r => r.uid === Net.uid) || !!cur.picked;
+  return !!cur.picked;          // v1.68：每個人都要先擇國
 }
 
 /* 退出此牌局（只能在大廳）：從名冊拿掉、刪掉這一格存檔，空出來的位子讓新人加入 */
@@ -417,21 +415,18 @@ function renderRoom(g) {
   const box = byId('room-members');
   clear(box);
   const conq = arr => { const a = toArr(arr); return a.length ? '　已征服 ' + a.length + ' 國' : ''; };
-  const roster = rosterOf(g);
   const kname = id => { const k = window.MJKingdoms && window.MJKingdoms.get(id); return k ? k.name : ''; };
   members.forEach(m => {
-    // 老成員的本國以名冊為準（他的戰役）；新成員用他剛選的
-    const r = roster.find(x => x.uid === m.uid);
-    const k = kname((r && r.kingdom) || m.kingdom);
+    // 還沒選定的人不顯示國名（選國畫面上的游標不算數）
+    const k = m.picked ? kname(m.kingdom) : '';
     const rd = m.isHost ? '' : (m.ready ? '　✔ 已準備' : '　⋯ 準備中');
+    const camp = m.picked && m.camp && m.camp.kingdom === m.kingdom ? m.camp : null;
     box.appendChild(row('net-row',
-      `<b>${esc(m.name || '?')}${k ? '　' + k : ''}</b><span>${m.me ? '（你）' : ''}${m.isHost ? '　開桌' : ''}${rd}${conq(m.camp && m.camp.conquered)}</span>`));
+      `<b>${esc(m.name || '?')}${k ? '　' + k : '　（選國中）'}</b><span>${m.me ? '（你）' : ''}${m.isHost ? '　開桌' : ''}${rd}${conq(camp && camp.conquered)}</span>`));
   });
-  // 名冊裡有、現在不在的人：這一場由他那一國的武將代打，他的進度不動
-  roster.filter(r => !members.some(m => m.uid === r.uid)).forEach(r => box.appendChild(row('net-row absent',
-    `<b>${esc(r.name || '?')}</b><span>缺席　由武將代打${conq(r.conquered)}</span>`)));
-  show('room-quit', roster.some(r => r.uid === Net.uid));
-  show('room-pick', !roster.some(r => r.uid === Net.uid) && !!cfg.onPickKingdom);
+  // v1.68：沒有名冊、沒有缺席（不保留座位），也沒有「退出此牌局」（進度跟著人走）
+  show('room-quit', false);
+  show('room-pick', !!cfg.onPickKingdom);
   // 還在選國畫面：別人剛選走的國要馬上鎖起來
   if (cur.picking && cfg.onPickTaken) cfg.onPickTaken(takenKingdoms(g));
 
@@ -513,13 +508,14 @@ function enterGame(g) {
     isHost: g.host === Net.clientId,
     members: (g.members || []).slice(),
     aiLevel: g.aiLevel || 2,
-    campaign: g.campaign ? { id: g.campaign.id, roster: rosterOf(g) } : null,
+    campaign: null,                // v1.68：牌桌不再是一段戰役（進度跟著人走）
     myClientId: Net.clientId,
   };
   if (cfg.onEnterGame) cfg.onEnterGame(ctx);
 }
 
 function leave(silent) {
+  dropLock();
   Net.unwatchRoom();
   cancelHostWatch();
   watching = false;
@@ -563,7 +559,8 @@ function init(options) {
 function open() {
   if (!Net.init()) return Promise.reject(new Error('NOFIREBASE'));
   return Net.signIn().then(() => {
-    flushQuits();
+    // v1.68：舊的一桌一段存檔「清掉重來」（使用者 2026-10-16）。有刪到東西就提示一次
+    try { if (OP() && OP().clearOld(localStorage)) toast('連線改成「七國進度」：每一國一份、換桌也帶著。舊的連線存檔已清除'); } catch (_) {}
     renderLobby();
     screen('net-lobby');
     Net.watchConnection(ok => show('net-offline', !ok));
@@ -587,6 +584,7 @@ function hide() {
 
 /* 從牌局裡退桌：跟房間裡按「離開」一樣退出群組，但不回大廳畫面（呼叫端自己決定去哪） */
 function quit() {
+  dropLock();
   Net.unwatchRoom();
   watching = false;
   Net.leaveGroup().catch(() => {});
@@ -600,7 +598,7 @@ function backToRoom() {
   cur.entered = false;
   cur.ready = false;
   Net.updateMyReady(false);           // 下一場要重新確認
-  cur.campSynced = false;           // 記錄剛更新過，重新放上成員資料
+  cur.campSynced = false;           // 進度剛更新過，重新放上成員資料
   screen('net-room');
   if (cur.last) renderRoom(cur.last);
 }
@@ -612,6 +610,6 @@ function showRoom() {
   if (cur.last) renderRoom(cur.last);
 }
 
-return { init, open, close, hide, leave: quit, backToRoom, showRoom, slots, slotsSave, rosterOf,
+return { init, open, close, hide, leave: quit, backToRoom, showRoom, slots, slotsSave, rosterOf, syncMyProgress, lockKingdom,
          get myName() { return myName; }, get current() { return cur; } };
 });

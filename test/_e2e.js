@@ -64,4 +64,38 @@ async function openGame(chromium) {
   return { page, errors, latest, close: async () => { await browser.close(); srv.close(); } };
 }
 
-module.exports = { ROOT, counter, findChromium, openGame };
+/* ── 本機 Firebase 模擬器（連線的端對端測試用）──
+   用線上同一份規則（database.rules.json），完全在本機，不碰線上資料庫。
+   要 Java（brew install openjdk）與 firebase CLI。回傳 { stop() } */
+async function startEmulators() {
+  const { spawn } = require('child_process');
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'jcmj-emu-'));
+  fs.copyFileSync(path.join(ROOT, 'database.rules.json'), path.join(dir, 'database.rules.json'));
+  fs.writeFileSync(path.join(dir, 'firebase.json'), JSON.stringify({
+    database: { rules: 'database.rules.json' },
+    emulators: { database: { port: 9123, host: '127.0.0.1' }, auth: { port: 9099, host: '127.0.0.1' }, ui: { enabled: false } },
+  }));
+  const env = Object.assign({}, process.env, { PATH: '/opt/homebrew/opt/openjdk/bin:' + process.env.PATH });
+  const proc = spawn('firebase', ['emulators:start', '--only', 'database,auth', '--project', 'jcmj-4p'], { cwd: dir, env, stdio: ['ignore', 'pipe', 'pipe'] });
+  let log = '';
+  proc.stdout.on('data', d => { log += d; });
+  proc.stderr.on('data', d => { log += d; });
+  const up = async () => {
+    for (let i = 0; i < 120; i++) {
+      if (/All emulators ready/.test(log)) return true;
+      if (proc.exitCode != null) return false;
+      await new Promise(r => setTimeout(r, 500));
+    }
+    return false;
+  };
+  if (!(await up())) { try { proc.kill('SIGINT'); } catch (_) {} throw new Error('Firebase 模擬器起不來：' + log.slice(-600)); }
+  return {
+    stop: () => new Promise(r => {
+      proc.once('exit', () => { fs.rmSync(dir, { recursive: true, force: true }); r(); });
+      try { proc.kill('SIGINT'); } catch (_) { r(); }
+      setTimeout(r, 8000);
+    }),
+  };
+}
+
+module.exports = { ROOT, counter, findChromium, openGame, serve, startEmulators };
