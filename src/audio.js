@@ -35,6 +35,9 @@ const SFX = (() => {
     return ctx;
   }
 
+  /* 在使用者手勢的當下喚醒（見檔尾 resume 的說明） */
+  function unlock() { unlockCtx(getCtx()); }
+
   // Low-level: play a tone burst
   function tone(freq, type, attack, decay, sustain, release, duration, gainVal=1, detune=0) {
     if (!enabled) return;
@@ -196,7 +199,7 @@ const SFX = (() => {
     }, 320);
   }
 
-  return { draw, discard, select, pong, chi, kong, win, specialWin, lose, draw_game, victory, click, newRound, tenpai, save,
+  return { unlock, draw, discard, select, pong, chi, kong, win, specialWin, lose, draw_game, victory, click, newRound, tenpai, save,
     setEnabled(v) { enabled = v; },
     setVolume(v) { volume = v; if (masterGain) masterGain.gain.value = v; },
     isEnabled() { return enabled; },
@@ -374,19 +377,66 @@ const BGM = (() => {
     currentScene() { return currentScene || pendingScene; },
     /* 先把音檔載好（例如進牌桌前先載國曲），切過去時就不用等 */
     preload(scene) { if (enabled && scene) load(scene); },
+    /* 在使用者手勢的當下喚醒（見檔尾 resume 的說明） */
+    unlock() { try { unlockCtx(getCtx()); } catch (_) {} },
   };
 })();
 
-/* 讓呼叫端在第一次使用者手勢時喚醒 AudioContext。
-   瀏覽器的自動播放限制：手勢之前 AudioContext 會停在 suspended，
-   所有聲音都不會響，而且**不會報任何錯**。 */
+/* 讓呼叫端在**使用者手勢的當下**喚醒聲音（點擊、觸控結束、按鍵的處理函式裡同步呼叫）。
+   瀏覽器的自動播放限制：手勢之前 AudioContext 停在 suspended，所有聲音都不會響，而且**不會報任何錯**。
+
+   ⚠️ iPhone（Safari）比電腦嚴格（2026-10-16 使用者：「iphone 沒聲音？」）：
+      ‧ 喚醒（resume）一定要發生在手勢處理函式**當下**；電腦的 Chrome 點過一次之後晚一點喚醒也認，Safari 不認
+      ‧ v1.70 的 BGM 在頁面載入時就排定標題曲（建出 suspended 的 AudioContext），第一次點擊再叫「播標題曲」時
+        因為已經排定了就直接略過 —— 那一次點擊根本沒去喚醒；音檔載完才喚醒，已經不在手勢裡 → iPhone 永遠沒聲音
+      ‧ 所以這裡在手勢當下把兩個 AudioContext 都喚醒，並且播一段 1 個取樣的無聲音（iOS 解鎖的老方法：
+        有些版本光 resume 不算數，要在手勢裡真的「開始播放」過一次）
+      ‧ 原本這個函式找的是 _actx／actx 兩個不存在的變數，等於什麼都沒做
+   靜音開關：iOS 的 Web Audio 會被側邊的靜音開關靜音（<audio> 不會）。Safari 17 起可以宣告成「播放」類，
+   跟音樂 App 一樣不受靜音開關影響 —— 遊戲裡有自己的靜音鈕，玩家要安靜用那顆 */
+function unlockCtx(c) {
+  if (!c) return;
+  if (c.state !== 'running' && c.resume) { try { c.resume().catch(() => {}); } catch (_) {} }
+  try {
+    const b = c.createBuffer(1, 1, c.sampleRate || 22050);
+    const s = c.createBufferSource();
+    s.buffer = b; s.connect(c.destination); s.start(0);
+  } catch (_) {}
+}
+/* ── 動畫配樂的 <audio>：iPhone 要「每一個元素」先在手勢裡播過一次，之後程式才能自己叫它播 ──
+   統一天下、亡國的配樂是結算之後由程式開始播的（不在手勢裡），每次 new Audio() 的話 iPhone 一律擋掉。
+   所以各模組載入時把自己的配樂網址登記進 window.MJ_MEDIA_URLS，這裡在第一次手勢時預先建好、
+   靜音播一下再停（解鎖），之後要播就拿同一個元素（mediaEl）。電鐵 v1.64 踩過一樣的坑。 */
+const media = {};
+function mediaEl(url) {
+  if (!media[url]) {
+    try { const a = new Audio(); a.preload = 'auto'; a.src = url; media[url] = a; } catch (_) { return null; }
+  }
+  return media[url];
+}
+function unlockMedia() {
+  const G = typeof window !== 'undefined' ? window : {};
+  (G.MJ_MEDIA_URLS || []).forEach(mediaEl);
+  Object.keys(media).forEach(url => {
+    const a = media[url];
+    if (a.__unlocked || a.__unlocking || !a.paused) return;
+    a.__unlocking = true;
+    const wasMuted = a.muted;
+    a.muted = true;
+    let p;
+    try { p = a.play(); } catch (_) { p = null; }
+    const done = ok => { a.__unlocking = false; if (ok) a.__unlocked = true; a.muted = wasMuted; };
+    if (p && p.then) p.then(() => { try { a.pause(); a.currentTime = 0; } catch (_) {} done(true); }, () => done(false));
+    else done(false);
+  });
+}
 function resume() {
-  const ctxs = [];
-  try { if (typeof _actx !== 'undefined' && _actx) ctxs.push(_actx); } catch (e) {}
-  try { if (typeof actx !== 'undefined' && actx) ctxs.push(actx); } catch (e) {}
-  ctxs.forEach(c => { if (c.state === 'suspended' && c.resume) c.resume().catch(() => {}); });
-  return ctxs.length;
+  try { if (typeof navigator !== 'undefined' && navigator.audioSession) navigator.audioSession.type = 'playback'; } catch (_) {}
+  try { SFX.unlock(); } catch (_) {}
+  try { BGM.unlock(); } catch (_) {}
+  try { unlockMedia(); } catch (_) {}
+  return 2;
 }
 
-return { SFX, BGM, resume };
+return { SFX, BGM, resume, unlockCtx, mediaEl };
 });

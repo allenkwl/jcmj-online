@@ -128,8 +128,15 @@ function ctx() {
   return actx;
 }
 if (typeof document !== 'undefined') {
-  const wake = () => { try { ctx(); } catch (_) {} };
+  /* ⚠️ iPhone 上手指按下（pointerdown）不算解鎖聲音的手勢，要放開（touchend／click）才算 ——
+     只掛 pointerdown 的話，iPhone 上這段動畫的合成音永遠是啞的（2026-10-16「iphone 沒聲音？」）。
+     每次手勢都叫一次：切 App、來電之後系統會把 AudioContext 暫停，只能在下一次手勢當下叫醒 */
+  const wake = () => {
+    try { const c = ctx(); if (c && window.MJAudio && window.MJAudio.unlockCtx) window.MJAudio.unlockCtx(c); } catch (_) {}
+  };
   document.addEventListener('pointerdown', wake, { passive: true });
+  document.addEventListener('touchend', wake, { passive: true });
+  document.addEventListener('click', wake);
   document.addEventListener('keydown', wake);
 }
 function noise(c, dur) {

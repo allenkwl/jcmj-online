@@ -26,6 +26,8 @@
 
 const MAP_URL = 'assets/map/warring-states.webp';
 const MP3_URL = 'assets/audio/unify-bgm.mp3';
+// 登記給 audio.js 在第一次手勢時預先解鎖（iPhone，見 audio.js 的 mediaEl）
+if (typeof window !== 'undefined') (window.MJ_MEDIA_URLS = window.MJ_MEDIA_URLS || []).push(MP3_URL);
 const MAP_POS = (typeof window !== 'undefined' && window.MJEnfeoff && window.MJEnfeoff.MAP_POS) || {
   qin: [19, 42], zhao: [47.5, 17], yan: [73, 17], qi: [73, 40],
   wei: [53, 41], han: [36.5, 40], chu: [51, 66],
@@ -131,8 +133,15 @@ function ctx() {
   return actx;
 }
 if (typeof document !== 'undefined') {
-  const wake = () => { try { ctx(); } catch (_) {} };
+  /* ⚠️ iPhone 上手指按下（pointerdown）不算解鎖聲音的手勢，要放開（touchend／click）才算 ——
+     只掛 pointerdown 的話，iPhone 上這段動畫的合成音永遠是啞的（2026-10-16「iphone 沒聲音？」）。
+     每次手勢都叫一次：切 App、來電之後系統會把 AudioContext 暫停，只能在下一次手勢當下叫醒 */
+  const wake = () => {
+    try { const c = ctx(); if (c && window.MJAudio && window.MJAudio.unlockCtx) window.MJAudio.unlockCtx(c); } catch (_) {}
+  };
   document.addEventListener('pointerdown', wake, { passive: true });
+  document.addEventListener('touchend', wake, { passive: true });
+  document.addEventListener('click', wake);
   document.addEventListener('keydown', wake);
 }
 const hz = p => 440 * Math.pow(2, (p - 69) / 12);
@@ -201,7 +210,9 @@ function musicStart(fromSec) {
   musicStop();
   if (!soundOn()) return;
   // 有 MP3（GarageBand 轉好的）就用 MP3；沒有就合成
-  mp3 = new Audio(MP3_URL);
+  // ⚠️ 用 MJAudio 預先解鎖好的同一個元素（iPhone 不讓程式自己播沒在手勢裡播過的 <audio>，見 audio.js 的 mediaEl）
+  mp3 = (window.MJAudio && window.MJAudio.mediaEl && window.MJAudio.mediaEl(MP3_URL)) || new Audio(MP3_URL);
+  mp3.muted = false;
   mp3.currentTime = fromSec || 0;
   let fell = false;
   const fallback = () => {
@@ -211,7 +222,7 @@ function musicStart(fromSec) {
     const t = c.currentTime + 0.05 - (fromSec || 0);
     notes.forEach(n => { if (n[0] >= (fromSec || 0) - 0.01) synthNote(c, t, n); });
   };
-  mp3.addEventListener('error', fallback);
+  mp3.onerror = fallback;          // 元素會重用：用 onerror（指定）而不是 addEventListener（會越疊越多）
   mp3.play().catch(fallback);
 }
 function musicStop() {

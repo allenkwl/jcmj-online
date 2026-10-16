@@ -31,6 +31,8 @@
 'use strict';
 
 const MP3_URL = 'assets/audio/fallen-bgm.mp3';
+// 登記給 audio.js 在第一次手勢時預先解鎖（iPhone，見 audio.js 的 mediaEl）
+if (typeof window !== 'undefined') (window.MJ_MEDIA_URLS = window.MJ_MEDIA_URLS || []).push(MP3_URL);
 const T = { snap: 0.9, gray: 3.0, video: 5.0, slam: 8.0, epitaph: 8.6, hint: 11.5, end: 14.0 };
 
 const CSS = `
@@ -95,6 +97,16 @@ function ctx() {
   }
   if (actx.state === 'suspended' && actx.resume) actx.resume().catch(() => {});
   return actx;
+}
+if (typeof document !== 'undefined') {
+  /* 合成配樂（讀不到 mp3 時的退路）用這個 AudioContext。亡國是結算跑到的、不是手勢 ——
+     iPhone 只准在手勢當下叫醒，所以在每次觸控結束／點擊時先叫醒（原本完全沒有，iPhone 上退路一定是啞的） */
+  const wake = () => {
+    try { const c = ctx(); if (c && window.MJAudio && window.MJAudio.unlockCtx) window.MJAudio.unlockCtx(c); } catch (_) {}
+  };
+  document.addEventListener('touchend', wake, { passive: true });
+  document.addEventListener('click', wake);
+  document.addEventListener('keydown', wake);
 }
 const hz = p => 440 * Math.pow(2, (p - 69) / 12);
 function env(g, t, a, peak, d, rel) {
@@ -189,7 +201,9 @@ function musicStart(fromSec) {
   clearTimeout(defeatTimer);
   defeatTimer = setTimeout(startDefeat, Math.max(0, T.end - (fromSec || 0) + 0.3) * 1000);
   if (!soundOn()) return;
-  mp3 = new Audio(MP3_URL);
+  // ⚠️ 用 MJAudio 預先解鎖好的同一個元素（iPhone 不讓程式自己播沒在手勢裡播過的 <audio>，見 audio.js 的 mediaEl）
+  mp3 = (window.MJAudio && window.MJAudio.mediaEl && window.MJAudio.mediaEl(MP3_URL)) || new Audio(MP3_URL);
+  mp3.muted = false;
   mp3.currentTime = fromSec || 0;
   let fell = false;
   const fallback = () => {
@@ -199,8 +213,9 @@ function musicStart(fromSec) {
     const t = c.currentTime + 0.05 - (fromSec || 0);
     notes.forEach(n => { if (n[0] >= (fromSec || 0) - 0.01) synthNote(c, t, n); });
   };
-  mp3.addEventListener('error', fallback);
-  mp3.addEventListener('ended', startDefeat);     // 配樂播完就接（通常比計時器早一點）
+  // 元素會重用：用 onerror／onended（指定）而不是 addEventListener（會越疊越多）
+  mp3.onerror = fallback;
+  mp3.onended = startDefeat;       // 配樂播完就接（通常比計時器早一點）
   mp3.play().catch(fallback);
 }
 function musicStop() {
