@@ -159,6 +159,24 @@
           }
         }
       }
+    },
+    "players": {
+      "$uid": {
+        ".read": "auth != null && auth.uid === $uid",
+        ".write": "auth != null && auth.uid === $uid",
+        ".validate": "$uid.length <= 128",
+        "kingdoms": {
+          "$k": {
+            ".validate": "$k === 'qi' || $k === 'chu' || $k === 'yan' || $k === 'han' || $k === 'wei' || $k === 'zhao' || $k === 'qin'"
+          }
+        },
+        "session": {
+          ".validate": "!newData.exists() || newData.hasChildren(['tab', 'at'])"
+        },
+        "$other": {
+          ".validate": false
+        }
+      }
     }
   }
 }
