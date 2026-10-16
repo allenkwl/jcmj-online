@@ -164,7 +164,7 @@ function doLoginGoogle() {
   Net.loginGoogle().then(afterLogin).catch(e => toast(loginMsg(e)));
 }
 function doLoginEmail() {
-  ask('輸入你的 Email（會寄一封登入信過去）', '').then(em => {
+  ask('輸入你的 Email（會寄一封登入信過去）', '', { email: true }).then(em => {
     em = String(em || '').trim();
     if (!em) return;
     return Net.sendEmailLink(em).then(() => toast('登入信已寄到 ' + em + '：請在**這台裝置**打開信、點連結（找不到就看垃圾信件匣）'));
@@ -172,7 +172,7 @@ function doLoginEmail() {
 }
 /* 從登入信的連結打開這一頁：完成登入。這台沒記著 email（別台按寄信、這台點連結）就問一次 */
 function finishEmailLogin() {
-  return Net.finishEmailLink(() => ask('確認一下 Email（要跟收到信的那個一樣）', ''))
+  return Net.finishEmailLink(() => ask('確認一下 Email（要跟收到信的那個一樣）', '', { email: true }))
     .then(afterLogin).catch(e => toast(loginMsg(e)));
 }
 function doLogout() {
@@ -246,8 +246,9 @@ function row(cls, html, onClick) {
 function clear(node) { while (node && node.firstChild) node.removeChild(node.firstChild); }
 /* 文字輸入。⚠️ 不要退回原生 prompt() —— 那會讓瀏覽器退出全螢幕，
    而本作的老闆模式正是監聽 fullscreenchange 觸發的（見 mj4.html 的 askText）。 */
-function ask(message, def) {
-  if (typeof window.MJAsk === 'function') return window.MJAsk(message, def);
+function ask(message, def, opts) {
+  // opts 給 Email 用（{ email: true }）；舊版頁面的 MJAsk 只吃兩個參數，多傳的會被忽略（照舊 16 字）
+  if (typeof window.MJAsk === 'function') return window.MJAsk(message, def, opts);
   return Promise.reject(new Error('NOASK'));
 }
 
