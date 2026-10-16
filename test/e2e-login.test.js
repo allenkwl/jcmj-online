@@ -60,7 +60,15 @@ async function requestLink(p) {
     await __until(() => __vis(document.getElementById('ask-input')), 5000);
     document.getElementById('ask-input').value = em;
     document.getElementById('ask-ok').click();
-    return __until(() => /登入信已寄到/.test(__toast()), 10000);
+    /* v1.73 起寄出的結果是要按「知道了」才關的提示框（不是幾秒就消失的 toast —— 使用者來不及看）：
+       要出現、1.5 秒後還在、按了才關 */
+    const msg = () => document.getElementById('ask-msg').textContent;
+    const shown = () => document.getElementById('ask-ov').classList.contains('show');
+    if (!await __until(() => shown() && /登入信已寄到/.test(msg()), 10000)) return false;
+    await new Promise(r => setTimeout(r, 1500));
+    if (!shown() || !/登入信已寄到/.test(msg())) return false;
+    document.getElementById('ask-ok').click();
+    return __until(() => !shown(), 3000);
   }, EMAIL);
 }
 /* 模擬器記下的最新一封登入信的 oobCode */

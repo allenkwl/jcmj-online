@@ -152,8 +152,19 @@ function loginMsg(e) {
   if (/operation-not-allowed/.test(c)) return '這種登入方式還沒開放（Firebase 後台要先打開）';
   if (/unauthorized-domain/.test(c)) return '這個網址還不能登入（Firebase 後台要把網址加進允許清單）';
   if (/network/.test(c)) return '網路不通，等一下再試';
+  // Firebase 免費方案每天能寄的登入信有上限；同一個 Email 短時間按太多次也會被擋
+  if (/quota-exceeded/.test(c)) return '今天寄登入信的次數已經用完了（Firebase 免費方案每天有上限）。\n明天再試，或先用 Google 登入。';
+  if (/too-many-requests/.test(c)) return '按太多次了，Firebase 暫時擋住。\n等幾分鐘再試。';
+  if (/unauthorized-continue-uri|invalid-continue-uri|missing-continue-uri/.test(c)) return '這個網址不能收登入信（Firebase 後台的允許網域要加上它）\n' + c;
+  if (/invalid-action-code|expired-action-code/.test(c)) return '這封登入信的連結已經用過或過期了，請再寄一次';
   if (/NOEMAIL/.test(c)) return '沒有輸入 Email，沒登入';
   return '登入失敗：' + c;
+}
+/* 要玩家看完才關的訊息（寄信、登入失敗）。舊版頁面沒有 MJNotice 就退回 toast */
+function notice(msg) {
+  if (typeof window.MJNotice === 'function') return window.MJNotice(msg);
+  toast(msg);
+  return Promise.resolve();
 }
 function afterLogin(a) {
   renderAccount();
@@ -161,19 +172,21 @@ function afterLogin(a) {
   return syncProgress();
 }
 function doLoginGoogle() {
-  Net.loginGoogle().then(afterLogin).catch(e => toast(loginMsg(e)));
+  Net.loginGoogle().then(afterLogin).catch(e => notice(loginMsg(e)));
 }
 function doLoginEmail() {
   ask('輸入你的 Email（會寄一封登入信過去）', '', { email: true }).then(em => {
     em = String(em || '').trim();
     if (!em) return;
-    return Net.sendEmailLink(em).then(() => toast('登入信已寄到 ' + em + '：請在**這台裝置**打開信、點連結（找不到就看垃圾信件匣）'));
-  }).catch(e => { if (e && e.message !== 'NOASK') toast(loginMsg(e)); });
+    return Net.sendEmailLink(em).then(() => notice(
+      '登入信已寄到\n' + em + '\n\n請在這台裝置打開那封信、點裡面的連結，就會登入。\n' +
+      '寄件人是 noreply@jcmj-4p.firebaseapp.com\n幾分鐘內沒收到，請看垃圾信件匣。'));
+  }).catch(e => { if (e && e.message !== 'NOASK') notice(loginMsg(e)); });
 }
 /* 從登入信的連結打開這一頁：完成登入。這台沒記著 email（別台按寄信、這台點連結）就問一次 */
 function finishEmailLogin() {
   return Net.finishEmailLink(() => ask('確認一下 Email（要跟收到信的那個一樣）', '', { email: true }))
-    .then(afterLogin).catch(e => toast(loginMsg(e)));
+    .then(afterLogin).catch(e => notice(loginMsg(e)));
 }
 function doLogout() {
   const b = byId('acct-logout');
