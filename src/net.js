@@ -287,6 +287,33 @@ const Net = {
     return (email ? Promise.resolve(email) : Promise.resolve(askEmail ? askEmail() : null))
       .then(em => { if (!em) throw new Error('NOEMAIL'); return go(em); });
   },
+  /* ── Email＋密碼（v1.75）──
+     信件連結在 iPhone 上不好用（2026-10-16 使用者實測）：連結一律在 Safari 打開（不是全螢幕），
+     而 Safari 跟加到主畫面的 App 是兩套儲存，在 Safari 登入了 App 裡還是沒登入；outlook.com 也收不到信。
+     密碼在哪台都能直接登入，只有忘記密碼才要收信。
+     ⚠️ 專案開著「防 Email 列舉」：帳號不存在跟密碼錯回的是同一個錯（invalid-credential），分不出來 ——
+        由大廳請玩家再打一次密碼：一樣的就註冊，不一樣的就當重試（lobby.js 的 doLoginPassword） */
+  loginPassword(email, password) {
+    return firebase.auth().signInWithEmailAndPassword(email, password).then(r => this._afterLogin(r.user));
+  },
+  /* 註冊。現在是匿名的 → 把密碼帳號「連結」上去，uid 不變，這台已經打的進度直接跟著走 */
+  registerPassword(email, password) {
+    const auth = firebase.auth();
+    const u = auth.currentUser;
+    const p = u && u.isAnonymous
+      ? u.linkWithCredential(firebase.auth.EmailAuthProvider.credential(email, password))
+      : auth.createUserWithEmailAndPassword(email, password);
+    return p.then(r => this._afterLogin(r.user));
+  },
+  sendPasswordReset(email) {
+    const url = location.origin + location.pathname + location.search;
+    return firebase.auth().sendPasswordResetEmail(email, { url })
+      .catch(e => {
+        // 網址不在允許清單（例如本機測試）→ 不帶「設好後回到這裡」的連結再寄一次
+        if (/continue-uri|unauthorized-domain/.test((e && e.code) || '')) return firebase.auth().sendPasswordResetEmail(email);
+        throw e;
+      });
+  },
   /* 登出：換回一個全新的匿名身分（這台之後就是沒登入的狀態） */
   logout() {
     const auth = firebase.auth();

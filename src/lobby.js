@@ -158,6 +158,9 @@ function loginMsg(e) {
   if (/unauthorized-continue-uri|invalid-continue-uri|missing-continue-uri/.test(c)) return '這個網址不能收登入信（Firebase 後台的允許網域要加上它）\n' + c;
   if (/invalid-action-code|expired-action-code/.test(c)) return '這封登入信的連結已經用過或過期了，請再寄一次';
   if (/NOEMAIL/.test(c)) return '沒有輸入 Email，沒登入';
+  if (/weak-password|password-does-not-meet/.test(c)) return '密碼太短，至少要 6 個字';
+  if (/missing-password/.test(c)) return '沒有輸入密碼';
+  if (/user-disabled/.test(c)) return '這個帳號被停用了';
   return '登入失敗：' + c;
 }
 /* 要玩家看完才關的訊息（寄信、登入失敗）。舊版頁面沒有 MJNotice 就退回 toast */
@@ -174,7 +177,55 @@ function afterLogin(a) {
 function doLoginGoogle() {
   Net.loginGoogle().then(afterLogin).catch(e => notice(loginMsg(e)));
 }
+/* 「用 Email 登入」：v1.75 起是 Email＋密碼。舊版頁面的輸入框不認密碼模式（會用明碼、限 16 字）→ 照舊寄登入信 */
 function doLoginEmail() {
+  if (window.MJAsk && window.MJAsk.password && typeof window.MJConfirm === 'function' && Net.loginPassword) return doLoginPassword();
+  doLoginLink();
+}
+const LAST_EMAIL_KEY = 'jcmj_last_email';
+function isBadCred(e) { return /invalid-credential|invalid-login-credentials|wrong-password|user-not-found|invalid-password/.test((e && e.code) || ''); }
+/* 帳號不存在跟密碼錯分不出來（防 Email 列舉，見 net.js）→ 請玩家再打一次：
+   跟剛才一樣＝第一次用，幫他註冊；不一樣＝剛才打錯了，用新的再登入一次 */
+function doLoginPassword() {
+  let lastEm = '';
+  try { lastEm = localStorage.getItem(LAST_EMAIL_KEY) || ''; } catch (_) {}
+  let em = '';
+  const done = a => { try { localStorage.setItem(LAST_EMAIL_KEY, em); } catch (_) {} return afterLogin(a); };
+  const tryLogin = (pw, round) => Net.loginPassword(em, pw).then(done).catch(e => {
+    if (!isBadCred(e)) throw e;
+    if (round >= 4) return notice('密碼一直不對。\n忘了密碼的話，再按一次「用 Email 登入」，在問密碼時按「忘記密碼」。');
+    return ask('登入不了：密碼不對，或這個 Email 還沒註冊過。\n\n‧ 打錯了：重打一次密碼\n‧ 第一次用：再打一次同一組密碼，就幫你註冊\n‧ 忘了密碼：按「忘記密碼」',
+      '', { password: true, newPassword: true, cancelLabel: '忘記密碼' }).then(pw2 => {
+      if (pw2 == null) return forgot();
+      if (pw2 === pw) return register(pw);
+      return tryLogin(pw2, round + 1);
+    });
+  });
+  const register = pw => Net.registerPassword(em, pw).then(a => {
+    done(a);
+    return notice('註冊好了，已登入：\n' + em + '\n\n之後在任何一台（包括加到主畫面的 App）按「用 Email 登入」、打這組密碼就行，不用收信。');
+  }).catch(e => {
+    if (/email-already-in-use|credential-already-in-use/.test((e && e.code) || '')) {
+      return MJConfirm('這個 Email 已經註冊過了，所以是密碼不對。\n（用 Google 登入過的 Email，請改按「用 Google 登入」）\n\n要寄一封「重設密碼」的信嗎？', '寄重設信', '不用')
+        .then(y => { if (y) return sendReset(); });
+    }
+    throw e;
+  });
+  const forgot = () => MJConfirm('寄一封「重設密碼」的信到\n' + em + '？', '寄信', '取消').then(y => { if (y) return sendReset(); });
+  const sendReset = () => Net.sendPasswordReset(em).then(() => notice(
+    '重設密碼的信已寄到\n' + em + '\n\n點信裡的連結設新密碼（在哪台點都可以），\n設好之後回到這裡，用新密碼登入。\n' +
+    '寄件人是 noreply@jcmj-4p.firebaseapp.com\n幾分鐘內沒收到，請看垃圾信件匣。\n（outlook.com／hotmail 信箱可能完全收不到，這時請改用 Google 登入）'));
+
+  ask('輸入你的 Email', lastEm, { email: true }).then(v => {
+    em = String(v || '').trim();
+    if (!em) return;
+    return ask('輸入密碼\n（第一次用：這就是你要設定的密碼，至少 6 個字）', '', { password: true }).then(pw => {
+      if (!pw) return;
+      return tryLogin(pw, 1);
+    });
+  }).catch(e => { if (e && e.message !== 'NOASK') notice(loginMsg(e)); });
+}
+function doLoginLink() {
   ask('輸入你的 Email（會寄一封登入信過去）', '', { email: true }).then(em => {
     em = String(em || '').trim();
     if (!em) return;
