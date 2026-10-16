@@ -1,0 +1,187 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>BGM 試聽台</title>
+<meta name="description" content="遊戲裡實際播的 BGM（定稿版）：場景曲、七國曲照遊戲的方式無縫循環，可以跳到接縫聽接回開頭">
+<meta name="launcher-icon" content="🎵">
+<meta name="launcher-cat" content="其他">
+<!--
+  v0.2（2026-10-16）：BGM 定稿、接進遊戲之後的版本。v0.1 是定稿前的新舊比較，接進遊戲後已經失效
+  （它的「舊版」呼叫的合成曲程式已刪，新版播的是已經搬走的兩輪試聽稿），留著不刪（專案慣例）。
+
+  ‧ 場景曲、七國曲：播遊戲用的 assets/audio/bgm/<場景>.mp3，循環段讀 manifest.js 的 loopStart／loopEnd。
+    檔案前後各多接一小段循環本身的內容（見 tools/bgm_midi.py），只在 [loopStart, loopEnd) 繞 ——
+    這一頁用跟 src/audio.js 一樣的方式播（Web Audio 解碼＋AudioBufferSourceNode.loop），
+    所以「跳到接縫」（從 loopEnd − 6 秒開始）聽到的就是遊戲裡實際接回開頭的樣子，會一直循環下去。
+    ⚠️ 用一般 <audio> 播的話，播到 loopEnd 之後只剩 0.5 秒就到檔尾停了，聽不到真的接回去
+  ‧ 動畫配樂：assets/audio/intro|unify|fallen-bgm.mp3，一次播完（時間點跟動畫綁定，不循環）
+  ‧ 全部標準化到 -16 LUFS／真峰值 -1.5 dB（tools/exs_render.py 的 to_mp3）
+  ‧ 雙擊（file://）開時 fetch 讀不到音檔：場景曲退回 <audio>，「跳到接縫」只能聽到接縫前後幾秒
+-->
+<style>
+  :root { --bg:#16120e; --card:#211b15; --line:#3a3026; --ink:#efe6d6; --dim:#a8998a; --gold:#d8b06a; --red:#c8553d; }
+  * { box-sizing:border-box; }
+  body { margin:0; background:var(--bg); color:var(--ink); font:15px/1.6 -apple-system, "PingFang TC", sans-serif; }
+  header { padding:20px 24px 8px; }
+  h1 { margin:0; font-size:22px; color:var(--gold); letter-spacing:2px; }
+  header p { margin:6px 0 0; color:var(--dim); font-size:13px; }
+  main { padding:8px 24px 40px; display:grid; gap:10px; max-width:1100px; }
+  h2 { margin:18px 0 2px; font-size:15px; color:var(--gold); letter-spacing:1px; }
+  .row { background:var(--card); border:1px solid var(--line); border-radius:10px; padding:12px 14px;
+         display:grid; grid-template-columns: 170px 1fr; gap:6px 14px; align-items:center; }
+  .name { font-weight:600; font-size:16px; }
+  .name small { display:block; font-weight:400; color:var(--dim); font-size:12px; }
+  .desc { color:var(--dim); font-size:13px; }
+  .ctl { grid-column: 2; display:flex; flex-wrap:wrap; gap:8px; align-items:center; }
+  audio { height:32px; width:min(420px, 100%); }
+  button { background:#2d251d; color:var(--ink); border:1px solid var(--line); border-radius:6px; padding:5px 10px;
+           font:inherit; font-size:13px; cursor:pointer; }
+  button:hover { border-color:var(--gold); }
+  button.on { background:var(--red); border-color:var(--red); }
+  .tag { font-size:12px; color:var(--dim); font-variant-numeric:tabular-nums; }
+  .warn { color:#e8a060; font-size:12px; }
+  @media (max-width:700px) { .row { grid-template-columns:1fr; } .ctl { grid-column:1; } }
+</style>
+</head>
+<body>
+<header>
+  <h1>🎵 BGM 試聽台</h1>
+  <p>遊戲裡實際播的版本（定稿）。場景曲與七國曲照遊戲的方式<b>無縫循環</b>：按「⤼ 跳到接縫」從一輪結束前 6 秒開始，聽它接回開頭順不順。
+     一次只會響一首。音量都已統一（-16 LUFS）。</p>
+  <p class="warn" id="filewarn" hidden>⚠️ 用雙擊（file://）開的：讀不到音檔資料，場景曲只能用一般播放器、不會循環。要聽接縫請從啟動台（開發伺服器）開。</p>
+</header>
+<main id="list"></main>
+
+<script src="../assets/audio/bgm/manifest.js"></script>
+<script>
+'use strict';
+const BASE = '../';
+const BGM = window.MJ_BGM || {};
+// when：遊戲裡什麼時候播（src/bgm-scene.js、主程式的 wantedBgm）
+const SONGS = [
+  { h: '場景曲（循環）' },
+  { scene: 'title',  name: '主畫面',   when: '標題畫面',
+    desc: '古箏奏五聲旋律、二胡應答、編鐘每兩小節、山風；64 BPM' },
+  { scene: 'select', name: '擇國而立', when: '選國畫面',
+    desc: '古箏反覆樂句、二胡主題、中國鼓＋太鼓、銅管；125 BPM' },
+  { scene: 'game',   name: '對局',     when: '打牌（莊家那一國沒有國曲時）',
+    desc: '弦樂空五度、每兩拍「咚咚」心跳、琵琶與古箏零星對答；66 BPM' },
+  { scene: 'tenpai', name: '聽牌',     when: '有人聽牌時（連線由開桌那台判斷，不透露是誰）',
+    desc: '琵琶 D–E♭ 小二度來回、大鼓每拍、低音一路往下、後段太鼓＋銅管；160 BPM' },
+  { scene: 'defeat', name: '敗亡',     when: '亡國動畫的配樂播完、按「確定」之前',
+    desc: 'D 小調下行旋律：前半古箏、後半二胡；弦樂墊、遠鐘；52 BPM' },
+  { h: '七國曲（誰是東＝莊家，就播那一國；莊家換人就換曲）' },
+  { scene: 'qi',   name: '齊', when: '齊國坐東', desc: '悠揚五聲、水波感、從容：古箏流水、水聲、琵琶點綴' },
+  { scene: 'chu',  name: '楚', when: '楚國坐東', desc: '深沉低音、強烈節拍：排鼓、琵琶 G 小調 riff、二胡' },
+  { scene: 'yan',  name: '燕', when: '燕國坐東', desc: '蕭瑟寒風、神秘：冷調弦樂、寒風、古箏泛音零星撥弦' },
+  { scene: 'han',  name: '韓', when: '韓國坐東', desc: '金屬感、穩健行軍：行軍鼓、琵琶＋銅管' },
+  { scene: 'wei',  name: '魏', when: '魏國坐東', desc: '激烈衝突：快速八分音符、二胡＋琵琶、太鼓' },
+  { scene: 'zhao', name: '趙', when: '趙國坐東', desc: '奔騰、開闊：三連音馬蹄、二胡英雄旋律、空五度' },
+  { scene: 'qin',  name: '秦', when: '秦國坐東', desc: '帝王威嚴、重低音：大太鼓、銅管、大鑼、編鐘' },
+  { h: '動畫配樂（一次播完，時間點跟動畫綁定）' },
+  { mp3: 'intro-bgm.mp3',  name: '開場序章', when: '按「開始征途」', desc: '同一份 MIDI 換成 GarageBand 取樣演奏' },
+  { mp3: 'unify-bgm.mp3',  name: '統一天下', when: '統一動畫',       desc: '號角銅管、古箏、戰鼓、銅鑼' },
+  { mp3: 'fallen-bgm.mp3', name: '亡國',     when: '亡國動畫（播完接敗亡曲循環）', desc: '塤（長笛代）、古箏、編鐘、大鑼；鼓聲在劍斷時戛然而止' },
+];
+
+/* ── 循環播放器：跟 src/audio.js 的 BGM 同一種播法 ── */
+const canFetch = location.protocol !== 'file:';
+if (!canFetch) document.getElementById('filewarn').hidden = false;
+let ctx = null;
+const buffers = {};
+let cur = null;            // { src, gain, t0, offset, entry, btn, label }
+const audios = [];
+
+function getCtx() {
+  if (!ctx) ctx = new (window.AudioContext || window.webkitAudioContext)();
+  if (ctx.state === 'suspended') ctx.resume();
+  return ctx;
+}
+function loadBuffer(scene) {
+  if (buffers[scene]) return buffers[scene];
+  const e = BGM[scene];
+  buffers[scene] = fetch(BASE + e.src).then(r => { if (!r.ok) throw new Error(r.status); return r.arrayBuffer(); })
+    .then(ab => getCtx().decodeAudioData(ab));
+  return buffers[scene];
+}
+function stopLoop() {
+  if (!cur) return;
+  try { cur.src.stop(); } catch (_) {}
+  cur.btns.forEach(b => b.classList.remove('on'));
+  cur.play.textContent = '▶ 播放（循環）';
+  cur = null;
+}
+function stopAll(exceptAudio) {
+  stopLoop();
+  audios.forEach(a => { if (a !== exceptAudio) a.pause(); });
+}
+/* offset：從檔案第幾秒開始（循環段內），一直在 [loopStart, loopEnd) 繞 */
+function playLoop(scene, offset, btns, play, label) {
+  stopAll();
+  const e = BGM[scene];
+  label.textContent = '載入中⋯';
+  loadBuffer(scene).then(buf => {
+    const c = getCtx();
+    const src = c.createBufferSource();
+    src.buffer = buf; src.loop = true;
+    src.loopStart = e.loopStart; src.loopEnd = e.loopEnd;
+    const gain = c.createGain(); gain.gain.value = 0.9;
+    src.connect(gain).connect(c.destination);
+    src.start(0, offset);
+    cur = { src, scene, entry: e, t0: c.currentTime, offset, btns, play, label };
+    btns.forEach(b => b.classList.toggle('on', b === btns.active));
+    play.textContent = '■ 停止';
+  }).catch(err => { label.textContent = '讀不到音檔：' + err.message; });
+}
+// 播放位置（循環段內）：每 0.25 秒更新一次
+setInterval(() => {
+  if (!cur) return;
+  const e = cur.entry, len = e.loopEnd - e.loopStart;
+  let t = cur.offset + (ctx.currentTime - cur.t0);
+  if (t >= e.loopEnd) t = e.loopStart + ((t - e.loopStart) % len);
+  const round = Math.floor((cur.offset - e.loopStart + (ctx.currentTime - cur.t0)) / len) + 1;
+  cur.label.textContent = `${(t - e.loopStart).toFixed(1)} / ${len.toFixed(1)} 秒　第 ${round} 輪`;
+}, 250);
+
+const list = document.getElementById('list');
+SONGS.forEach(s => {
+  if (s.h) { const h = document.createElement('h2'); h.textContent = s.h; list.appendChild(h); return; }
+  const row = document.createElement('div'); row.className = 'row';
+  row.innerHTML = `<div class="name">${s.name}<small>${s.when}</small></div>
+    <div class="desc">${s.desc}</div><div class="ctl"></div>`;
+  const ctl = row.querySelector('.ctl');
+  list.appendChild(row);
+
+  // 動畫配樂、或是雙擊開讀不到音檔：一般播放器
+  if (s.mp3 || !canFetch) {
+    const au = document.createElement('audio'); au.controls = true; au.preload = 'none';
+    au.src = BASE + (s.mp3 ? 'assets/audio/' + s.mp3 : BGM[s.scene].src);
+    au.addEventListener('play', () => stopAll(au));
+    audios.push(au); ctl.appendChild(au);
+    if (s.scene && BGM[s.scene]) {
+      const j = document.createElement('button'); j.textContent = '⤼ 跳到接縫';
+      j.onclick = () => { stopAll(au); au.currentTime = Math.max(0, BGM[s.scene].loopEnd - 6); au.play(); };
+      ctl.appendChild(j);
+    }
+    return;
+  }
+  const e = BGM[s.scene];
+  if (!e) { ctl.innerHTML = '<span class="warn">manifest.js 裡沒有這一首</span>'; return; }
+  const play = document.createElement('button'); play.textContent = '▶ 播放（循環）';
+  const seam = document.createElement('button'); seam.textContent = '⤼ 跳到接縫';
+  seam.title = '從一輪結束前 6 秒開始，聽它接回開頭（會一直循環）';
+  const label = document.createElement('span'); label.className = 'tag';
+  label.textContent = `一輪 ${(e.loopEnd - e.loopStart).toFixed(1)} 秒`;
+  const btns = [play, seam];
+  play.onclick = () => {
+    if (cur && cur.scene === s.scene) { stopLoop(); label.textContent = `一輪 ${(e.loopEnd - e.loopStart).toFixed(1)} 秒`; return; }
+    btns.active = play; playLoop(s.scene, e.loopStart, btns, play, label);
+  };
+  seam.onclick = () => { btns.active = seam; playLoop(s.scene, Math.max(e.loopStart, e.loopEnd - 6), btns, play, label); };
+  ctl.append(play, seam, label);
+});
+</script>
+</body>
+</html>

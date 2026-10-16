@@ -1,0 +1,125 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>BGM 試聽台</title>
+<meta name="description" content="新做的 MIDI 配樂（GarageBand 取樣演奏）跟遊戲現在的版本一首一首比；音量都已統一">
+<meta name="launcher-icon" content="🎵">
+<meta name="launcher-cat" content="其他">
+<!--
+  2026-10-16：使用者決定所有 BGM 改成 MIDI、一首一首升級，「全部做完再一次擺出來」試聽，定案後才一起進遊戲。
+  ‧ 新版：assets/audio/<名>-bgm.mp3（tools/build-<名>-bgm-midi.py、build-kingdom-bgm-midi.py、rerender-event-bgm.py 產生）
+    試聽檔是「兩輪接起來」，按「跳到接縫」可以直接聽循環接回開頭的地方
+  ‧ 舊版：場景曲用遊戲現在的合成程式（src/audio.js 的 BGM.play）；開場／統一／亡國是原本的 MP3
+  ‧ 新版全部標準化到 -16 LUFS（tools/exs_render.py 的 to_mp3）；舊的合成曲沒有標準化，音量會不一樣
+-->
+<style>
+  :root { --bg:#16120e; --card:#211b15; --line:#3a3026; --ink:#efe6d6; --dim:#a8998a; --gold:#d8b06a; --red:#c8553d; }
+  * { box-sizing:border-box; }
+  body { margin:0; background:var(--bg); color:var(--ink); font:15px/1.6 -apple-system, "PingFang TC", sans-serif; }
+  header { padding:20px 24px 8px; }
+  h1 { margin:0; font-size:22px; color:var(--gold); letter-spacing:2px; }
+  header p { margin:6px 0 0; color:var(--dim); font-size:13px; }
+  main { padding:8px 24px 40px; display:grid; gap:10px; max-width:1100px; }
+  h2 { margin:18px 0 2px; font-size:15px; color:var(--gold); letter-spacing:1px; }
+  .row { background:var(--card); border:1px solid var(--line); border-radius:10px; padding:12px 14px;
+         display:grid; grid-template-columns: 170px 1fr; gap:6px 14px; align-items:center; }
+  .name { font-weight:600; font-size:16px; }
+  .name small { display:block; font-weight:400; color:var(--dim); font-size:12px; }
+  .desc { color:var(--dim); font-size:13px; }
+  .ctl { grid-column: 2; display:flex; flex-wrap:wrap; gap:8px; align-items:center; }
+  audio { height:32px; width:min(420px, 100%); }
+  button { background:#2d251d; color:var(--ink); border:1px solid var(--line); border-radius:6px; padding:5px 10px;
+           font:inherit; font-size:13px; cursor:pointer; }
+  button:hover { border-color:var(--gold); }
+  button.on { background:var(--red); border-color:var(--red); }
+  .tag { font-size:12px; color:var(--dim); }
+  @media (max-width:700px) { .row { grid-template-columns:1fr; } .ctl { grid-column:1; } }
+</style>
+</head>
+<body>
+<header>
+  <h1>🎵 BGM 試聽台</h1>
+  <p>新版：GarageBand 的古箏、二胡、琵琶、中國鼓、太鼓、管弦樂取樣演奏，音量統一 -16 LUFS。
+     試聽檔都是「兩輪接起來」——按「跳到接縫」聽循環接回開頭順不順。一次只會響一首。</p>
+</header>
+<main id="list"></main>
+
+<script src="../src/audio.js"></script>
+<script>
+const A = '../assets/audio/';
+// scene：舊版合成曲的場景名（BGM.play）；oldMp3：舊版是 MP3 的；loop：一輪幾秒（跳到接縫用）
+const SONGS = [
+  { h: '場景' },
+  { file: 'title',  name: '主畫面',  when: '標題畫面', scene: 'title', loop: 60,
+    desc: '古箏奏原本古琴那段五聲旋律、二胡應答、編鐘每兩小節、山風；64 BPM' },
+  { file: 'select', name: '擇國而立', when: '選國畫面', scene: 'select', loop: 30.72, done: true,
+    desc: '古箏反覆樂句、二胡主題、中國鼓＋太鼓、銅管；125 BPM（已定稿）' },
+  { file: 'game',   name: '對局',    when: '打牌（沒有國曲時）', scene: 'game', loop: 87.27,
+    desc: '弦樂空五度、每兩拍「咚咚」心跳、琵琶與古箏零星對答、低音後段往下走；66 BPM，一輪拉長免得一直重複' },
+  { file: 'tenpai', name: '聽牌',    when: '有人聽牌時（舊版有、四人版要補）', scene: 'tenpai', loop: 36,
+    desc: '琵琶 D–E♭ 小二度來回、大鼓每拍、低音一路往下、二胡長音、後段太鼓＋銅管；160 BPM' },
+  { file: 'defeat', name: '敗亡',    when: '遊戲結束（舊版有、四人版要補）', scene: 'defeat', loop: 73.85,
+    desc: '原本那段 D 小調下行旋律：前半古箏、後半二胡；弦樂墊、遠鐘；52 BPM' },
+  { h: '七國專屬曲（誰是東就播那一國）' },
+  { file: 'kingdom-qi',   name: '齊', when: '齊國坐東', scene: 'qi',   loop: 45.71, desc: '悠揚五聲、水波感、從容：古箏流水、水聲、琵琶點綴' },
+  { file: 'kingdom-chu',  name: '楚', when: '楚國坐東', scene: 'chu',  loop: 36.57, desc: '深沉低音、強烈節拍：排鼓、琵琶 G 小調 riff、二胡' },
+  { file: 'kingdom-yan',  name: '燕', when: '燕國坐東', scene: 'yan',  loop: 64,    desc: '蕭瑟寒風、神秘：冷調弦樂、寒風、古箏泛音零星撥弦' },
+  { file: 'kingdom-han',  name: '韓', when: '韓國坐東', scene: 'han',  loop: 34.29, desc: '金屬感、穩健行軍：行軍鼓、琵琶＋銅管' },
+  { file: 'kingdom-wei',  name: '魏', when: '魏國坐東', scene: 'wei',  loop: 44.31, desc: '激烈衝突：快速八分音符、二胡＋琵琶、太鼓' },
+  { file: 'kingdom-zhao', name: '趙', when: '趙國坐東', scene: 'zhao', loop: 48,    desc: '奔騰、開闊：三連音馬蹄、二胡英雄旋律、空五度' },
+  { file: 'kingdom-qin',  name: '秦', when: '秦國坐東', scene: 'qin',  loop: 40.42, desc: '帝王威嚴、重低音：大太鼓、銅管、大鑼、編鐘' },
+  { h: '動畫配樂（同一份 MIDI 換音色；時間點跟動畫綁定，沒有改）' },
+  { file: 'intro-bgm-v2',  name: '開場序章', when: '第一次進遊戲', oldMp3: 'intro-bgm.mp3',
+    desc: '舊版 -21.9 LUFS，比其他首小約 6 dB；新版拉齊到 -16' },
+  { file: 'unify-bgm-v2',  name: '統一天下', when: '統一動畫', oldMp3: 'unify-bgm.mp3', desc: '號角銅管、古箏、戰鼓、銅鑼' },
+  { file: 'fallen-bgm-v2', name: '亡國',     when: '亡國動畫', oldMp3: 'fallen-bgm.mp3', desc: '塤（長笛代）、古箏、編鐘、大鑼；鼓聲在劍斷時戛然而止' },
+];
+
+const audios = [];
+let oldOn = null;
+function stopAll(except) {
+  audios.forEach(a => { if (a !== except) a.pause(); });
+  if (oldOn) { try { MJAudio.BGM.stop(0); } catch (_) {} oldOn.classList.remove('on'); oldOn.textContent = '▶ 舊版'; oldOn = null; }
+}
+const list = document.getElementById('list');
+SONGS.forEach(s => {
+  if (s.h) { const h = document.createElement('h2'); h.textContent = s.h; list.appendChild(h); return; }
+  const row = document.createElement('div'); row.className = 'row';
+  const src = A + (s.file.endsWith('-v2') ? s.file : s.file + '-bgm') + '.mp3';
+  row.innerHTML = `<div class="name">${s.name}${s.done ? ' ✓' : ''}<small>${s.when}</small></div>
+    <div class="desc">${s.desc}</div><div class="ctl"></div>`;
+  const ctl = row.querySelector('.ctl');
+  const au = document.createElement('audio'); au.controls = true; au.preload = 'none'; au.src = src;
+  au.addEventListener('play', () => stopAll(au));
+  audios.push(au); ctl.appendChild(au);
+  if (s.loop) {
+    const j = document.createElement('button'); j.textContent = '⤼ 跳到接縫';
+    j.title = '從一輪結束前 6 秒開始播，聽接回開頭的地方';
+    j.onclick = () => { stopAll(au); au.currentTime = Math.max(0, s.loop - 6); au.play(); };
+    ctl.appendChild(j);
+  }
+  const o = document.createElement('button'); o.textContent = '▶ 舊版';
+  if (s.scene) {
+    o.onclick = () => {
+      const was = oldOn === o; stopAll();
+      if (was) return;
+      try { MJAudio.resume(); MJAudio.BGM.play(s.scene, 0.3); oldOn = o; o.classList.add('on'); o.textContent = '■ 停止舊版'; } catch (e) { alert(e); }
+    };
+  } else if (s.oldMp3) {
+    const oa = new Audio(A + s.oldMp3); audios.push(oa);
+    oa.addEventListener('pause', () => { o.classList.remove('on'); o.textContent = '▶ 舊版'; });
+    o.onclick = () => {
+      if (!oa.paused) { oa.pause(); o.classList.remove('on'); o.textContent = '▶ 舊版'; return; }
+      stopAll(oa); oa.currentTime = 0; oa.play(); o.classList.add('on'); o.textContent = '■ 停止舊版';
+    };
+  }
+  ctl.appendChild(o);
+  const t = document.createElement('span'); t.className = 'tag'; t.textContent = s.scene ? '舊版＝遊戲現在的合成曲' : '';
+  ctl.appendChild(t);
+  list.appendChild(row);
+});
+</script>
+</body>
+</html>

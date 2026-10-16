@@ -173,8 +173,21 @@ function synthNote(c, t, [st, dur, p, vel, tr]) {
   const o = osc(c, 'triangle', hz(p), at, at + dur + .4);    // bass
   o.connect(g); env(g, at, .05, v * .3, dur, .3);
 }
+/* 「敗亡」BGM：配樂（14 秒）播完、戰績畫面還在等「確定」→ 接上循環（舊兩人版在遊戲結束畫面播的那首，v1.70 補回來）。
+   按了確定 finish() 會 bgmResume／回標題，敗亡曲就被換掉。
+   ⚠️ 不能只掛在配樂的 ended 上：音效關掉時配樂根本不播（soundOn），讀不到 mp3 改用合成時也沒有 ended ——
+      只關音效、留著音樂的玩家，亡國畫面播完就一片安靜。所以另外照配樂長度排一個計時器，先到的那個接上，只接一次。
+      這個計時器不放進 timers：點一下跳到戰績時 stop() 會清掉 timers，但配樂照樣在播 */
+let defeatTimer = 0;
+function startDefeat() {
+  clearTimeout(defeatTimer); defeatTimer = 0;
+  if (!ov || !ov.classList.contains('show')) return;
+  try { const B = window.MJAudio && window.MJAudio.BGM; if (B && B.currentScene() !== 'defeat') B.play('defeat', 2.5); } catch (_) {}
+}
 function musicStart(fromSec) {
   musicStop();
+  clearTimeout(defeatTimer);
+  defeatTimer = setTimeout(startDefeat, Math.max(0, T.end - (fromSec || 0) + 0.3) * 1000);
   if (!soundOn()) return;
   mp3 = new Audio(MP3_URL);
   mp3.currentTime = fromSec || 0;
@@ -187,9 +200,11 @@ function musicStart(fromSec) {
     notes.forEach(n => { if (n[0] >= (fromSec || 0) - 0.01) synthNote(c, t, n); });
   };
   mp3.addEventListener('error', fallback);
+  mp3.addEventListener('ended', startDefeat);     // 配樂播完就接（通常比計時器早一點）
   mp3.play().catch(fallback);
 }
 function musicStop() {
+  clearTimeout(defeatTimer); defeatTimer = 0;
   if (mp3) { try { mp3.pause(); } catch (_) {} mp3 = null; }
   synthSrc.forEach(s => { try { s.stop(); } catch (_) {} });
   synthSrc = [];
@@ -339,7 +354,9 @@ function play(o) {
     const finish = () => {
       if (done) return; done = true;
       ov.removeEventListener('click', onTap);
-      stop(); musicStop(); bgmResume();
+      stop(); musicStop();
+      try { const B = window.MJAudio && window.MJAudio.BGM; if (B && B.currentScene() === 'defeat') B.stop(0.8); } catch (_) {}
+      bgmResume();
       ov.classList.remove('show');
       const v = ov.querySelector('video'); if (v) { try { v.pause(); } catch (_) {} }
       resolve();

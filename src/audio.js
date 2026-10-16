@@ -1,17 +1,11 @@
 /* ═══════════════════════════════════════════════════════════════
    audio.js — 音效與程序化背景音樂
    ───────────────────────────────────────────────────────────────
-   ⚠️ 這個檔由 `tools/build-audio.py` 從舊版單檔自動產生，**不要手改**。
-      要改請改產生器，這樣舊版更新時可以重跑。
+   SFX：原本由 `tools/build-audio.py` 從舊版單檔搬過來（Web Audio 即時合成）。
+   ⚠️ 這個檔早就手改過（BGM 重疊的修正、2026-10-16 整個 BGM 換成音檔），**不要再重跑 build-audio.py**，會把這些洗掉。
 
-   SFX：184 行　BGM：813 行（來源 L5640–5823 / L5826–6638）
-
-   兩個區塊原樣搬過來，一行沒改 —— 它們是全專案封裝得最乾淨的地方：
-   零個 `G.`、零個 `document.`，只有 AudioContext。不依賴遊戲狀態也不依賴 DOM，
-   所以兩人版換四人版完全不用動。
-
-   **沒有任何音檔。** 八個場景 + 七國專屬曲全是 Web Audio 即時合成，
-   搬過來一個位元組的資產都不用帶。
+   BGM：2026-10-16 起改播 assets/audio/bgm/*.mp3（MIDI → GarageBand 取樣演奏，見 BGM 區塊開頭的說明）。
+   場景：title select game tenpai defeat ＋ 七國 qi chu yan han wei zhao qin。牌桌上播哪一首見 src/bgm-scene.js。
 
    ── 瀏覽器的自動播放限制 ──
    AudioContext 必須在使用者手勢之後才能啟動。呼叫端要在第一次點擊／按鍵時
@@ -210,17 +204,37 @@ const SFX = (() => {
 })();
 
 const BGM = (() => {
+  /* ═══ BGM：播 assets/audio/bgm/*.mp3（2026-10-16 起）═══
+     原本這裡是 Web Audio 即時合成的曲子（每一軌一個 setInterval）。計時器晚到的量每軌不一樣而且會累積，
+     播一陣子鼓點就跟旋律對不上（使用者回報擇國而立）→ 使用者決定全部 BGM 改成 MIDI、用 GarageBand 的取樣
+     演奏成音檔（tools/bgm_midi.py、build-*-bgm-midi.py；試聽台 devtools/BGM試聽台）。
+
+     ‧ 曲目清單：assets/audio/bgm/manifest.js（window.MJ_BGM：src、loopStart、loopEnd）。
+       頁面沒載的話這裡自己補載一次 —— src/*.js 是各版共用的，舊版頁面也會跑到這份
+     ‧ 無縫循環：檔案前後各多接一小段循環本身的內容，只在 [loopStart, loopEnd) 裡繞（理由見 bgm_midi.py）
+     ‧ http(s)：fetch → decodeAudioData → AudioBufferSourceNode.loop（真正無縫）
+       雙擊開的 file://：fetch 讀不了本機檔 → 改用 <audio>，播到 loopEnd 就跳回去（接縫可能有一點點頓，只有本機開發會遇到）
+     ‧ 換曲是交叉淡化：舊的淡出、新的載好就淡入
+     ‧ 對外介面跟原本一樣：play(scene, fade)、stop(fade)、setEnabled、setVolume、isEnabled、getVolume、currentScene */
   let ctx = null;
   let masterGain = null;
   let enabled = true;
-  let volume = 0.35;
-  let currentTrack = null;
+  let volume = 0.45;            // 音檔都標準化到 -16 LUFS；BGM 墊在音效底下，不用開滿
+  let current = null;           // { scene, stop(fade), setVol() }
   let currentScene = null;
-  let stopScheduled = false;
+  /* ⚠️ 換曲子時新曲子要等音檔載好才開始，currentScene 要等那一刻才設。
+     在那段空檔裡再叫一次 play()（例如開場動畫結束叫一次 play('title')、showScreen 緊接著又叫一次）
+     不能建兩份 —— 所以「排定中」的那首也記著（pendingScene），每次排定帶一個序號，
+     被後來的 play()／stop() 取代的排定，載好了也不播（2026-09-24 使用者回報過兩首重疊）。 */
+  let pendingScene = null, playSeq = 0;
+  const loads = {};
+
+  const G = typeof window !== 'undefined' ? window : globalThis;
+  const canFetch = typeof location !== 'undefined' && /^https?:$/.test(location.protocol) && typeof fetch === 'function';
 
   function getCtx() {
     if (!ctx) {
-      ctx = new (window.AudioContext || window.webkitAudioContext)();
+      ctx = new (G.AudioContext || G.webkitAudioContext)();
       masterGain = ctx.createGain();
       masterGain.gain.value = volume;
       masterGain.connect(ctx.destination);
@@ -229,798 +243,117 @@ const BGM = (() => {
     return ctx;
   }
 
-  // Fade gain node over `dur` seconds
-  function fadeGain(g, from, to, dur) {
-    const now = ctx.currentTime;
-    g.gain.cancelScheduledValues(now);
-    g.gain.setValueAtTime(from, now);
-    g.gain.linearRampToValueAtTime(to, now + dur);
-  }
-
-  // Low-level tone generator that returns {osc, gain, stop()}
-  function makeTone(freq, type, gainVal, detune=0) {
-    const c = getCtx();
-    const osc = c.createOscillator();
-    const g = c.createGain();
-    osc.type = type;
-    osc.frequency.value = freq;
-    if(detune) osc.detune.value = detune;
-    osc.connect(g);
-    g.gain.value = gainVal;
-    return { osc, gain: g, connect(dest){ g.connect(dest); }, start(){ osc.start(); }, stop(t){ osc.stop(t||0); } };
-  }
-
-  // Low-level looping noise band
-  function makeNoise(loFreq, hiFreq, gainVal) {
-    const c = getCtx();
-    const bufSize = c.sampleRate * 2;
-    const buf = c.createBuffer(1, bufSize, c.sampleRate);
-    const d = buf.getChannelData(0);
-    for(let i=0;i<bufSize;i++) d[i] = Math.random()*2-1;
-    const src = c.createBufferSource();
-    src.buffer = buf; src.loop = true;
-    const lo = c.createBiquadFilter(); lo.type='lowpass'; lo.frequency.value=hiFreq;
-    const hi = c.createBiquadFilter(); hi.type='highpass'; hi.frequency.value=loFreq;
-    const g = c.createGain(); g.gain.value = gainVal;
-    src.connect(lo); lo.connect(hi); hi.connect(g);
-    return { src, gain: g, connect(dest){ g.connect(dest); }, start(){ src.start(); }, stop(){ try{src.stop();}catch(e){} } };
-  }
-
-  // ── TRACK BUILDERS ──────────────────────────────────────────
-
-  // TITLE: 古風 pentatonic drone + slow arp
-  function buildTitle(masterG, _ts) {
-    const c = getCtx();
-    const nodes = [];
-
-    // ── 古琴五聲宮調旋律 D E G A B ──
-    const guqinHigh = [293.7, 329.6, 392.0, 440.0, 493.9]; // D4 E4 G4 A4 B4
-    const guqinMid  = [146.8, 164.8, 196.0, 220.0, 246.9]; // D3 E3 G3 A3 B3
-    const melody = [
-      guqinHigh[0], guqinHigh[1], guqinHigh[2], guqinHigh[3], guqinHigh[4],
-      guqinHigh[1], guqinMid[2],  guqinMid[1],  guqinMid[0],  null,         // rest
-      guqinHigh[0], guqinHigh[2], guqinHigh[3], guqinHigh[4], guqinMid[3],
-      guqinMid[0],  null,                                                     // rest + end
-    ];
-    let melStep = 0;
-    const melInterval = setInterval(() => {
-      if(_ts.stopped){ clearInterval(melInterval); return; }
-      if(!enabled) return;
-      const freq = melody[melStep % melody.length];
-      melStep++;
-      if(!freq) return; // rest
+  let manifestP = null;
+  function manifest() {
+    if (G.MJ_BGM) return Promise.resolve(G.MJ_BGM);
+    if (!manifestP) manifestP = new Promise(res => {
       try {
-        const now = c.currentTime;
-        const osc1 = c.createOscillator(); const g1 = c.createGain();
-        osc1.type = 'triangle'; osc1.frequency.value = freq;
-        g1.gain.setValueAtTime(0, now);
-        g1.gain.linearRampToValueAtTime(0.13, now + 0.015);
-        g1.gain.exponentialRampToValueAtTime(0.001, now + 2.2);
-        osc1.connect(g1); g1.connect(masterG);
-        osc1.start(now); osc1.stop(now + 2.3);
-        // 泛音（五度）
-        const osc2 = c.createOscillator(); const g2 = c.createGain();
-        osc2.type = 'sine'; osc2.frequency.value = freq * 1.5;
-        g2.gain.setValueAtTime(0, now);
-        g2.gain.linearRampToValueAtTime(0.025, now + 0.01);
-        g2.gain.exponentialRampToValueAtTime(0.001, now + 1.0);
-        osc2.connect(g2); g2.connect(masterG);
-        osc2.start(now); osc2.stop(now + 1.1);
-      } catch(e){}
-    }, 900); // 每0.9秒一個音符
-
-    // ── 編鐘：每8秒一次 ──
-    let bellCount = 0;
-    const bellInterval = setInterval(() => {
-      if(_ts.stopped){ clearInterval(bellInterval); return; }
-      if(!enabled) return;
-      try {
-        const now = c.currentTime;
-        [[73.4, 0.18], [110, 0.10], [146.8, 0.06]].forEach(([f, gv], i) => {
-          const osc = c.createOscillator(); const gain = c.createGain();
-          osc.type = 'sine'; osc.frequency.value = f;
-          gain.gain.setValueAtTime(0, now + i*0.03);
-          gain.gain.linearRampToValueAtTime(gv, now + i*0.03 + 0.02);
-          gain.gain.exponentialRampToValueAtTime(0.001, now + 4.5);
-          osc.connect(gain); gain.connect(masterG);
-          osc.start(now + i*0.03); osc.stop(now + 4.6);
-        });
-      } catch(e){}
-    }, 8000);
-    // 立即打一次鐘
-    try {
-      const now = c.currentTime;
-      [[73.4, 0.18], [110, 0.10], [146.8, 0.06]].forEach(([f, gv], i) => {
-        const osc = c.createOscillator(); const gain = c.createGain();
-        osc.type = 'sine'; osc.frequency.value = f;
-        gain.gain.setValueAtTime(0, now + i*0.03);
-        gain.gain.linearRampToValueAtTime(gv, now + i*0.03 + 0.02);
-        gain.gain.exponentialRampToValueAtTime(0.001, now + 4.5);
-        osc.connect(gain); gain.connect(masterG);
-        osc.start(now + i*0.03); osc.stop(now + 4.6);
-      });
-    } catch(e){}
-
-    // ── 山風環境音 ──
-    const wind = makeNoise(60, 400, 0.025);
-    wind.connect(masterG); wind.start(); nodes.push(wind);
-
-    // ── 低頻土地共鳴 ──
-    const drone = makeTone(36.7, 'sine', 0.04);
-    const droneLP = c.createBiquadFilter(); droneLP.type='lowpass'; droneLP.frequency.value=120;
-    drone.connect(droneLP); droneLP.connect(masterG);
-    drone.start(); nodes.push(drone);
-
-    return { nodes, intervals: [melInterval, bellInterval] };
-  }
-
-  // SELECT: 緊張 war drums + rising tension
-  function buildSelect(masterG, _ts) {
-    const c = getCtx();
-    const nodes = [];
-
-    // Bass pulse on beat (D1)
-    const drumInterval = setInterval(() => {
-      if(_ts.stopped){ clearInterval(drumInterval); return; }
-      if(!enabled) return;
-      try {
-        const now = c.currentTime;
-        // Kick drum: pitch drop + noise
-        const osc = c.createOscillator();
-        const g = c.createGain();
-        osc.type = 'sine'; osc.frequency.setValueAtTime(160, now);
-        osc.frequency.exponentialRampToValueAtTime(40, now+0.15);
-        g.gain.setValueAtTime(0.5, now);
-        g.gain.exponentialRampToValueAtTime(0.001, now+0.22);
-        osc.connect(g); g.connect(masterG);
-        osc.start(now); osc.stop(now+0.25);
-        // Snare on beat 3
-      } catch(e){}
-    }, 480);
-
-    // Snare (offset by half)
-    const snareInterval = setInterval(() => {
-      if(_ts.stopped){ clearInterval(snareInterval); return; }
-      if(!enabled) return;
-      try {
-        const now = c.currentTime;
-        const bufSize = c.sampleRate * 0.12;
-        const buf = c.createBuffer(1, bufSize, c.sampleRate);
-        const d = buf.getChannelData(0);
-        for(let i=0;i<bufSize;i++) d[i] = (Math.random()*2-1) * Math.pow(1-i/bufSize, 2);
-        const src = c.createBufferSource(); src.buffer = buf;
-        const hp = c.createBiquadFilter(); hp.type='highpass'; hp.frequency.value=1200;
-        const g = c.createGain(); g.gain.value = 0.28;
-        src.connect(hp); hp.connect(g); g.connect(masterG);
-        src.start(now);
-      } catch(e){}
-    }, 960);
-
-    // Tense melody: minor pentatonic riff
-    const riff = [220, 247, 262, 220, 196, 220, 247, 294];
-    let ri = 0;
-    const riffInterval = setInterval(() => {
-      if(_ts.stopped){ clearInterval(riffInterval); return; }
-      if(!enabled) return;
-      try {
-        const osc = c.createOscillator();
-        const g = c.createGain();
-        const lp = c.createBiquadFilter(); lp.type='lowpass'; lp.frequency.value=900;
-        osc.type = 'sawtooth';
-        osc.frequency.value = riff[ri % riff.length] * 2;
-        const now = c.currentTime;
-        g.gain.setValueAtTime(0.08, now);
-        g.gain.exponentialRampToValueAtTime(0.001, now+0.38);
-        osc.connect(lp); lp.connect(g); g.connect(masterG);
-        osc.start(now); osc.stop(now+0.4);
-        ri++;
-      } catch(e){}
-    }, 240);
-
-    // Low rumble
-    const rumble = makeNoise(20, 120, 0.06);
-    rumble.connect(masterG); rumble.start(); nodes.push(rumble);
-
-    return { nodes, intervals: [drumInterval, snareInterval, riffInterval] };
-  }
-
-  // GAME: 戰場 ambient loop — tension, focus
-  function buildGame(masterG, _ts) {
-    const c = getCtx();
-    const nodes = [];
-
-    // Sustained pad: open 5th (A2 + E3) with vibrato
-    const padFreqs = [110, 165, 220, 330];
-    padFreqs.forEach((f,i) => {
-      const osc = c.createOscillator();
-      const g = c.createGain();
-      const lp = c.createBiquadFilter(); lp.type='lowpass'; lp.frequency.value=500;
-      osc.type = 'sawtooth';
-      osc.frequency.value = f;
-      osc.detune.value = (i%2===0 ? 1:-1) * (3 + i*2);
-      g.gain.value = 0.04;
-      osc.connect(lp); lp.connect(g); g.connect(masterG);
-      osc.start();
-      nodes.push({ stop: () => { try{osc.stop();}catch(e){} } });
+        const s = document.createElement('script');
+        s.src = 'assets/audio/bgm/manifest.js';
+        s.onload = () => res(G.MJ_BGM || {});
+        s.onerror = () => res({});
+        document.head.appendChild(s);
+      } catch (_) { res({}); }
     });
-
-    // Slow vibrato LFO
-    const lfo = c.createOscillator();
-    const lfoG = c.createGain(); lfoG.gain.value = 5;
-    lfo.frequency.value = 4.2; lfo.type='sine';
-    lfo.connect(lfoG);
-    padFreqs.forEach((_, i) => { /* connects via osc detune */ });
-    lfo.start();
-    nodes.push({ stop: () => { try{lfo.stop();}catch(e){} } });
-
-    // Heartbeat low pulse
-    const pulseInterval = setInterval(() => {
-      if(_ts.stopped){ clearInterval(pulseInterval); return; }
-      if(!enabled) return;
-      try {
-        const now = c.currentTime;
-        [0, 0.18].forEach(offset => {
-          const o = c.createOscillator();
-          const g = c.createGain();
-          o.type='sine'; o.frequency.value=55;
-          g.gain.setValueAtTime(0, now+offset);
-          g.gain.linearRampToValueAtTime(0.22, now+offset+0.04);
-          g.gain.exponentialRampToValueAtTime(0.001, now+offset+0.28);
-          o.connect(g); g.connect(masterG);
-          o.start(now+offset); o.stop(now+offset+0.3);
-        });
-      } catch(e){}
-    }, 1800);
-
-    // Sparse pluck melody — pentatonic
-    const melody = [440,494,587,659,587,440,494,392,440,587,659,587,494,440];
-    let mi = 0;
-    const melodyInterval = setInterval(() => {
-      if(_ts.stopped){ clearInterval(melodyInterval); return; }
-      if(!enabled) return;
-      if(Math.random()<0.45) { mi++; return; } // sparse
-      try {
-        const now = c.currentTime;
-        const osc = c.createOscillator();
-        const g = c.createGain();
-        const lp = c.createBiquadFilter(); lp.type='lowpass'; lp.frequency.value=2000;
-        osc.type='triangle'; osc.frequency.value=melody[mi%melody.length];
-        g.gain.setValueAtTime(0.07, now);
-        g.gain.exponentialRampToValueAtTime(0.001, now+0.5);
-        osc.connect(lp); lp.connect(g); g.connect(masterG);
-        osc.start(now); osc.stop(now+0.55);
-        mi++;
-      } catch(e){}
-    }, 500);
-
-    // Wind ambience
-    const wind = makeNoise(100, 800, 0.025);
-    wind.connect(masterG); wind.start(); nodes.push(wind);
-
-    return { nodes, intervals: [pulseInterval, melodyInterval] };
+    return manifestP;
   }
 
-  // TENPAI: 聽牌緊張音樂 — 急促鼓點 + 高張力旋律 + 心跳低音
-  function buildTenpai(masterG, _ts) {
+  /* 一首曲子 → { entry, buf }（Web Audio）或 { entry }（退回 <audio>）；沒有這首 → null */
+  function load(scene) {
+    if (!loads[scene]) loads[scene] = manifest().then(m => {
+      const entry = m && m[scene];
+      if (!entry) return null;
+      if (!canFetch) return { entry };
+      return fetch(entry.src)
+        .then(r => { if (!r.ok) throw new Error(r.status); return r.arrayBuffer(); })
+        .then(ab => new Promise((res, rej) => getCtx().decodeAudioData(ab, res, rej)))
+        .then(buf => ({ entry, buf }))
+        .catch(() => ({ entry }));
+    });
+    return loads[scene];
+  }
+
+  function startBuffer(res, fade) {
     const c = getCtx();
-    const nodes = [];
-    const BPM = 160; // faster than game (was ~67 bpm heartbeat)
-    const beat = 60 / BPM; // seconds per beat
-
-    // ── Fast war drum: kick on every beat ──
-    const drumInterval = setInterval(() => {
-      if(_ts.stopped){ clearInterval(drumInterval); return; }
-      if(!enabled) return;
-      try {
-        const now = c.currentTime;
-        const o = c.createOscillator();
-        const g = c.createGain();
-        o.type = 'sine';
-        o.frequency.setValueAtTime(180, now);
-        o.frequency.exponentialRampToValueAtTime(38, now + 0.12);
-        g.gain.setValueAtTime(0.6, now);
-        g.gain.exponentialRampToValueAtTime(0.001, now + 0.18);
-        o.connect(g); g.connect(masterG);
-        o.start(now); o.stop(now + 0.2);
-      } catch(e){}
-    }, beat * 1000);
-
-    // ── Snare on beat 2 & 4 ──
-    const snareInterval = setInterval(() => {
-      if(_ts.stopped){ clearInterval(snareInterval); return; }
-      if(!enabled) return;
-      try {
-        const now = c.currentTime;
-        const bsz = Math.floor(c.sampleRate * 0.09);
-        const buf = c.createBuffer(1, bsz, c.sampleRate);
-        const d2 = buf.getChannelData(0);
-        for(let i=0;i<bsz;i++) d2[i]=(Math.random()*2-1)*Math.pow(1-i/bsz,1.5);
-        const src = c.createBufferSource(); src.buffer = buf;
-        const hp = c.createBiquadFilter(); hp.type='highpass'; hp.frequency.value=1800;
-        const g = c.createGain(); g.gain.value = 0.35;
-        src.connect(hp); hp.connect(g); g.connect(masterG);
-        src.start(now);
-      } catch(e){}
-    }, beat * 2000); // every 2 beats
-
-    // ── Tense tremolo ostinato: repeating minor 2nd figure ──
-    // D-Eb repeated fast (classic tension device)
-    const ostinNotes = [294, 311, 294, 311, 262, 277, 262, 277];
-    let oi = 0;
-    const ostinInterval = setInterval(() => {
-      if(_ts.stopped){ clearInterval(ostinInterval); return; }
-      if(!enabled) return;
-      try {
-        const now = c.currentTime;
-        const o = c.createOscillator();
-        const g = c.createGain();
-        const lp = c.createBiquadFilter(); lp.type='lowpass'; lp.frequency.value=1200;
-        o.type = 'sawtooth';
-        o.frequency.value = ostinNotes[oi % ostinNotes.length] * 2;
-        g.gain.setValueAtTime(0.09, now);
-        g.gain.exponentialRampToValueAtTime(0.001, now + 0.14);
-        o.connect(lp); lp.connect(g); g.connect(masterG);
-        o.start(now); o.stop(now + 0.16);
-        oi++;
-      } catch(e){}
-    }, beat * 500); // 8th notes at BPM=160
-
-    // ── Rising tension bass line: stepwise descent ──
-    const bassNotes = [110, 98, 87, 82, 78, 73, 69, 65];
-    let bi = 0;
-    const bassInterval = setInterval(() => {
-      if(_ts.stopped){ clearInterval(bassInterval); return; }
-      if(!enabled) return;
-      try {
-        const now = c.currentTime;
-        const o = c.createOscillator();
-        const g = c.createGain();
-        const lp = c.createBiquadFilter(); lp.type='lowpass'; lp.frequency.value=350;
-        o.type = 'sawtooth';
-        o.frequency.value = bassNotes[bi % bassNotes.length];
-        g.gain.setValueAtTime(0.18, now);
-        g.gain.exponentialRampToValueAtTime(0.001, now + beat * 1.8);
-        o.connect(lp); lp.connect(g); g.connect(masterG);
-        o.start(now); o.stop(now + beat * 2);
-        bi++;
-      } catch(e){}
-    }, beat * 2000);
-
-    // ── Sustained high drone: adds oppressive brightness ──
-    const droneOsc = c.createOscillator();
-    const droneG = c.createGain();
-    const droneLfo = c.createOscillator();
-    const droneLfoG = c.createGain();
-    droneOsc.type = 'sawtooth'; droneOsc.frequency.value = 587; // D5
-    droneLfo.type = 'sine'; droneLfo.frequency.value = 6; // fast vibrato
-    droneLfoG.gain.value = 8;
-    droneLfo.connect(droneLfoG); droneLfoG.connect(droneOsc.frequency);
-    droneG.gain.value = 0.05;
-    droneOsc.connect(droneG); droneG.connect(masterG);
-    droneOsc.start(); droneLfo.start();
-    nodes.push({ stop(){ try{droneOsc.stop();droneLfo.stop();}catch(e){} } });
-
-    // ── High tension noise rumble ──
-    const rumble = makeNoise(60, 200, 0.08);
-    rumble.connect(masterG); rumble.start(); nodes.push(rumble);
-
-    return { nodes, intervals: [drumInterval, snareInterval, ostinInterval, bassInterval] };
+    const { buf, entry } = res;
+    const src = c.createBufferSource();
+    src.buffer = buf;
+    src.loop = true;
+    src.loopStart = entry.loopStart;
+    src.loopEnd = Math.min(entry.loopEnd, buf.duration);
+    const g = c.createGain();
+    g.gain.setValueAtTime(0, c.currentTime);
+    g.gain.linearRampToValueAtTime(1, c.currentTime + Math.max(0.05, fade));
+    src.connect(g); g.connect(masterGain);
+    src.start(0, entry.loopStart);
+    return {
+      stop(f) {
+        const t = c.currentTime;
+        try { g.gain.cancelScheduledValues(t); g.gain.setValueAtTime(g.gain.value, t); g.gain.linearRampToValueAtTime(0, t + Math.max(0.02, f)); } catch (_) {}
+        setTimeout(() => { try { src.stop(); } catch (_) {} try { g.disconnect(); } catch (_) {} }, (Math.max(0.02, f) + 0.1) * 1000);
+      },
+      setVol() {},              // 音量走 masterGain
+    };
   }
 
-  // ── KINGDOM BGMs ────────────────────────────────────────────
-
-  // QI 齊國 - 東方大國, 富庶之地: 悠揚五聲音階，水波感，從容不迫
-  function buildKingdom_qi(masterG, _ts){
-    const c=getCtx(), nodes=[];
-    // Pentatonic: D E G A B (商調)
-    const penta=[293,330,392,440,494,587,659,587,494,440,392,330,293,330];
-    let mi=0;
-    const mel=setInterval(()=>{
-      if(_ts.stopped){clearInterval(mel);return;}if(!enabled)return;
-      try{const now=c.currentTime;const o=c.createOscillator();const g=c.createGain();
-        const lp=c.createBiquadFilter();lp.type='lowpass';lp.frequency.value=2200;
-        o.type='triangle';o.frequency.value=penta[mi%penta.length];
-        g.gain.setValueAtTime(0,now);g.gain.linearRampToValueAtTime(0.11,now+0.06);
-        g.gain.exponentialRampToValueAtTime(0.001,now+0.9);
-        o.connect(lp);lp.connect(g);g.connect(masterG);o.start(now);o.stop(now+0.95);mi++;}catch(e){}
-    },700);
-    // Water ripple - gentle noise
-    const water=makeNoise(200,800,0.022);water.connect(masterG);water.start();nodes.push(water);
-    // Bass drone D2
-    [73.4,110].forEach(f=>{const o=c.createOscillator();const g=c.createGain();
-      const lp=c.createBiquadFilter();lp.type='lowpass';lp.frequency.value=300;
-      o.type='sine';o.frequency.value=f;g.gain.value=0.05;
-      o.connect(lp);lp.connect(g);g.connect(masterG);o.start();
-      nodes.push({stop(){try{o.stop();}catch(e){}}});});
-    return{nodes,intervals:[mel]};
+  function startElement(res, fade) {
+    const { entry } = res;
+    const a = new Audio(entry.src);
+    let level = 0, target = 1, alive = true;
+    const apply = () => { a.volume = Math.max(0, Math.min(1, level * volume)); };
+    const ramp = (to, sec, done) => {
+      const from = level, t0 = Date.now(), ms = Math.max(20, sec * 1000);
+      const step = () => {
+        const k = Math.min(1, (Date.now() - t0) / ms);
+        level = from + (to - from) * k; apply();
+        if (k < 1 && (alive || to === 0)) setTimeout(step, 30); else if (done) done();
+      };
+      step();
+    };
+    const watch = () => {             // 播到循環終點就跳回循環起點
+      if (!alive) return;
+      if (a.currentTime >= entry.loopEnd) a.currentTime -= (entry.loopEnd - entry.loopStart);
+      setTimeout(watch, 20);
+    };
+    a.addEventListener('loadedmetadata', () => { try { a.currentTime = entry.loopStart; } catch (_) {} }, { once: true });
+    apply();
+    a.play().then(() => { ramp(target, fade); watch(); }).catch(() => {});
+    return {
+      stop(f) { alive = false; ramp(0, f, () => { try { a.pause(); } catch (_) {} }); },
+      setVol() { apply(); },
+    };
   }
 
-  // CHU 楚國 - 南方霸主, 地廣兵強: 深沉低音, 熱帶感, 強烈節拍
-  function buildKingdom_chu(masterG, _ts){
-    const c=getCtx(), nodes=[];
-    const BPM=105, beat=60/BPM;
-    // Heavy tom-like drum
-    const drum=setInterval(()=>{
-      if(_ts.stopped){clearInterval(drum);return;}if(!enabled)return;
-      try{const now=c.currentTime;
-        [[0,130,50],[beat*0.5,90,35],[beat*1.5,110,42]].forEach(([off,f0,f1])=>{
-          const o=c.createOscillator();const g=c.createGain();
-          o.type='sine';o.frequency.setValueAtTime(f0,now+off);
-          o.frequency.exponentialRampToValueAtTime(f1,now+off+0.18);
-          g.gain.setValueAtTime(0.45,now+off);g.gain.exponentialRampToValueAtTime(0.001,now+off+0.25);
-          o.connect(g);g.connect(masterG);o.start(now+off);o.stop(now+off+0.28);});}catch(e){}
-    },beat*2000);
-    // Pentatonic minor riff (南呂調 Gm pentatonic)
-    const riff=[196,220,262,294,349,294,262,220,196,175,196,220];
-    let ri=0;
-    const mel=setInterval(()=>{
-      if(_ts.stopped){clearInterval(mel);return;}if(!enabled)return;
-      try{const now=c.currentTime;const o=c.createOscillator();const g=c.createGain();
-        const lp=c.createBiquadFilter();lp.type='lowpass';lp.frequency.value=900;
-        o.type='sawtooth';o.frequency.value=riff[ri%riff.length];
-        g.gain.setValueAtTime(0.07,now);g.gain.exponentialRampToValueAtTime(0.001,now+0.55);
-        o.connect(lp);lp.connect(g);g.connect(masterG);o.start(now);o.stop(now+0.6);ri++;}catch(e){}
-    },beat*1000);
-    const rumble=makeNoise(30,150,0.07);rumble.connect(masterG);rumble.start();nodes.push(rumble);
-    return{nodes,intervals:[drum,mel]};
-  }
-
-  // YAN 燕國 - 北境寒地, 奇謀迭出: 蕭瑟寒風, 神秘色調, 不規則節奏
-  function buildKingdom_yan(masterG, _ts){
-    const c=getCtx(), nodes=[];
-    // Eerie sustained pads in Lydian mode (mystical)
-    const pads=[174.6,220,277,329,440];
-    pads.forEach((f,i)=>{
-      const o=c.createOscillator();const g=c.createGain();
-      const lp=c.createBiquadFilter();lp.type='lowpass';lp.frequency.value=400;
-      o.type='sawtooth';o.frequency.value=f;o.detune.value=(i%2===0?1:-1)*7;
-      g.gain.value=0.026;o.connect(lp);lp.connect(g);g.connect(masterG);o.start();
-      nodes.push({stop(){try{o.stop();}catch(e){}}});});
-    // Cold wind
-    const wind=makeNoise(300,1800,0.045);wind.connect(masterG);wind.start();nodes.push(wind);
-    // Sparse pluck — irregular timing
-    const sparse=[277,311,370,415,277,370,311,415,329,277];
-    let si=0;
-    const pluck=setInterval(()=>{
-      if(_ts.stopped){clearInterval(pluck);return;}if(!enabled)return;
-      if(Math.random()<0.4){si++;return;}
-      try{const now=c.currentTime;const o=c.createOscillator();const g=c.createGain();
-        o.type='triangle';o.frequency.value=sparse[si%sparse.length];
-        g.gain.setValueAtTime(0.09,now);g.gain.exponentialRampToValueAtTime(0.001,now+0.7);
-        o.connect(g);g.connect(masterG);o.start(now);o.stop(now+0.75);si++;}catch(e){}
-    },550);
-    return{nodes,intervals:[pluck]};
-  }
-
-  // HAN 韓國 - 兵器精良, 守城有術: 金屬感, 穩健行軍節奏
-  function buildKingdom_han(masterG, _ts){
-    const c=getCtx(), nodes=[];
-    const BPM=112, beat=60/BPM;
-    // March snare
-    const snare=setInterval(()=>{
-      if(_ts.stopped){clearInterval(snare);return;}if(!enabled)return;
-      try{const now=c.currentTime;const bsz=Math.floor(c.sampleRate*0.1);
-        const buf=c.createBuffer(1,bsz,c.sampleRate);const d2=buf.getChannelData(0);
-        for(let i=0;i<bsz;i++)d2[i]=(Math.random()*2-1)*Math.pow(1-i/bsz,1.8);
-        const src=c.createBufferSource();src.buffer=buf;
-        const hp=c.createBiquadFilter();hp.type='highpass';hp.frequency.value=1400;
-        const g=c.createGain();g.gain.value=0.3;
-        src.connect(hp);hp.connect(g);g.connect(masterG);src.start(now);}catch(e){}
-    },beat*2000);
-    // Metallic melody — A minor (martial)
-    const mel=[440,494,523,440,392,440,349,392,440,494,440,392];
-    let mi=0;
-    const melInt=setInterval(()=>{
-      if(_ts.stopped){clearInterval(melInt);return;}if(!enabled)return;
-      try{const now=c.currentTime;const o=c.createOscillator();const g=c.createGain();
-        const lp=c.createBiquadFilter();lp.type='lowpass';lp.frequency.value=1600;
-        o.type='square';o.frequency.value=mel[mi%mel.length];
-        g.gain.setValueAtTime(0.06,now);g.gain.exponentialRampToValueAtTime(0.001,now+0.4);
-        o.connect(lp);lp.connect(g);g.connect(masterG);o.start(now);o.stop(now+0.45);mi++;}catch(e){}
-    },beat*1000);
-    const kick=setInterval(()=>{
-      if(_ts.stopped){clearInterval(kick);return;}if(!enabled)return;
-      try{const now=c.currentTime;const o=c.createOscillator();const g=c.createGain();
-        o.type='sine';o.frequency.setValueAtTime(150,now);o.frequency.exponentialRampToValueAtTime(35,now+0.15);
-        g.gain.setValueAtTime(0.4,now);g.gain.exponentialRampToValueAtTime(0.001,now+0.2);
-        o.connect(g);g.connect(masterG);o.start(now);o.stop(now+0.22);}catch(e){}
-    },beat*1000);
-    return{nodes:[],intervals:[snare,melInt,kick]};
-  }
-
-  // WEI 魏國 - 中原要衝, 四戰之地: 激烈衝突感, 快速交替, 緊張中原
-  function buildKingdom_wei(masterG, _ts){
-    const c=getCtx(), nodes=[];
-    const BPM=130, beat=60/BPM;
-    // Fast aggressive drums
-    const drum=setInterval(()=>{
-      if(_ts.stopped){clearInterval(drum);return;}if(!enabled)return;
-      try{const now=c.currentTime;const o=c.createOscillator();const g=c.createGain();
-        o.type='sine';o.frequency.setValueAtTime(170,now);o.frequency.exponentialRampToValueAtTime(40,now+0.12);
-        g.gain.setValueAtTime(0.55,now);g.gain.exponentialRampToValueAtTime(0.001,now+0.18);
-        o.connect(g);g.connect(masterG);o.start(now);o.stop(now+0.2);}catch(e){}
-    },beat*1000);
-    // Aggressive riff — D Phrygian (harsh)
-    const riff=[294,277,262,294,311,294,262,247,262,294,277,262];
-    let ri=0;
-    const mel=setInterval(()=>{
-      if(_ts.stopped){clearInterval(mel);return;}if(!enabled)return;
-      try{const now=c.currentTime;const o=c.createOscillator();const g=c.createGain();
-        const lp=c.createBiquadFilter();lp.type='lowpass';lp.frequency.value=1100;
-        o.type='sawtooth';o.frequency.value=riff[ri%riff.length]*2;
-        g.gain.setValueAtTime(0.08,now);g.gain.exponentialRampToValueAtTime(0.001,now+0.28);
-        o.connect(lp);lp.connect(g);g.connect(masterG);o.start(now);o.stop(now+0.3);ri++;}catch(e){}
-    },beat*500);
-    const rumble=makeNoise(50,200,0.06);rumble.connect(masterG);rumble.start();nodes.push(rumble);
-    return{nodes,intervals:[drum,mel]};
-  }
-
-  // ZHAO 趙國 - 騎射天下第一: 奔騰感, 開闊草原, 律動強勁
-  function buildKingdom_zhao(masterG, _ts){
-    const c=getCtx(), nodes=[];
-    const BPM=120, beat=60/BPM;
-    // Galloping triplet kick pattern
-    const gallop=setInterval(()=>{
-      if(_ts.stopped){clearInterval(gallop);return;}if(!enabled)return;
-      try{const now=c.currentTime;
-        [0,beat/3,beat*2/3].forEach(off=>{
-          const o=c.createOscillator();const g=c.createGain();
-          o.type='sine';o.frequency.setValueAtTime(160,now+off);
-          o.frequency.exponentialRampToValueAtTime(45,now+off+0.1);
-          g.gain.setValueAtTime(off===0?0.5:0.3,now+off);
-          g.gain.exponentialRampToValueAtTime(0.001,now+off+0.15);
-          o.connect(g);g.connect(masterG);o.start(now+off);o.stop(now+off+0.18);});}catch(e){}
-    },beat*1000);
-    // Heroic melody — E major (bright, open)
-    const hero=[330,370,415,440,494,554,494,440,415,370,330,294,330,370];
-    let hi=0;
-    const mel=setInterval(()=>{
-      if(_ts.stopped){clearInterval(mel);return;}if(!enabled)return;
-      try{const now=c.currentTime;const o=c.createOscillator();const g=c.createGain();
-        o.type='triangle';o.frequency.value=hero[hi%hero.length];
-        g.gain.setValueAtTime(0.1,now);g.gain.exponentialRampToValueAtTime(0.001,now+0.55);
-        o.connect(g);g.connect(masterG);o.start(now);o.stop(now+0.6);hi++;}catch(e){}
-    },beat*1000);
-    // Open fifth drone (E2-B2)
-    [82.4,123.5].forEach(f=>{const o=c.createOscillator();const g=c.createGain();
-      o.type='sawtooth';o.frequency.value=f;g.gain.value=0.04;
-      const lp=c.createBiquadFilter();lp.type='lowpass';lp.frequency.value=350;
-      o.connect(lp);lp.connect(g);g.connect(masterG);o.start();
-      nodes.push({stop(){try{o.stop();}catch(e){}}});});
-    return{nodes,intervals:[gallop,mel]};
-  }
-
-  // QIN 秦國 - 虎狼之師, 六合必歸: 帝王威嚴, 重低音, 不可阻擋
-  function buildKingdom_qin(masterG, _ts){
-    const c=getCtx(), nodes=[];
-    const BPM=95, beat=60/BPM;
-    // Massive battle drum
-    const drum=setInterval(()=>{
-      if(_ts.stopped){clearInterval(drum);return;}if(!enabled)return;
-      try{const now=c.currentTime;
-        const o=c.createOscillator();const g=c.createGain();
-        o.type='sine';o.frequency.setValueAtTime(120,now);o.frequency.exponentialRampToValueAtTime(28,now+0.22);
-        g.gain.setValueAtTime(0.7,now);g.gain.exponentialRampToValueAtTime(0.001,now+0.3);
-        o.connect(g);g.connect(masterG);o.start(now);o.stop(now+0.35);}catch(e){}
-    },beat*2000);
-    // Imperial brass melody — C major (majestic)
-    const brass=[262,294,330,349,392,440,392,349,330,294,262,247,262,294];
-    let bi2=0;
-    const mel=setInterval(()=>{
-      if(_ts.stopped){clearInterval(mel);return;}if(!enabled)return;
-      try{const now=c.currentTime;const o=c.createOscillator();const g=c.createGain();
-        const lp=c.createBiquadFilter();lp.type='lowpass';lp.frequency.value=800;
-        o.type='sawtooth';o.frequency.value=brass[bi2%brass.length];
-        g.gain.setValueAtTime(0.09,now);g.gain.exponentialRampToValueAtTime(0.001,now+0.7);
-        o.connect(lp);lp.connect(g);g.connect(masterG);o.start(now);o.stop(now+0.75);bi2++;}catch(e){}
-    },beat*2000);
-    // Heavy rumble
-    const rumble=makeNoise(20,100,0.09);rumble.connect(masterG);rumble.start();nodes.push(rumble);
-    // Majestic pad C2-G2
-    [65.4,98].forEach(f=>{const o=c.createOscillator();const g=c.createGain();
-      const lp=c.createBiquadFilter();lp.type='lowpass';lp.frequency.value=250;
-      o.type='sawtooth';o.frequency.value=f;g.gain.value=0.06;
-      o.connect(lp);lp.connect(g);g.connect(masterG);o.start();
-      nodes.push({stop(){try{o.stop();}catch(e){}}});});
-    return{nodes,intervals:[drum,mel]};
-  }
-
-
-  // DEFEAT 敗亡 - 悲愴五聲小調，緩慢哀傷
-  function buildDefeat(masterG, _ts){
-    const c = getCtx();
-    const nodes = [];
-    const BPM = 52;
-    const beat = 60 / BPM;
-
-    // D 五聲小調: D3 F3 G3 A3 C4 D4 F4 A4
-    const melodySeq = [293.7, 261.6, 220.0, 196.0, 174.6, 146.8, 174.6, 196.0,
-                       220.0, 196.0, 174.6, 146.8, 130.8, 146.8, 174.6, 196.0];
-    // 哀傷下行旋律：每2拍一音
-    let mi = 0;
-    const melInterval = setInterval(() => {
-      if(_ts.stopped){ clearInterval(melInterval); return; }
-      if(!enabled) return;
-      try {
-        const now = c.currentTime;
-        const freq = melodySeq[mi % melodySeq.length];
-        // 「琴聲」: 三角波加緩慢衰減，模擬古琴撥弦
-        const osc = c.createOscillator();
-        const g   = c.createGain();
-        const lp  = c.createBiquadFilter();
-        lp.type = 'lowpass'; lp.frequency.value = 1800; lp.Q.value = 1.2;
-        osc.type = 'triangle';
-        osc.frequency.value = freq;
-        g.gain.setValueAtTime(0.22, now);
-        g.gain.exponentialRampToValueAtTime(0.001, now + beat * 1.8);
-        osc.connect(lp); lp.connect(g); g.connect(masterG);
-        osc.start(now); osc.stop(now + beat * 2);
-        // 一點泛音：高八度音量很小
-        const ov = c.createOscillator();
-        const og = c.createGain();
-        ov.type = 'sine'; ov.frequency.value = freq * 2;
-        og.gain.setValueAtTime(0.04, now);
-        og.gain.exponentialRampToValueAtTime(0.001, now + beat * 0.9);
-        ov.connect(og); og.connect(masterG);
-        ov.start(now); ov.stop(now + beat);
-        mi++;
-      } catch(e){}
-    }, beat * 2000);
-
-    // 低沉持續音 D2 (bass drone)
-    const drone = c.createOscillator();
-    const droneG = c.createGain();
-    const droneLp = c.createBiquadFilter();
-    drone.type = 'sine'; drone.frequency.value = 73.4;
-    droneLp.type = 'lowpass'; droneLp.frequency.value = 220;
-    droneG.gain.value = 0.14;
-    drone.connect(droneLp); droneLp.connect(droneG); droneG.connect(masterG);
-    drone.start();
-    nodes.push({ stop(){ try{drone.stop();}catch(e){} } });
-
-    // 緩慢顫音墊 (慢LFO振幅調製，模擬弦樂)
-    const pad = c.createOscillator();
-    const padG = c.createGain();
-    const lfo  = c.createOscillator();
-    const lfoG = c.createGain();
-    const padLp = c.createBiquadFilter();
-    pad.type = 'sawtooth'; pad.frequency.value = 220;
-    padLp.type = 'lowpass'; padLp.frequency.value = 600; padLp.Q.value = 2;
-    lfo.type = 'sine'; lfo.frequency.value = 3.2;
-    lfoG.gain.value = 0.04;
-    lfo.connect(lfoG); lfoG.connect(padG.gain);
-    padG.gain.value = 0.06;
-    pad.connect(padLp); padLp.connect(padG); padG.connect(masterG);
-    pad.start(); lfo.start();
-    nodes.push({ stop(){ try{pad.stop();lfo.stop();}catch(e){} } });
-
-    // 慢速低頻撥弦 (每4拍): A2 / D2 / F2 交替
-    const bassSeq = [110.0, 73.4, 87.3, 65.4];
-    let bi = 0;
-    const bassInterval = setInterval(() => {
-      if(_ts.stopped){ clearInterval(bassInterval); return; }
-      if(!enabled) return;
-      try {
-        const now = c.currentTime;
-        const osc = c.createOscillator();
-        const g   = c.createGain();
-        const lp  = c.createBiquadFilter();
-        lp.type = 'lowpass'; lp.frequency.value = 400;
-        osc.type = 'triangle'; osc.frequency.value = bassSeq[bi % bassSeq.length];
-        g.gain.setValueAtTime(0.18, now);
-        g.gain.exponentialRampToValueAtTime(0.001, now + beat * 3.5);
-        osc.connect(lp); lp.connect(g); g.connect(masterG);
-        osc.start(now); osc.stop(now + beat * 4);
-        bi++;
-      } catch(e){}
-    }, beat * 4000);
-
-    // 極輕的噪音霧: 低頻遠處戰場餘響
-    const rumble = makeNoise(30, 180, 0.025);
-    rumble.connect(masterG); rumble.start();
-    nodes.push(rumble);
-
-    return { nodes, intervals: [melInterval, bassInterval] };
-  }
-
-  // ── TRACK CONTROL ──────────────────────────────────────────
-
-  /* ⚠️ 換曲子時新曲子是「排定稍後才建」（等舊的淡出），currentScene 要等建好那一刻才設。
-     原本在那段空檔裡再叫一次 play() —— 例如開場動畫結束叫一次 play('title')、
-     showScreen('title-screen') 緊接著又叫一次 —— 兩次都看到 currentScene 是 null，
-     於是**建了兩份主畫面音樂**；之後切畫面只停得掉被記住的那一份，另一份一直響，
-     回主畫面再疊一份（2026-09-24 使用者回報：擇國畫面還在放主畫面 BGM、回主畫面兩首重疊）。
-     所以「排定中」的那首也要記（pendingScene），而且每次排定都帶一個序號，
-     被後來的 play()／stop() 取代的排定，時間到了就不建。 */
-  let pendingScene = null, playSeq = 0;
-
-  function stopCurrent(fadeDur=1.5) {
+  function stopCurrent(fadeDur = 1.5) {
     playSeq++;                    // 還在排定中的那首也一起取消
     pendingScene = null;
-    if(!currentTrack) return;
-    const t = currentTrack;
-    stopScheduled = true;
-    if(t._ts) t._ts.stopped = true; // per-track stop flag
-    t.timeouts && t.timeouts.forEach(id=>clearTimeout(id));
-    t.intervals && t.intervals.forEach(id=>clearInterval(id));
-    if(fadeDur <= 0){
-      // 立即停止：同步清除所有 nodes
-      t.nodes && t.nodes.forEach(n=>{ try{n.stop&&n.stop();}catch(e){} });
-      try{ t.fadeGain && t.fadeGain.disconnect(); } catch(e){}
-    } else if(ctx && t.fadeGain) {
-      fadeGain(t.fadeGain, t.fadeGain.gain.value, 0, fadeDur);
-      setTimeout(() => {
-        t.nodes && t.nodes.forEach(n=>{ try{n.stop&&n.stop();}catch(e){} });
-        try{ t.fadeGain.disconnect(); } catch(e){}
-      }, (fadeDur+0.1)*1000);
-    } else {
-      t.nodes && t.nodes.forEach(n=>{ try{n.stop&&n.stop();}catch(e){} });
-    }
-    currentTrack = null;
+    if (current) { try { current.stop(fadeDur <= 0 ? 0.02 : fadeDur); } catch (_) {} }
+    current = null;
     currentScene = null;
   }
 
-  function play(scene, fadeDur=1.5) {
-    if(!enabled) return;
-    if(scene === currentScene && !pendingScene) return;
-    if(scene === pendingScene) return;          // 已經排定要播這首了
-    const wait = currentScene ? fadeDur*1000+100 : 0;
+  function play(scene, fadeDur = 1.5) {
+    if (!enabled) return;
+    if (scene === currentScene && !pendingScene) return;
+    if (scene === pendingScene) return;          // 已經排定要播這首了
     stopCurrent(fadeDur);
     const seq = ++playSeq;
     pendingScene = scene;
-    setTimeout(() => {
-      if(seq !== playSeq) return;               // 被後來的 play()／stop() 取代了
+    try { getCtx(); } catch (_) {}               // 在使用者手勢裡喚醒 AudioContext（iOS 要這樣）
+    if (masterGain) { masterGain.gain.cancelScheduledValues(0); masterGain.gain.setValueAtTime(volume, 0); }
+    load(scene).then(res => {
+      if (seq !== playSeq) return;               // 被後來的 play()／stop() 取代了
       pendingScene = null;
-      if(!enabled) return;
-      stopScheduled = false;
-      const _trackState = { stopped: false };
-      // 恢復 masterGain 和 AudioContext
-      if(masterGain){
-        masterGain.gain.cancelScheduledValues(0);
-        masterGain.gain.setValueAtTime(volume, 0);
-      }
-      if(ctx && ctx.state === 'suspended') ctx.resume();
+      if (!enabled || !res) return;
       try {
-        const c = getCtx();
-        // Per-track fade gain
-        const fg = c.createGain();
-        fg.gain.value = 0;
-        fg.connect(masterGain);
-        fadeGain(fg, 0, 1, fadeDur);
-
-        let track;
-        if(scene==='title') track = buildTitle(fg, _trackState);
-        else if(scene==='select') track = buildSelect(fg, _trackState);
-        else if(scene==='game') track = buildGame(fg, _trackState);
-        else if(scene==='tenpai') track = buildTenpai(fg, _trackState);
-        else if(scene==='qi')    track = buildKingdom_qi(fg, _trackState);
-        else if(scene==='chu')   track = buildKingdom_chu(fg, _trackState);
-        else if(scene==='yan')   track = buildKingdom_yan(fg, _trackState);
-        else if(scene==='han')   track = buildKingdom_han(fg, _trackState);
-        else if(scene==='wei')   track = buildKingdom_wei(fg, _trackState);
-        else if(scene==='zhao')  track = buildKingdom_zhao(fg, _trackState);
-        else if(scene==='qin')   track = buildKingdom_qin(fg, _trackState);
-        else if(scene==='defeat') track = buildDefeat(fg, _trackState);
-        else return;
-
-        track.fadeGain = fg;
-        track._ts = _trackState;
-        currentTrack = track;
+        current = res.buf ? startBuffer(res, fadeDur) : startElement(res, fadeDur);
         currentScene = scene;
-      } catch(e){ console.warn('BGM error:', e); }
-    }, wait);
+      } catch (e) { console.warn('BGM error:', e); }
+    });
   }
 
-  function stop(fadeDur=1.5) {
+  function stop(fadeDur = 1.5) {
     stopCurrent(fadeDur);
-    if(fadeDur <= 0 && masterGain){
-      masterGain.gain.cancelScheduledValues(0);
-      masterGain.gain.setValueAtTime(0, 0);
-    }
-    // 強制暫停整個 AudioContext，確保完全靜音
-    if(fadeDur <= 0 && ctx && ctx.state === 'running'){
-      ctx.suspend();
-    }
   }
 
   return {
@@ -1028,15 +361,19 @@ const BGM = (() => {
     stop,
     setEnabled(v) {
       enabled = v;
-      if(!v) stopCurrent(0.5);
+      if (!v) stopCurrent(0.5);
     },
     setVolume(v) {
       volume = v;
-      if(masterGain) masterGain.gain.value = v;
+      if (masterGain) masterGain.gain.value = v;
+      if (current) current.setVol();
     },
     isEnabled() { return enabled; },
     getVolume() { return volume; },
-    currentScene() { return currentScene; },
+    /* 正在播的（或已經排定、音檔還在載的）那首 —— 動畫讓位時記下來，播完再接回去 */
+    currentScene() { return currentScene || pendingScene; },
+    /* 先把音檔載好（例如進牌桌前先載國曲），切過去時就不用等 */
+    preload(scene) { if (enabled && scene) load(scene); },
   };
 })();
 

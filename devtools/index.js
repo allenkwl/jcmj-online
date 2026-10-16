@@ -2,6 +2,28 @@
    用途：啟動台以 file:// 開啟時掃不到硬碟，靠這份清單顯示小工具。 */
 window.MJDevtools = [
  {
+  "family": "BGM試聽台",
+  "all": [
+   {
+    "ver": "0.2",
+    "rel": "devtools/BGM試聽台v0.2.html"
+   },
+   {
+    "ver": "0.1",
+    "rel": "devtools/BGM試聽台v0.1.html"
+   }
+  ],
+  "newest": {
+   "ver": "0.2",
+   "rel": "devtools/BGM試聽台v0.2.html"
+  },
+  "count": 2,
+  "title": "BGM 試聽台",
+  "sub": "遊戲裡實際播的 BGM（定稿版）：場景曲、七國曲照遊戲的方式無縫循環，可以跳到接縫聽接回開頭",
+  "ico": "🎵",
+  "cat": "其他"
+ },
+ {
   "family": "主公出場",
   "all": [
    {

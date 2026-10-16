@@ -154,6 +154,43 @@ async function pick(p, kingdom) {
     const [ta, tb] = await Promise.all([toTable(A.page), toTable(B.page)]);
     ok(ta && tb, '兩邊都走到占卜（天下形勢都確認了）');
 
+    // ── 聽牌曲（v1.70）：群主用完整牌局算「有沒有人聽牌」，公開狀態只放有／沒有（bgmTenpai）；名牌只亮自己 ──
+    // 把一家電腦換成聽牌的手（1–9 萬＋1–3 筒＋5 筒，單吊 4 筒），驗完換回原本的手，不影響後面的結算
+    const tp = await A.page.evaluate(async () => {
+      await new Promise(r => setTimeout(r, 600));
+      const m = window.__test.match, h = m.hand;
+      const me = m.seats.findIndex(s => s.name === '甲');
+      const k = m.seats.findIndex((s, i) => s.isAI && h.seats[i].hand.length === 13 && h.turn !== i);
+      if (k < 0) return { skip: true };
+      let uid = 90000; const T = (suit, num) => ({ suit, num, display: num + suit, isHonor: false, uid: uid++ });
+      window.__keep = { k, hand: h.seats[k].hand, melds: h.seats[k].melds };
+      h.seats[k].hand = [1, 2, 3, 4, 5, 6, 7, 8, 9].map(n => T('萬', n)).concat([1, 2, 3].map(n => T('筒', n)), [T('筒', 5)]);
+      h.seats[k].melds = [];
+      MJDev.redraw(); MJDev.republish();
+      await new Promise(r => setTimeout(r, 300));
+      const meTenpai = MJRules.isTenpaiHand(h.seats[me].hand, h.seats[me].melds);
+      return { k, aiTenpai: MJRules.isTenpaiHand(h.seats[k].hand, []), lit: document.querySelectorAll('.np-tenpai').length,
+               meTenpai, bgm: MJDev.bgm() };
+    });
+    if (!tp.skip) {
+      ok(tp.aiTenpai, '（測試前提）電腦那一家真的聽牌了', JSON.stringify(tp));
+      ok(tp.lit === (tp.meTenpai ? 1 : 0), '群主的名牌只亮自己的「🎯 聽」，別家（電腦）聽牌不亮', JSON.stringify(tp));
+      ok(tp.bgm === 'tenpai', '群主的 BGM 切到聽牌曲', JSON.stringify(tp));
+      const tb2 = await B.page.evaluate(async () => {
+        await __until(() => MJDev.bgm() === 'tenpai', 8000);
+        const st = await Net.db.ref('states/' + Net.groupKey).once('value').then(s => s.val() || {});
+        const h = window.__test.match.hand;
+        const me = window.__test.match.seats.findIndex(s => s.name === '乙');
+        return { bgm: MJDev.bgm(), bgmTenpai: st.bgmTenpai, lit: document.querySelectorAll('.np-tenpai').length,
+                 meTenpai: MJRules.isTenpaiHand(h.seats[me].hand, h.seats[me].melds) };
+      });
+      ok(tb2.bgmTenpai === true, '公開狀態只有 bgmTenpai（有人聽牌＝true），不說是誰', JSON.stringify(tb2));
+      ok(tb2.bgm === 'tenpai', '乙那台也切到聽牌曲（照群主給的有／沒有）', JSON.stringify(tb2));
+      ok(tb2.lit === (tb2.meTenpai ? 1 : 0), '乙的名牌只亮自己的「🎯 聽」', JSON.stringify(tb2));
+      await A.page.evaluate(() => { const h = window.__test.match.hand, k = window.__keep;
+        h.seats[k.k].hand = k.hand; h.seats[k.k].melds = k.melds; MJDev.redraw(); MJDev.republish(); });
+    }
+
     // ── 群主直接結算：甲第一、乙第二 ──
     await A.page.evaluate(async () => { await new Promise(r => setTimeout(r, 800)); const s = window.__test.match.seats;
       MJDev.finishMatch(s.map(x => x.name === '甲' ? 400 : x.name === '乙' ? 200 : -300)); });

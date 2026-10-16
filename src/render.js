@@ -128,7 +128,7 @@ function renderRiver(container, hand, seat, pos) {
 }
 
 /* ── 一家的名牌 ───────────────────────────────────────────── */
-function renderNameplate(node, match, hand, seat, mySeat) {
+function renderNameplate(node, match, hand, seat, mySeat, ui) {
   const m = match.seats[seat];
   clear(node);
   const isDealer = hand.dealer === seat;
@@ -143,8 +143,9 @@ function renderNameplate(node, match, hand, seat, mySeat) {
      ⚠️ 只有**真的看得到那一家的牌**才算得出來。線上版用戶端手上，別家的手牌是
         佔位牌（suit:'?'、hidden:true），拿去算聽牌會得到毫無意義的結果 ——
         所以線上對戰只有自己這一家會亮，這是資料本來就不在手上，不是漏做。 */
-  const st = hand.seats[seat];
-  if (hand.phase !== 'over' && handIsKnown(st) && R_isTenpai(st)) {
+  /* ⚠️ tenpaiSelfOnly（連線）：只亮自己。群主的畫面是用**完整牌局**畫的（裁判手上本來就有每一家的牌），
+     不擋的話開桌的人看得到別家誰聽牌 —— 2026-10-16 做 BGM 時查到的洩漏 */
+  if (showsTenpai(hand, seat) && !(ui && ui.tenpaiSelfOnly && seat !== mySeat)) {
     const tp = el('span', 'np-tenpai', node);
     tp.textContent = '🎯 聽';
     tp.title = '聽牌';
@@ -392,6 +393,14 @@ function renderSelfInfo(node, hand, seat) {
 function handIsKnown(st) {
   return !!(st && Array.isArray(st.hand) && st.hand.length
             && !st.hand.some(t => !t || t.hidden || t.suit === '?'));
+}
+
+/* 名牌上這一家會不會亮「🎯 聽」—— BGM 也用這一個判斷切聽牌曲（src/bgm-scene.js），
+   畫面亮了音樂就跟著換，兩邊不會一個說聽一個沒聽。
+   ⚠️ 之後做「宣戰」（docs/dora-and-declare.md）：宣戰的人在連線時別家也看得到 → 在這裡一起認，BGM 自動跟上 */
+function showsTenpai(hand, seat) {
+  const st = hand && hand.seats && hand.seats[seat];
+  return !!(hand && hand.phase !== 'over' && handIsKnown(st) && R_isTenpai(st));
 }
 
 /* 用 flow 那邊同一套判定，避免兩處各寫一次 */
@@ -673,7 +682,7 @@ function paint(dom, match, ui, mySeat) {
     const z = dom.zones[pos];
     const rot = ROT[pos];
 
-    renderNameplate(z.name, match, hand, seat, mySeat);
+    renderNameplate(z.name, match, hand, seat, mySeat, ui);
     renderRiver(z.river, hand, seat, pos);
 
     if (pos === 'bottom') {
@@ -719,7 +728,7 @@ return {
   LIMITS,
   renderRow, renderMelds, renderRiver, renderNameplate, renderCenterInfo, renderCenterLord,
   revealedOf,
-  renderSelfInfo, handIsKnown,
+  renderSelfInfo, handIsKnown, showsTenpai,
   renderAll, el, clear,
   asGeneral, playFrames, WAR_MS,
 };

@@ -56,3 +56,6 @@ tools/rules-test/node_modules/
 tools/rules-test/database.rules.json
 tools/rules-test/*.log
 tools/rules-test/package-lock.json
+
+# BGM 試聽稿（兩輪接起來，tools/bgm_midi.py --render 產生；遊戲用的是 assets/audio/bgm/）
+assets/audio/試聽/
