@@ -401,7 +401,38 @@ function renderGroupList(list) {
     box.appendChild(row('net-row' + (full ? ' full' : '') + (mid ? ' playing' : ''),
       `<b>${esc(g.name || g.key)}</b><span>${info}</span>`,
       full ? null : () => doJoin(g.key, mid)));
+    // 觀戰（v1.80）：進行中的桌，坐滿了也能看。舊版頁面沒有觀戰畫面（沒給 onSpectate）就不放
+    if (mid && cfg.onSpectate) {
+      const w = row('net-watch', '👀 觀戰「' + esc(g.name || g.key) + '」', () => doSpectate(g.key, g.name || g.key, null, false));
+      box.appendChild(w);
+    }
   });
+}
+
+/* ── 觀戰（v1.80）── 要登入（規則擋匿名）。從大廳來的看完回大廳；等入座的從房間來、看完回房間。
+   pendingIndex：我是第幾個等入座的（照加入順序）—— 觀戰畫面據此分一個不同的電腦座位給我坐 */
+function doSpectate(key, name, pendingIndex, fromRoom) {
+  if (!cfg.onSpectate) return;
+  const a = Net.account ? Net.account() : { loggedIn: false };
+  if (!a.loggedIn) {
+    notice('觀戰要先登入（Google 或 Email）。\n登入之後任何一桌都能看，四家的牌全部攤開。');
+    return;
+  }
+  if (!fromRoom) Net.unwatchGroups();
+  screen(null);
+  cfg.onSpectate({ key, name, pendingIndex, fromRoom: !!fromRoom });
+}
+function spectateFromRoom() {
+  const g = cur && cur.last;
+  if (!g) return;
+  const pend = (g.members || []).filter(m => m.pending).sort((a, b) => (a.joinedAt || 0) - (b.joinedAt || 0));
+  const i = pend.findIndex(m => m.me);
+  doSpectate(cur.key, cur.displayName, i >= 0 ? i : null, true);
+}
+/* 觀戰結束：回房間（等入座的）或大廳 */
+function afterSpectate() {
+  if (cur) { showRoom(); return; }
+  open().catch(() => {});
 }
 
 /* ── 建群組 ───────────────────────────────────────────────
@@ -645,6 +676,7 @@ function renderRoom(g) {
     sb.textContent = !mineOk ? '先擇國而立' : (notReady ? `等 ${notReady} 位主公準備⋯` : '開始牌局');
   }
 
+  show('room-watch', !!cur.pending && !!cfg.onSpectate);   // 等入座：可以先觀戰這一桌（v1.80）
   show('room-start', cur.isHost && !cur.pending);
   show('room-ready', !cur.isHost && !cur.pending);       // 等入座：選好國就是排隊了，不用按準備
   show('room-wait', !cur.isHost && !!cur.ready && !cur.pending);
@@ -795,6 +827,8 @@ function init(options) {
   if (pk) pk.addEventListener('click', pickKingdom);
   const rd = byId('room-ready');
   if (rd) rd.addEventListener('click', () => { if (cur && !rd.disabled) setReady(!cur.ready); });
+  const rw = byId('room-watch');
+  if (rw) rw.addEventListener('click', spectateFromRoom);
 }
 
 /* 進大廳。回傳 Promise —— 連線／登入可能失敗，呼叫端要能據此退回單機。 */
@@ -857,6 +891,6 @@ function showRoom() {
   if (cur.last) renderRoom(cur.last);
 }
 
-return { init, open, close, hide, leave: quit, backToRoom, showRoom, slots, slotsSave, rosterOf, syncMyProgress, lockKingdom, pushProgress,
+return { init, open, close, hide, leave: quit, backToRoom, showRoom, afterSpectate, slots, slotsSave, rosterOf, syncMyProgress, lockKingdom, pushProgress,
          get myName() { return myName; }, get current() { return cur; } };
 });

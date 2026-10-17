@@ -177,6 +177,24 @@
           ".validate": false
         }
       }
+    },
+    "spect": {
+      "$g": {
+        ".validate": "$g.length <= 64",
+        ".read": "auth != null && auth.token.firebase.sign_in_provider != 'anonymous' && !data.child('seated').child(auth.uid).exists()",
+        ".write": "auth != null && (auth.uid === root.child('groups').child($g).child('host').val() || (!newData.exists() && (!root.child('groups').child($g).exists() || !root.child('groups').child($g).child('members').exists() || root.child('groups').child($g).child('members').child(auth.uid).exists())))"
+      }
+    },
+    "watch": {
+      "$g": {
+        ".validate": "$g.length <= 64",
+        ".read": "auth != null",
+        ".write": "auth != null && !newData.exists() && (!root.child('groups').child($g).exists() || !root.child('groups').child($g).child('members').exists())",
+        "$uid": {
+          ".write": "auth != null && $uid === auth.uid && (!newData.exists() || auth.token.firebase.sign_in_provider != 'anonymous')",
+          ".validate": "!newData.exists() || newData.isBoolean()"
+        }
+      }
     }
   }
 }

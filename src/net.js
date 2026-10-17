@@ -830,6 +830,49 @@ const Net = {
     return this._groupRef.child('gameId').set(id).catch(() => {});
   },
   /* 一場打完「繼續征戰」的決定：{ from（上一場的 gameId）, stay: [uid] } */
+  /* ── 觀戰（v1.80，docs/online-kingdoms.md 第十三節）──
+     /spect/{桌}  開桌的人寫：四家手牌攤開的牌局＋入座名單 seated。規則：只有開桌的人寫；
+                  讀的人要**登入（非匿名）**、而且**不在入座名單上**（牌桌上的人看不到）
+     /watch/{桌}/{uid}  誰在觀戰（自己寫自己、斷線自動刪）。開桌的人看著它：有人看才發觀戰資料
+     使用者 2026-10-17：「用即時吧！只要增加一點限制，要登入的人才能觀戰，而且不能是已經在牌桌上的人」 */
+  watchWatchers(cb) {
+    this.unwatchWatchers();
+    if (!this.groupKey) return;
+    this._watchersRef = this.db.ref('watch/' + this.groupKey);
+    this._watchersCb = snap => cb(Object.keys(snap.val() || {}).length);
+    this._watchersRef.on('value', this._watchersCb, () => cb(0));
+  },
+  unwatchWatchers() {
+    if (this._watchersRef && this._watchersCb) this._watchersRef.off('value', this._watchersCb);
+    this._watchersRef = null; this._watchersCb = null;
+  },
+  publishSpect(data) {
+    if (!this.groupKey) return Promise.resolve();
+    return this.db.ref('spect/' + this.groupKey).set(stripUndefined(data)).catch(() => {});
+  },
+  /* 觀戰的人：登記自己在看、訂閱觀戰資料與牌桌（不用是成員）。
+     onData(spect)、onGroup(group|null)、onDenied()（沒登入、或規則還沒部署、或我就在牌桌上） */
+  startSpectate(key, onData, onGroup, onDenied) {
+    this.stopSpectate();
+    const me = this.db.ref('watch/' + key + '/' + this.uid);
+    const sp = this.db.ref('spect/' + key), gr = this.db.ref('groups/' + key);
+    const dataCb = s => onData(s.val()), groupCb = s => onGroup(s.val());
+    const denied = () => { if (this._spect && this._spect.key === key) onDenied(); };
+    this._spect = { key, me, sp, gr, dataCb, groupCb };
+    me.onDisconnect().remove()
+      .then(() => me.set(true))
+      .then(() => { sp.on('value', dataCb, denied); gr.on('value', groupCb); })
+      .catch(denied);
+  },
+  stopSpectate() {
+    const s = this._spect;
+    if (!s) return;
+    this._spect = null;
+    try { s.sp.off('value', s.dataCb); s.gr.off('value', s.groupCb); } catch (_) {}
+    s.me.onDisconnect().cancel().catch(() => {});
+    s.me.remove().catch(() => {});
+  },
+
   /* 中途加入的人：入座了（或牌桌回到等待中）就不再是「待入座」 */
   updateMyPending(on) {
     if (this._meData) { if (on) this._meData.pending = true; else delete this._meData.pending; }
@@ -1329,7 +1372,8 @@ const Net = {
   //    加上 claimwin（吃碰槓胡的宣告視窗）與 hands（每座位的私有手牌）。
   GROUP_NODES: ['groups', 'states', 'live', 'claims', 'ready', 'bots',
                 'token', 'cmds', 'beat', 'pause', 'nudges', 'pings', 'pongs',
-                'claimwin', 'hands', 'secret', 'debug'],   // secret：牌山本體，只有群主讀寫（docs/net-turn-model.md）
+                'claimwin', 'hands', 'secret', 'debug',   // secret：牌山本體，只有群主讀寫（docs/net-turn-model.md）
+                'spect', 'watch'],                        // 觀戰（v1.80）：四家攤開的牌局、誰在看
 
   // 把一個群組從 Firebase 上完全刪掉（解散、或玩家在大廳手動清除都走這裡）
   purgeGroup(key) {

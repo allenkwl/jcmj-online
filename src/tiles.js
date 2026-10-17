@@ -324,7 +324,8 @@ function makeTile(tile, opts) {
   c.height = Math.round(cssH * dpr);
   c.style.width = cssW + 'px';
   c.style.height = cssH + 'px';
-  c.className = 'tile' + (o.selected ? ' sel' : '') + (o.className ? ' ' + o.className : '');
+  // back：蓋著的牌（canvas 從外面看不出正反面 —— 觀戰的端對端測試靠它確認四家都攤開了，v1.80）
+  c.className = 'tile' + (o.selected ? ' sel' : '') + (o.faceDown ? ' back' : '') + (o.className ? ' ' + o.className : '');
 
   const ctx = c.getContext('2d');
   ctx.scale(dpr, dpr);

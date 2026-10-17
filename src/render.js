@@ -710,7 +710,10 @@ function paint(dom, match, ui, mySeat) {
       /* 別家的手牌只畫張數，不畫內容 —— 線上版根本拿不到，
          單機版也刻意不畫，免得日後接線時忘了這裡有洞。
          例外：胡牌的那一家在局末攤牌（見 revealedOf 的說明）。 */
-      const shown = revealedOf(hand, seat);
+      /* ui.revealAll（v1.80 觀戰的全知視角）：四家攤開。只有觀戰畫面會開 —— 觀戰資料本來就帶著每一家的牌，
+         玩家的畫面手上沒有別家的牌（佔位牌），handIsKnown 也會擋下來，開了也攤不出東西 */
+      const all = ui && ui.revealAll && handIsKnown(hand.seats[seat]) ? hand.seats[seat].hand : null;
+      const shown = revealedOf(hand, seat) || all;
       if (shown) {
         renderRow(z.hand, shown, {
           w: SIZE.oppHand.w, h: SIZE.oppHand.h, rotate: rot, thin: true,
