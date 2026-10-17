@@ -120,6 +120,36 @@ console.log('── 退出紀錄（刪存檔＝退出） ──');
   eq(b && (b.conquered || []).length, 0, '重新加入是新人：進度從零開始');
 }
 
+console.log('── 連線國庫（v1.76）：每一位主公結算後的國庫、誰亡國 ──');
+{
+  const roster = [
+    { uid: 'a', name: 'A', kingdom: 'qi', joinedAt: 1, conquered: [], gold: 150 },
+    { uid: 'b', name: 'B', kingdom: 'chu', joinedAt: 2, conquered: [] },
+  ].map(m => Object.assign({ matches: 0, unified: false }, m));
+  const seats0 = OC.buildSeats({ roster, present: ['a', 'b'], hostUid: 'a', aiLevel: 2, rng: S.makeRNG(1) });
+  eq(OC.assignKingdoms(roster, S.makeRNG(2))[0].gold, 150, '整理名冊（assignKingdoms）不會把國庫丟掉');
+  eq(seats0[0].gold, 150, '名冊帶國庫 → 座位上有國庫快照');
+  ok(!('gold' in seats0[1]), '名冊沒帶國庫 → 座位不放（舊版照舊）');
+  ok(!('gold' in seats0[2]), '守將沒有國庫');
+
+  const seats = [
+    { clientId: 'a', kingdom: 'qi', gold: 150, matchScore: -400 },          // 跌破 0 → 亡國
+    { clientId: 'b', kingdom: 'chu', matchScore: 500 },                     // 沒快照 → 本錢 2000
+    { clientId: 'c', kingdom: 'yan', gold: 100, matchScore: -300 },         // 被代打過 → 不記
+    { isAI: true, kingdom: 'qin', matchScore: 200 },                         // 守將 → 不記
+  ];
+  const report = [{ seat: 1, gained: 'qin' }, { seat: 0, gained: null }, { seat: 2 }, { seat: 3 }];
+  const g = OC.settleGold({ seats, report, credit: i => i !== 2 });
+  eq(Object.keys(g).sort(), ['0', '1'], '只算記得到戰果的真人主公');
+  eq(g[0], { before: 150, net: -400, spoils: 0, after: -250, fallen: true }, '國庫 150、輸 400 → -250 亡國');
+  eq(g[1], { before: 2000, net: 500, spoils: 300, after: 2800, fallen: false }, '本錢 2000＋贏 500＋征服一國 300');
+  const g2 = OC.settleGold({ seats, report: [{ seat: 0, unified: true }], credit: () => true });
+  ok(!g2[0].fallen && g2[0].after < 0, '同一場統一天下：國庫是負的也不算亡國（統一優先）');
+  const seats2 = JSON.parse(JSON.stringify(seats)); seats2[0].absentOf = { uid: 'a' }; delete seats2[0].clientId;
+  ok(!OC.settleGold({ seats: seats2, report, credit: () => true })[0], '缺席的座位不算');
+  eq(JSON.stringify(OC.settleGold({ seats, report, credit: i => i !== 2 })), JSON.stringify(g), '再算一次答案一樣（四台各自算）');
+}
+
 console.log('\n─────────────────────────');
 console.log(`通過 ${pass}　失敗 ${fail}`);
 if (fail) { fails.forEach(f => console.log('  ✗ ' + f)); process.exit(1); }

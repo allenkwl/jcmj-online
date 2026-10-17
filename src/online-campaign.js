@@ -72,13 +72,16 @@ function makeSlot(o) {
 
 /* ── 名冊 ───────────────────────────────────────────────── */
 function cleanMember(m) {
-  return {
+  const o = {
     uid: m.uid, name: m.name || '', kingdom: m.kingdom || null,
     joinedAt: m.joinedAt || 0,
     conquered: (m.conquered || []).slice(),
     matches: m.matches || 0,
     unified: !!m.unified,
   };
+  // 國庫快照（v1.76）：⚠️ 漏掉的話排座位時就不見了，別台算出來的國庫一律從本錢 2000 起算（端對端實測）
+  if (typeof m.gold === 'number') o.gold = m.gold;
+  return o;
 }
 
 /* 我的戰役記錄 → 放進成員資料／名冊的那一份（只有別人需要知道的） */
@@ -157,12 +160,14 @@ function buildSeats(o) {
   const humans = roster.filter(m => present.has(m.uid))
     .sort((a, b) => ((b.uid === o.hostUid) - (a.uid === o.hostUid)) || ((a.joinedAt || 0) - (b.joinedAt || 0)));
   const absent = roster.filter(m => !present.has(m.uid));
-  const seats = humans.map(m => ({
+  // gold（v1.76）：開打時的國庫快照，各台據此算每個人結算後的國庫、誰亡國（名冊沒帶就不放，舊版照舊）
+  const withGold = (o, m) => (typeof m.gold === 'number' ? Object.assign(o, { gold: m.gold }) : o);
+  const seats = humans.map(m => withGold({
     name: m.name || '玩家', kingdom: m.kingdom, clientId: m.uid, conquered: m.conquered.slice(),
-  })).concat(absent.map(m => ({
+  }, m)).concat(absent.map(m => withGold({
     name: K.generalTitle(m.kingdom), isAI: true, aiLevel, kingdom: m.kingdom,
     absentOf: { uid: m.uid, name: m.name }, conquered: m.conquered.slice(),
-  })));
+  }, m)));
   const used = new Set(seats.map(s => s.kingdom));
   const free = K.KINGDOMS.map(k => k.id).filter(id => !used.has(id));
   while (seats.length < SEATS && free.length) {
@@ -192,6 +197,27 @@ function settle(o) {
   return { report, players };
 }
 
+/* ── 一場的國庫（v1.76，docs/online-kingdoms.md 第五節）──
+   每一台各自算**每一位主公**的國庫，輸入全是公開的，四台算出來一樣：
+     before  座位上的國庫快照（開打時他本人那台放上來的；沒有就本錢）
+     net     這一場的輸贏（座位的 matchScore）
+     spoils  這一場征服了一國 → 戰利品
+   回傳 { [seat]: { before, net, spoils, after, fallen } }，只有記得到戰果的真人主公（credit(i)）。
+   fallen：結算後 < 0、而且不是這一場統一天下（統一優先，同單機） */
+function settleGold(o) {
+  const out = {};
+  o.seats.forEach((st, i) => {
+    if (!st || !st.clientId || st.absentOf || !(o.credit ? o.credit(i) : true)) return;
+    const r = (o.report || []).find(x => x.seat === i) || {};
+    const before = typeof st.gold === 'number' ? st.gold : CP.START_GOLD;
+    const net = st.matchScore || 0;
+    const spoils = r.gained ? CP.SPOILS : 0;
+    const after = before + net + spoils;
+    out[i] = { before, net, spoils, after, fallen: after < 0 && !r.unified };
+  });
+  return out;
+}
+
 function makeRNG(seed) {
   let s = (seed >>> 0) || 1;
   return () => { s = (s * 1664525 + 1013904223) >>> 0; return s / 4294967296; };
@@ -200,6 +226,6 @@ function makeRNG(seed) {
 return {
   KEY, MAX_SLOTS,
   loadSlots, saveSlots, findSlot, putSlot, dropSlot, isFull, newId, makeSlot,
-  snapshot, mergeRoster, canJoin, removeMember, applyQuits, assignKingdoms, buildSeats, settle, makeRNG,
+  snapshot, mergeRoster, canJoin, removeMember, applyQuits, assignKingdoms, buildSeats, settle, settleGold, makeRNG,
 };
 });

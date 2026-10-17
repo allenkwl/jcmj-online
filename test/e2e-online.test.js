@@ -9,6 +9,9 @@
      ‧ 乙加入 → 擇國時秦國已有主公（不能選）、趙國「尚未出征」
      ‧ 開打 → 牌桌上甲帶著征服地（韓、魏）
      ‧ 一場打完 → 甲的秦國進度更新（第 6 場）、乙的趙國進度建起來（第 1 場）
+     ‧ 連線國庫（v1.76）：一場打完國庫進出（輸贏＋戰利品）、結算框列出每個人「國庫 前 → 後」、牌桌頂列有國庫
+     ‧ 連線亡國（v1.76）：第二場乙輸到國庫 < 0 → 乙播亡國動畫、進度刪掉、回大廳；
+       甲的結算框寫著乙亡國，按繼續征戰後下一場沒有乙
      ‧ 同一個瀏覽器開第二個分頁 → 不能再上桌
    執行： node test/e2e-online.test.js（要 Java 與 firebase CLI；整支約 1～2 分鐘）           */
 'use strict';
@@ -209,6 +212,74 @@ async function pick(p, kingdom) {
     ok(bz && bz.matches === 1 && bz.conquered.length === 1, '乙的趙國進度建起來：打過 1 場、征服 1 國', JSON.stringify(bz && { m: bz.matches, c: bz.conquered }));
     ok(sa.buttons.some(t => /繼續征戰/.test(t)) && !sa.buttons.some(t => /退出此牌局/.test(t)),
        '一場結束：有「繼續征戰」，沒有「退出此牌局」', JSON.stringify(sa.buttons));
+
+    // ── 連線國庫（v1.76）：甲 2,450＋400＋戰利品 300；乙 本錢 2,000＋200＋300 ──
+    ok(aq && aq.gold === 3150, '甲的國庫：2,450 → 3,150（贏 400＋戰利品 300）', aq && aq.gold);
+    ok(bz && bz.gold === 2500, '乙的國庫：2,000 → 2,500（贏 200＋戰利品 300）', bz && bz.gold);
+    const popTxt = p => p.evaluate(() => document.getElementById('end-pop').textContent);
+    const [pa, pb] = await Promise.all([popTxt(A.page), popTxt(B.page)]);
+    ok(/國庫 2,450 → 3,150/.test(pa) && /國庫 2,000 → 2,500/.test(pa), '甲的結算框列出兩人的國庫（前 → 後）', pa.slice(0, 300));
+    ok(/國庫 2,450 → 3,150/.test(pb) && /國庫 2,000 → 2,500/.test(pb), '乙的結算框也看得到甲的國庫', pb.slice(0, 300));
+
+    // ── 第二場：兩人都繼續征戰 ──
+    const gid1 = await A.page.evaluate(() => window.__test.match.seed);
+    await Promise.all([A.page, B.page].map(p => p.evaluate(() => {
+      const b = [...document.querySelectorAll('#end-pop button')].find(x => /繼續征戰/.test(x.textContent)); if (b) b.click();
+    })));
+    await Promise.all([A.page, B.page].map(p => p.evaluate(async () => {
+      await __until(() => window.__test.match && window.__test.match.hand && !window.__test.match.finished, 20000);
+    })));
+    const [t2a, t2b] = await Promise.all([toTable(A.page), toTable(B.page)]);
+    ok(t2a && t2b, '第二場：兩邊都走到占卜');
+    const g2 = await B.page.evaluate(async () => {
+      await __until(() => /國庫 2,500/.test((document.querySelector('.ci-gold') || {}).textContent || ''), 8000);
+      const m = window.__test.match;
+      return { top: (document.querySelector('.ci-gold') || {}).textContent || '', seatGold: m.seats.map(s => s.gold) };
+    });
+    ok(/國庫 2,500/.test(g2.top), '乙的牌桌頂列有自己的國庫（2,500 兩）', g2.top);
+    ok(g2.seatGold.filter(x => typeof x === 'number').sort().join(',') === '2500,3150', '座位上帶著兩人開打時的國庫', JSON.stringify(g2.seatGold));
+
+    // ── 乙輸 3,000 → 國庫 -500 → 亡國 ──
+    await A.page.evaluate(async () => { await new Promise(r => setTimeout(r, 800)); const s = window.__test.match.seats;
+      MJDev.finishMatch(s.map(x => x.name === '甲' ? 500 : x.name === '乙' ? -3000 : 0)); });
+    const fallB = B.page.evaluate(async () => {
+      let fal = null;
+      for (let i = 0; i < 300 && !fal; i++) {
+        const okb = document.querySelector('#enf-ov.wait .enf-ok'); if (okb) okb.click();
+        fal = document.querySelector('#fal-ov.show');
+        await new Promise(r => setTimeout(r, 100));
+      }
+      const pop = document.getElementById('end-pop').textContent;
+      if (!fal) return { fal: false, pop };
+      fal.click();                                                     // 跳到戰績
+      await __until(() => fal.querySelector('.f-ok.on'), 8000);
+      fal.querySelector('.f-ok').click();                               // 確定
+      const lobby = await __until(() => __vis(document.getElementById('net-lobby')) && !document.querySelector('#fal-ov.show'), 15000);
+      return { fal: true, pop, lobby, toast: __toast(), prog: MJOnlineProgress.load(localStorage).kingdoms };
+    });
+    const contA = A.page.evaluate(async () => {
+      for (let i = 0; i < 300; i++) {
+        const okb = document.querySelector('#enf-ov.wait .enf-ok'); if (okb) okb.click();
+        if ([...document.querySelectorAll('#end-pop button')].some(b => /繼續征戰/.test(b.textContent))) break;
+        await new Promise(r => setTimeout(r, 100));
+      }
+      const pop = document.getElementById('end-pop').textContent;
+      [...document.querySelectorAll('#end-pop button')].find(b => /繼續征戰/.test(b.textContent)).click();
+      const seed0 = window.__test.match.seed;
+      await __until(() => window.__test.match.seed !== seed0 && window.__test.match.hand, 30000);
+      return { pop, seats: window.__test.match.seats.map(s => ({ name: s.name, ai: !!s.isAI })),
+               prog: MJOnlineProgress.load(localStorage).kingdoms.qin };
+    });
+    const [fb, fa] = await Promise.all([fallB, contA]);
+    ok(fb.fal, '乙：國庫跌破 0，播亡國動畫', fb.pop && fb.pop.slice(0, 200));
+    ok(/💀 亡國/.test(fb.pop), '乙的結算框標著自己亡國', fb.pop && fb.pop.slice(0, 300));
+    ok(fb.lobby, '乙：按確定之後回到連線大廳');
+    ok(fb.prog && !fb.prog.zhao, '乙的趙國進度刪掉了', JSON.stringify(fb.prog));
+    ok(/亡國/.test(fb.toast || ''), '乙回到大廳時有說明', fb.toast);
+    ok(/乙 國庫跌破 0，亡國離桌/.test(fa.pop) && /💀 亡國/.test(fa.pop), '甲的結算框寫著乙亡國', fa.pop.slice(0, 400));
+    ok(fa.seats.every(s => s.name !== '乙') && fa.seats.filter(s => !s.ai).length === 1, '甲按繼續征戰：下一場沒有乙（空位電腦補）', JSON.stringify(fa.seats));
+    ok(fa.prog && fa.prog.gold === 3150 + 500 + (fa.prog.conquered.length - 3) * 300, '甲的國庫照常累積', JSON.stringify(fa.prog && { g: fa.prog.gold, c: fa.prog.conquered }));
+    void gid1;
 
     // ── 同一個瀏覽器的第二個分頁：不能再上桌 ──
     const A2 = await A.ctx.newPage();
