@@ -389,7 +389,8 @@ const Net = {
         const hostName = hostId ? (members[hostId].name || '') : '';
         out.push({key: child.key, name: g.displayName || child.key, count, createdAt: g.createdAt || 0,
                   hostName, status: g.status || 'waiting', memberIds: Object.keys(members),
-                  aiLevel: g.aiLevel || 2});   // 建房時定案，大廳列表要顯示
+                  aiLevel: g.aiLevel || 2,     // 建房時定案，大廳列表要顯示
+                  progress: g.progress || ''}); // 進行中的桌打到哪（「東 3 局」，開桌的人寫，v1.79）
       });
       out.sort((a, b) => b.createdAt - a.createdAt);
       cb(out);
@@ -597,13 +598,20 @@ const Net = {
     });
   },
 
-  joinGroup(key, playerName) {
+  /* opts.mid（v1.79，第 3 階段）：加入**進行中**的牌桌 —— 成員資料標 pending（待入座），
+     這一場打完由開桌的人排進下一場。坐滿四位真人（成員數 ≥ 4）不能加入。
+     沒帶 mid 的照舊只能加入等待中的桌（舊的呼叫端行為不變） */
+  joinGroup(key, playerName, opts) {
     const ref = this.db.ref('groups/' + key);
+    const mid = !!(opts && opts.mid);
     return ref.once('value').then(snap => {
       const g = snap.val();
       if (!g) throw new Error('GONE');
-      if (g.status !== 'waiting') throw new Error('STARTED');
+      const started = g.status !== 'waiting';
+      if (started && !mid) throw new Error('STARTED');
+      if (started && Object.keys(g.members || {}).length >= 4) throw new Error('FULL');
       this.isHost = (g.host === this.clientId);
+      this._pendingJoin = started;
       // 回傳整份群組資料 —— 大廳要用 displayName 與建房時定案的設定（電腦強度）
       return this._enter(key, g.displayName || key, playerName).then(() => g);
     });
@@ -620,7 +628,9 @@ const Net = {
     // kingdom：這個人想用的國（本機戰役的本國）；撞國由群主開局時調整
     // joinedAt：加入這一桌的伺服器時間 —— 座位順序、換群主的遞補順序都照它排
     this._meData = stripUndefined({name: playerName, isHost: this.isHost,
-                                   uid: this.uid, kingdom: this.prefKingdom || null});
+                                   uid: this.uid, kingdom: this.prefKingdom || null,
+                                   pending: this._pendingJoin ? true : undefined});
+    this._pendingJoin = false;
     this._joinedAt = null;
     return this._meRef.onDisconnect().remove()
       .then(() => this._meRef.set(Object.assign({joinedAt: firebase.database.ServerValue.TIMESTAMP}, this._meData)))
@@ -682,6 +692,7 @@ const Net = {
         camp: members[id].camp || null,
         ready: !!members[id].ready,
         picked: !!members[id].picked,
+        pending: !!members[id].pending,          // 中途加入、等下一場入座（v1.79）
         me: id === this.clientId,
       }));
       list.sort((a, b) => (b.isHost ? 1 : 0) - (a.isHost ? 1 : 0));
@@ -696,7 +707,7 @@ const Net = {
       }
       cb({status: g.status, name: g.displayName || this.groupKey, members: list,
           host: g.host || null, aiLevel: g.aiLevel || 2, gameId: g.gameId || null,
-          campaign: g.campaign || null, next: g.next || null});   // aiLevel 是建房時定案的，房間畫面要顯示
+          campaign: g.campaign || null, next: g.next || null, progress: g.progress || ''});   // aiLevel 是建房時定案的，房間畫面要顯示
     };
     this._roomRef.on('value', this._roomCb);
   },
@@ -819,6 +830,26 @@ const Net = {
     return this._groupRef.child('gameId').set(id).catch(() => {});
   },
   /* 一場打完「繼續征戰」的決定：{ from（上一場的 gameId）, stay: [uid] } */
+  /* 中途加入的人：入座了（或牌桌回到等待中）就不再是「待入座」 */
+  updateMyPending(on) {
+    if (this._meData) { if (on) this._meData.pending = true; else delete this._meData.pending; }
+    if (!this._meRef) return Promise.resolve();
+    return this._meRef.child('pending').set(on ? true : null).catch(() => {});
+  },
+  /* 開桌的人：牌桌打到哪（大廳列表顯示「進行中（東 3 局）」）。一樣的就不寫 */
+  setProgress(label) {
+    if (!this._groupRef || this._progressLabel === label) return Promise.resolve();
+    this._progressLabel = label;
+    return this._groupRef.child('progress').set(label || null).catch(() => {});
+  },
+  /* 一場打完，牌桌上的人全走了、只剩等著入座的人：牌桌變回等待中，開桌交給 uid（等入座的第一位）。
+     也用在「牌桌上的人全斷線了」由等入座的人自己接下（uid＝自己） */
+  handToWaiting(uid) {
+    if (!this._groupRef) return Promise.resolve();
+    const up = { status: 'waiting', host: uid, next: null, progress: null };
+    up['members/' + uid + '/isHost'] = true;
+    return this._groupRef.update(up).catch(() => {});
+  },
   setNext(next) {
     if (!this._groupRef) return Promise.resolve();
     return this._groupRef.child('next').set(next ? stripUndefined(next) : null).catch(() => {});

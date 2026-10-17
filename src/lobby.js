@@ -380,7 +380,10 @@ const LEVEL_NAME = { 1: '初學', 2: '普通', 3: '高手' };
 function renderGroupList(list) {
   const box = byId('lobby-groups');
   clear(box);
-  const open = list.filter(g => g.status === 'waiting');
+  /* v1.79（第 3 階段）：進行中的牌桌也列出來，可以中途加入、下一場入座。等待中的排前面 */
+  const waiting = list.filter(g => g.status === 'waiting');
+  const playing = list.filter(g => g.status === 'started');
+  const open = waiting.concat(playing);
   byId('lobby-groups-empty').style.display = open.length ? 'none' : '';
   byId('lobby-groups-empty').textContent = '目前沒有人開桌，按上面「開一桌」自己開一個';
   // ⚠️ 清單是 watchGroups 非同步推過來的，項目一變焦點清單就變了。
@@ -391,10 +394,13 @@ function renderGroupList(list) {
     const n = g.count || 0;
     const lv = LEVEL_NAME[g.aiLevel] || '普通';
     const full = n >= SEATS;
-    box.appendChild(row('net-row' + (full ? ' full' : ''),
-      `<b>${esc(g.name || g.key)}</b>` +
-      `<span>${n}/${SEATS} 人　電腦：${lv}${full ? '　（滿了）' : ''}</span>`,
-      full ? null : () => doJoin(g.key)));
+    const mid = g.status === 'started';
+    const info = mid
+      ? `進行中${g.progress ? '（' + esc(g.progress) + '）' : ''}・${full ? '坐滿了' : '空 ' + (SEATS - n) + ' 位，下一場入座'}　電腦：${lv}`
+      : `${n}/${SEATS} 人　電腦：${lv}${full ? '　（滿了）' : ''}`;
+    box.appendChild(row('net-row' + (full ? ' full' : '') + (mid ? ' playing' : ''),
+      `<b>${esc(g.name || g.key)}</b><span>${info}</span>`,
+      full ? null : () => doJoin(g.key, mid)));
   });
 }
 
@@ -451,15 +457,22 @@ function openTable(name, extra) {
     });
 }
 
-function doJoin(key) {
-  blockedElsewhere().then(b => { if (!b) doJoin2(key); });
+function doJoin(key, mid) {
+  blockedElsewhere().then(b => { if (!b) doJoin2(key, mid); });
 }
-function doJoin2(key) {
-  Net.joinGroup(key, myName)
-    .then(g => { const dn = (g && g.displayName) || key; rememberGroup(dn); enterRoom(key, dn, false); })
+function doJoin2(key, mid) {
+  Net.joinGroup(key, myName, { mid: !!mid })
+    .then(g => {
+      const dn = (g && g.displayName) || key;
+      rememberGroup(dn);
+      // 進行中的桌：先待入座（這一場打完由開桌的人排進下一場）。記下加入時是第幾場，換場了才算輪到我
+      const pending = !!(g && g.status !== 'waiting');
+      enterRoom(key, dn, false, pending ? { pending: true, joinGameId: g.gameId || null } : null);
+    })
     .catch(e => {
       const m = e && e.message;
       if (m === 'STARTED') toast('這一桌已經開打了');
+      else if (m === 'FULL') toast('這一桌已經坐滿四位主公了');
       else if (m === 'GONE') toast('這個群組已經不在了');
       else toast('加入失敗：' + m);
     });
@@ -467,14 +480,14 @@ function doJoin2(key) {
 
 /* ═══════════ 房間 ═══════════ */
 
-function enterRoom(key, displayName, isHost) {
+function enterRoom(key, displayName, isHost, extra) {
   // 一個瀏覽器只能在一桌：開桌／加入前已經擋過一次，這裡拿鎖時再擋一次（兩個分頁同時按的情況）
   if (!takeLock({ table: displayName, kingdom: null })) {
     blockedByOtherTab();
     Net.leaveGroup().catch(() => {});
     return;
   }
-  cur = { key, displayName, isHost };
+  cur = Object.assign({ key, displayName, isHost }, extra || {});
   byId('room-name').textContent = displayName;
   screen('net-room');
   startWatching();
@@ -578,7 +591,9 @@ function renderRoom(g) {
   cur.isHost = g.host === Net.clientId;
 
   byId('room-role').textContent = cur.isHost ? '你開的桌' : '';   // 畫面上不說「群主」
-  byId('room-count').textContent = `${n}/${SEATS} 人` + (n < SEATS ? `　不足的 ${SEATS - n} 家由電腦補上` : '');
+  byId('room-count').textContent = cur.pending
+    ? `牌桌進行中${g.progress ? '（' + g.progress + '）' : ''}　` + (cur.picked ? '這一場打完你就入座' : '先擇國而立，這一場打完就入座')
+    : `${n}/${SEATS} 人` + (n < SEATS ? `　不足的 ${SEATS - n} 家由電腦補上` : '');
   byId('room-ai').textContent = '電腦強度：' + (LEVEL_NAME[g.aiLevel] || '普通');
 
   const box = byId('room-members');
@@ -600,7 +615,9 @@ function renderRoom(g) {
   members.forEach(m => {
     // 還沒選定的人不顯示國名（選國畫面上的游標不算數）
     const k = m.picked ? kname(m.kingdom) : '';
-    const rd = m.isHost ? '' : (m.ready ? '　✔ 已準備' : '　⋯ 準備中');
+    // 進行中的桌（我在等入座）：牌桌上的人標「牌桌上」，等入座的標「下一場入座」
+    const rd = cur.pending ? (m.pending ? '　⋯ 下一場入座' : '　🀄 牌桌上')
+             : m.isHost ? '' : (m.ready ? '　✔ 已準備' : '　⋯ 準備中');
     const camp = m.picked && m.camp && m.camp.kingdom === m.kingdom ? m.camp : null;
     box.appendChild(row('net-row',
       `<b>${esc(m.name || '?')}${k ? '　' + k : '　（選國中）'}</b><span>${m.me ? '（你）' : ''}${m.isHost ? '　開桌' : ''}${rd}${conq(camp)}</span>`));
@@ -628,9 +645,9 @@ function renderRoom(g) {
     sb.textContent = !mineOk ? '先擇國而立' : (notReady ? `等 ${notReady} 位主公準備⋯` : '開始牌局');
   }
 
-  show('room-start', cur.isHost);
-  show('room-ready', !cur.isHost);
-  show('room-wait', !cur.isHost && !!cur.ready);
+  show('room-start', cur.isHost && !cur.pending);
+  show('room-ready', !cur.isHost && !cur.pending);       // 等入座：選好國就是排隊了，不用按準備
+  show('room-wait', !cur.isHost && !!cur.ready && !cur.pending);
   if (window.MJInput) setTimeout(() => window.MJInput.refresh(), 0);
 }
 
@@ -641,8 +658,12 @@ function startWatching() {
     // 牌局中：成員進出（斷線、連回來、換群主）交給遊戲處理，大廳畫面不動
     if (cur && cur.entered) { cancelHostWatch(); if (cfg.onRoom) cfg.onRoom(g); return; }
     if (!g) { leave(true); return; }          // 群組沒了
+    // 中途加入、還在等下一場（v1.79）：不進牌局，房間畫面顯示牌桌現況
+    if (g.status === 'started' && cur.pending) { pendingRoom(g); return; }
     // 開局只進一次 —— 房間資料之後每變一次（有人斷線、改名）都會再觸發，不擋就會重複開局
     if (g.status === 'started') { if (!cur.entered) enterGame(g); return; }
+    // 牌桌回到等待中（有人統一天下、或牌桌上的人全走了）：等入座的人變成一般成員，照常準備、開局
+    if (cur.pending) { cur.pending = false; cancelOrphanWatch(); Net.updateMyPending(false); }
     watchHostGone(g);
     renderRoom(g);
   });
@@ -677,6 +698,41 @@ function watchHostGone(g) {
   }, HOST_GRACE_MS);
 }
 
+/* ── 中途加入、等下一場入座（v1.79，docs/online-kingdoms.md 第三節）──
+   ‧ 一進來一樣擇國而立（選好就等於排隊入座，不用再按準備 —— 2026-10-17 使用者同意）
+   ‧ 這一場打完，開桌的人把「選好國的待入座者」跟留下來的主公一起排進下一場（next.stay 有我）
+     → 換了一場（gameId 不是我加入時那一場）就進牌局
+   ‧ 牌桌上的人全斷線了、房間裡只剩待入座的人：等 15 秒，最早加入的那位把牌桌接下來變回等待中 */
+const ORPHAN_MS = 15000;
+let orphanTimer = null;
+function cancelOrphanWatch() { if (orphanTimer) { clearTimeout(orphanTimer); orphanTimer = null; } }
+function pendingRoom(g) {
+  cur.last = g;
+  syncMyCamp(g);
+  const stay = toArr(g.next && g.next.stay);
+  if (stay.indexOf(Net.clientId) >= 0 && g.gameId && g.gameId !== cur.joinGameId) {
+    cancelOrphanWatch();
+    cur.pending = false;
+    Net.updateMyPending(false);
+    toast('輪到你入座了');
+    enterGame(g);
+    return;
+  }
+  const members = g.members || [];
+  if (members.length && members.every(m => m.pending)) {
+    if (!orphanTimer) orphanTimer = setTimeout(() => {
+      orphanTimer = null;
+      const last = cur && cur.last;
+      if (!cur || !cur.pending || !last || last.status !== 'started') return;
+      const ms = (last.members || []).slice().sort((a, b) => (a.joinedAt || 0) - (b.joinedAt || 0));
+      if (!ms.length || !ms.every(m => m.pending) || ms[0].id !== Net.clientId) return;
+      Net.handToWaiting(Net.clientId);
+      toast('牌桌上的主公都離開了，這一桌交給你');
+    }, ORPHAN_MS);
+  } else cancelOrphanWatch();
+  renderRoom(g);
+}
+
 function enterGame(g) {
   cur.entered = true;
   cancelHostWatch();
@@ -696,6 +752,7 @@ function enterGame(g) {
 }
 
 function leave(silent) {
+  cancelOrphanWatch();
   dropLock();
   Net.unwatchRoom();
   cancelHostWatch();
@@ -784,6 +841,7 @@ function quit() {
 /* 一場打完有人統一天下：全員回到房間（不退桌）。之後可以等新人加入，或直接按開始接著打 */
 function backToRoom() {
   if (!cur) return;
+  cur.pending = false;
   cur.entered = false;
   cur.ready = false;
   Net.updateMyReady(false);           // 下一場要重新確認

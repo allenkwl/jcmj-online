@@ -12,6 +12,8 @@
      ‧ 連線國庫（v1.76）：一場打完國庫進出（輸贏＋戰利品）、結算框列出每個人「國庫 前 → 後」、牌桌頂列有國庫
      ‧ 連線亡國（v1.76）：第二場乙輸到國庫 < 0 → 乙播亡國動畫、進度刪掉、回大廳；
        甲的結算框寫著乙亡國，按繼續征戰後下一場沒有乙
+     ‧ 中途加入（v1.79）：亡國回到大廳的乙看得到「進行中（東 1 局）」的牌桌 → 加入、擇國、待入座；
+       甲的牌桌上有提示；甲打完按繼續征戰 → 乙自動入座下一場
      ‧ 同一個瀏覽器開第二個分頁 → 不能再上桌
    執行： node test/e2e-online.test.js（要 Java 與 firebase CLI；整支約 1～2 分鐘）           */
 'use strict';
@@ -304,6 +306,70 @@ async function pick(p, kingdom) {
     ok(fa.seats.every(s => s.name !== '乙') && fa.seats.filter(s => !s.ai).length === 1, '甲按繼續征戰：下一場沒有乙（空位電腦補）', JSON.stringify(fa.seats));
     ok(fa.prog && fa.prog.gold === 3150 + 500 + (fa.prog.conquered.length - 3) * 300, '甲的國庫照常累積', JSON.stringify(fa.prog && { g: fa.prog.gold, c: fa.prog.conquered }));
     void gid1;
+
+    // ── 中途加入（v1.79）：乙從大廳加入甲正在打的這一桌，下一場入座 ──
+    await A.page.evaluate(() => {        // 甲那台把每一則提示記下來（提示框會被下一則蓋掉）
+      window.__toasts = [];
+      const watch = () => { const el = document.getElementById('lobby-toast'); if (!el) return setTimeout(watch, 100);
+        new MutationObserver(() => window.__toasts.push(el.textContent)).observe(el, { childList: true, characterData: true, subtree: true }); };
+      watch();
+    });
+    const listed = await B.page.evaluate(async () => {
+      const row = () => [...document.querySelectorAll('#lobby-groups .net-row')].find(r => /測試桌/.test(r.textContent));
+      await __until(() => row() && /進行中（東 \d 局）/.test(row().textContent), 15000);
+      const r = row();
+      return r ? { txt: r.textContent, disabled: r.disabled } : null;
+    });
+    ok(listed && /進行中（東 \d 局）・空 3 位/.test(listed.txt) && !listed.disabled, '大廳列出進行中的牌桌：進行中（東 N 局）・空 3 位', JSON.stringify(listed));
+    await B.page.evaluate(() => [...document.querySelectorAll('#lobby-groups .net-row')].find(r => /測試桌/.test(r.textContent)).click());
+    const bCards2 = await pick(B.page, 'zhao');
+    ok(bCards2.qin.taken, '中途加入擇國：牌桌上甲的秦國不能選', JSON.stringify(bCards2.qin));
+    const waitRoom = await B.page.evaluate(async () => {
+      await __until(() => /這一場打完你就入座/.test(document.getElementById('room-count').textContent), 8000);
+      return { count: document.getElementById('room-count').textContent, members: document.getElementById('room-members').textContent,
+               ready: __vis(document.getElementById('room-ready')), start: __vis(document.getElementById('room-start')) };
+    });
+    ok(/牌桌進行中（東 \d 局）/.test(waitRoom.count) && /這一場打完你就入座/.test(waitRoom.count), '乙的房間：牌桌進行中、這一場打完就入座', waitRoom.count);
+    ok(/甲.*牌桌上/.test(waitRoom.members) && /乙.*下一場入座/.test(waitRoom.members), '房間名單：甲在牌桌上、乙下一場入座', waitRoom.members);
+    ok(!waitRoom.ready && !waitRoom.start, '待入座不用按準備（選好國就是排隊了）', JSON.stringify(waitRoom));
+    const seen = await A.page.evaluate(async () => {
+      await __until(() => window.__toasts.some(t => /乙 加入了這一桌，下一場入座/.test(t)), 8000);
+      return window.__toasts;
+    });
+    ok(seen.some(t => /乙 加入了這一桌，下一場入座/.test(t)), '甲的牌桌上提示「乙 加入了這一桌，下一場入座」', JSON.stringify(seen));
+    // 甲打完這一場、按繼續征戰 → 乙入座
+    const seated = Promise.all([
+      A.page.evaluate(async () => {
+        await new Promise(r => setTimeout(r, 600));
+        const s = window.__test.match.seats;
+        MJDev.finishMatch(s.map(x => x.name === '甲' ? 300 : -100));
+        for (let i = 0; i < 300; i++) {
+          const okb = document.querySelector('#enf-ov.wait .enf-ok'); if (okb) okb.click();
+          const c = [...document.querySelectorAll('#end-pop button')].find(b => /繼續征戰/.test(b.textContent));
+          if (c) { c.click(); break; }
+          await new Promise(r => setTimeout(r, 100));
+        }
+        const seed0 = window.__test.match.seed;
+        await __until(() => window.__test.match.seed !== seed0 && window.__test.match.hand, 30000);
+        return window.__test.match.seats.map(x => ({ name: x.name, k: x.kingdom, human: !!x.clientId }));
+      }),
+      B.page.evaluate(async () => {
+        // ⚠️ 乙那台還留著亡國前那一場的牌局（裡面就有乙）—— 要等「換了一場、而且離開房間畫面」才算入座
+        //    （用戶端的公開牌局沒有 seed，比對的是牌局物件換了一份）
+        const old = window.__test.match;
+        const ok = await __until(() => !__vis(document.getElementById('net-room')) && window.__test.match && window.__test.match.hand
+          && window.__test.match !== old && window.__test.match.seats.some(x => x.name === '乙' && x.clientId === Net.clientId), 40000);
+        const g = (await Net.db.ref('groups/' + Net.groupKey).once('value')).val() || {};
+        return { ok, room: __vis(document.getElementById('net-room')), pending: !!(g.members && g.members[Net.clientId] && g.members[Net.clientId].pending) };
+      }),
+    ]);
+    const [aSeats, bIn] = await seated;
+    ok(aSeats.filter(x => x.human).map(x => x.name).sort().join(',') === '乙,甲', '下一場：甲、乙兩位主公上桌', JSON.stringify(aSeats));
+    ok((aSeats.find(x => x.name === '乙') || {}).k === 'zhao', '乙帶著他選的趙國入座', JSON.stringify(aSeats));
+    ok(bIn.ok && !bIn.room, '乙那台自動進了牌局（不再停在房間畫面）', JSON.stringify(bIn));
+    ok(!bIn.pending, '入座後不再是「待入座」', JSON.stringify(bIn));
+    const [t3a, t3b] = await Promise.all([toTable(A.page), toTable(B.page)]);
+    ok(t3a && t3b, '新的一場：甲和新入座的乙都走到占卜（牌局真的動起來了）');
 
     // ── 同一個瀏覽器的第二個分頁：不能再上桌 ──
     const A2 = await A.ctx.newPage();
