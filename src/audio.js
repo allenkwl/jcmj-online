@@ -414,19 +414,38 @@ function mediaEl(url) {
   }
   return media[url];
 }
+/* 只有 iPhone／iPad 需要（iPadOS 的 Safari 自稱 Mac，用觸控點數認）。
+   ⚠️ 桌機不做（v1.77）：2026-10-17 使用者：「在主畫面按滑鼠，切全螢幕的同時開始播放序章的音樂，畫面沒有改變」——
+      第一下點擊時這裡把統一／亡國的配樂靜音播一下再停，在使用者的桌機瀏覽器上沒停乾淨、還出了聲。
+      桌機瀏覽器只要頁面上點過一次，之後程式自己叫 play() 就會響，本來就不需要這一步 */
+const NEED_MEDIA_UNLOCK = (() => {
+  try {
+    const n = navigator;
+    return /iP(hone|ad|od)/.test(n.userAgent || '') || (n.platform === 'MacIntel' && n.maxTouchPoints > 1);
+  } catch (_) { return false; }
+})();
 function unlockMedia() {
+  if (!NEED_MEDIA_UNLOCK) return;
   const G = typeof window !== 'undefined' ? window : {};
   (G.MJ_MEDIA_URLS || []).forEach(mediaEl);
   Object.keys(media).forEach(url => {
     const a = media[url];
     if (a.__unlocked || a.__unlocking || !a.paused) return;
     a.__unlocking = true;
-    const wasMuted = a.muted;
+    const wasMuted = a.muted, vol = a.volume;
     a.muted = true;
+    try { a.volume = 0; } catch (_) {}      // iPhone 上 volume 改不動（唯讀），靠 muted；其他地方雙保險
     let p;
     try { p = a.play(); } catch (_) { p = null; }
-    const done = ok => { a.__unlocking = false; if (ok) a.__unlocked = true; a.muted = wasMuted; };
-    if (p && p.then) p.then(() => { try { a.pause(); a.currentTime = 0; } catch (_) {} done(true); }, () => done(false));
+    /* 成功、失敗都一定先停掉，停好了才把靜音、音量還回去 —— 不能有「已經不靜音、還在播」的空檔 */
+    const done = ok => {
+      try { a.pause(); a.currentTime = 0; } catch (_) {}
+      a.__unlocking = false;
+      if (ok) a.__unlocked = true;
+      a.muted = wasMuted;
+      try { a.volume = vol; } catch (_) {}
+    };
+    if (p && p.then) p.then(() => done(true), () => done(false));
     else done(false);
   });
 }
