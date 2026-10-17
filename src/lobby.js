@@ -583,7 +583,19 @@ function renderRoom(g) {
 
   const box = byId('room-members');
   clear(box);
-  const conq = arr => { const a = toArr(arr); return a.length ? '　已征服 ' + a.length + ' 國' : ''; };
+  /* 「征服 N 國・國庫 X 兩」（v1.78，docs/online-kingdoms.md 第七節：大家看得到彼此的國庫）；低於 300 兩紅字。
+     沒帶國庫的快照（舊版頁面放上來的）照舊只寫征服 */
+  const conq = c => {
+    if (!c) return '';
+    const n = toArr(c.conquered).length;
+    const parts = [];
+    if (n) parts.push('征服 ' + n + ' 國');
+    if (typeof c.gold === 'number') {
+      const low = window.MJCampaign && c.gold < window.MJCampaign.LOW_GOLD;
+      parts.push('<span' + (low ? ' style="color:#ff8a70;font-weight:700"' : '') + '>國庫 ' + c.gold.toLocaleString() + ' 兩</span>');
+    }
+    return parts.length ? '　' + parts.join('・') : '';
+  };
   const kname = id => { const k = window.MJKingdoms && window.MJKingdoms.get(id); return k ? k.name : ''; };
   members.forEach(m => {
     // 還沒選定的人不顯示國名（選國畫面上的游標不算數）
@@ -591,7 +603,7 @@ function renderRoom(g) {
     const rd = m.isHost ? '' : (m.ready ? '　✔ 已準備' : '　⋯ 準備中');
     const camp = m.picked && m.camp && m.camp.kingdom === m.kingdom ? m.camp : null;
     box.appendChild(row('net-row',
-      `<b>${esc(m.name || '?')}${k ? '　' + k : '　（選國中）'}</b><span>${m.me ? '（你）' : ''}${m.isHost ? '　開桌' : ''}${rd}${conq(camp && camp.conquered)}</span>`));
+      `<b>${esc(m.name || '?')}${k ? '　' + k : '　（選國中）'}</b><span>${m.me ? '（你）' : ''}${m.isHost ? '　開桌' : ''}${rd}${conq(camp)}</span>`));
   });
   // v1.68：沒有名冊、沒有缺席（不保留座位），也沒有「退出此牌局」（進度跟著人走）
   show('room-quit', false);

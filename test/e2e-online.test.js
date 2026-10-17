@@ -130,6 +130,13 @@ async function pick(p, kingdom) {
     const bCards = await pick(B.page, 'zhao');
     ok(bCards.qin.taken, '乙的選國畫面：秦國已有主公（不能選）', JSON.stringify(bCards.qin));
     ok(bCards.zhao.prog === '尚未出征', '乙的趙國：尚未出征', JSON.stringify(bCards.zhao));
+    // 房間名單看得到彼此的國庫（v1.78）
+    const roomTxt = await B.page.evaluate(async () => {
+      await __until(() => /國庫 2,450 兩/.test(document.getElementById('room-members').textContent)
+                        && /國庫 2,000 兩/.test(document.getElementById('room-members').textContent), 10000);
+      return document.getElementById('room-members').textContent;
+    });
+    ok(/秦國.*征服 2 國・國庫 2,450 兩/.test(roomTxt) && /趙國.*國庫 2,000 兩/.test(roomTxt), '房間名單：本國・征服 N 國・國庫 X 兩', roomTxt);
 
     // ── 準備、開打 ──
     await B.page.evaluate(async () => { await __until(() => !document.getElementById('room-ready').disabled, 8000); document.getElementById('room-ready').click(); });
@@ -238,6 +245,23 @@ async function pick(p, kingdom) {
     });
     ok(/國庫 2,500/.test(g2.top), '乙的牌桌頂列有自己的國庫（2,500 兩）', g2.top);
     ok(g2.seatGold.filter(x => typeof x === 'number').sort().join(',') === '2500,3150', '座位上帶著兩人開打時的國庫', JSON.stringify(g2.seatGold));
+
+    // ── 名牌告急標（v1.78）：別家國庫 < 300 才出現；自己的不標 ──
+    const lowTag = await A.page.evaluate(async () => {
+      const m = window.__test.match, b = m.seats.findIndex(s => s.name === '乙'), a = m.seats.findIndex(s => s.name === '甲');
+      const keep = [m.seats[a].gold, m.seats[b].gold];
+      const tags = () => [...document.querySelectorAll('.np-lowgold')].map(x => x.textContent);
+      const before = tags();
+      m.seats[b].gold = 120 - (m.seats[b].matchScore || 0);
+      m.seats[a].gold = 50 - (m.seats[a].matchScore || 0);
+      MJDev.redraw();
+      const after = tags();
+      m.seats[a].gold = keep[0]; m.seats[b].gold = keep[1]; MJDev.redraw();
+      return { before, after, back: tags() };
+    });
+    ok(lowTag.before.length === 0, '國庫充足：名牌沒有告急標', JSON.stringify(lowTag));
+    ok(lowTag.after.length === 1 && lowTag.after[0] === '⚠️ 國庫 120', '乙的國庫 120：甲畫面上乙的名牌出現「⚠️ 國庫 120」，自己的不標', JSON.stringify(lowTag));
+    ok(lowTag.back.length === 0, '國庫回來：告急標消失', JSON.stringify(lowTag));
 
     // ── 乙輸 3,000 → 國庫 -500 → 亡國 ──
     await A.page.evaluate(async () => { await new Promise(r => setTimeout(r, 800)); const s = window.__test.match.seats;

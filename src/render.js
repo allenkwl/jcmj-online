@@ -196,6 +196,15 @@ function renderNameplate(node, match, hand, seat, mySeat, ui) {
     chips.textContent = cq.map(id => (K && K.get(id) || {}).char || '').join('');
     chips.title = '已征服：' + cq.map(id => (K && K.get(id) || {}).name || id).join('、');
   }
+  /* 國庫告急（v1.78，docs/online-kingdoms.md 第七節）：別家主公的國庫**低於 300 兩**才出現紅色小標，平常不佔位置。
+     自己的不標 —— 頂列已經有自己的國庫（告急變紅），手機上底下那一列也沒有空間。
+     ui.lordGold(seat) 由遊戲那邊給（連線才有：開打時的國庫快照＋這一場目前的輸贏）；舊版頁面不給就不顯示 */
+  const lg = ui && ui.lordGold ? ui.lordGold(seat) : null;
+  if (typeof lg === 'number' && seat !== mySeat && lg < ((ui && ui.lowGold) || 300)) {
+    const t = el('span', 'np-lowgold', node);
+    t.textContent = '⚠️ 國庫 ' + lg.toLocaleString();
+    t.title = '國庫告急：一場結算時跌破 0 就亡國';
+  }
   // 缺席的成員：座位保留、由他那一國的武將代打（docs/online-campaign.md 第三節）
   if (m.absentOf && !m.sub) {
     el('span', 'np-subtag', node).textContent = '缺席';
