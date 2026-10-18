@@ -1523,22 +1523,29 @@ const Net = {
     this.unwatchCmds();
     this.tokenHolder = null; this.tokenTurn = -1;
     const meRef = this._meRef, groupRef = this._groupRef;
+    // ⚠️ 要在下面清掉 isHost 之前先記下來 —— v1.80 以前順序反了，wasHost 永遠是 false，
+    //    等待室裡開桌的人按離開從來沒交棒過，全靠大廳 watchHostGone 的 10 秒後援
+    const wasHost = this.isHost;
     this._meRef = null; this._groupRef = null; this._meData = null;   // 連回來時不要再把自己寫回去
     this.groupKey = null; this.groupName = null; this.isHost = false;
     if (!meRef) return Promise.resolve();
-    const wasHost = this.isHost;
     const myId = this.clientId;
     return meRef.onDisconnect().cancel().catch(() => {})
-      /* 開桌的人走了，房間裡還有人 → 把開桌交給最早加入的那位。
-         不交的話 groups/host 還指著走掉的人，房間裡沒有人按得到「開始」。
-         （牌局中另有 10 秒換群主的機制；這裡管的是在大廳房間裡離開） */
-      .then(() => wasHost ? groupRef.child('members').once('value').then(snap => {
-        const ms = snap.val() || {};
-        const next = Object.keys(ms).filter(id => id !== myId)
+      /* 開桌的人在等待室走了，房間裡還有人 → 把開桌交給最早加入的那位。
+         不交的話 groups/host 還指著走掉的人，房間裡沒有人按得到「開始」（要等 watchHostGone 10 秒）。
+         ‧ 只管 status === 'waiting'：牌局中是座位順序 10 秒後接手（netCheckPresence → takeHost）；
+           一場打完開桌的人不留，是先寫 setNextAndHost 再走（那時 host 已經不是我，transaction 自然不動）
+         ‧ 待入座（pending，v1.79）的人不在牌桌上，不交給他
+         ‧ 是不是開桌的以 Firebase 那份為準（本機 isHost 可能還沒同步到），本機的 wasHost 只是省一次讀取 */
+      .then(() => wasHost ? groupRef.once('value').then(snap => {
+        const g = snap.val() || {};
+        if (g.status !== 'waiting' || g.host !== myId) return;
+        const ms = g.members || {};
+        const next = Object.keys(ms).filter(id => id !== myId && ms[id] && !ms[id].pending)
           .sort((a, b) => (ms[a].joinedAt || 0) - (ms[b].joinedAt || 0))[0];
         if (!next) return;
         return groupRef.child('host').transaction(cur => (cur === myId ? next : undefined))
-          .then(() => groupRef.child('members/' + next + '/isHost').set(true));
+          .then(res => { if (res.committed) return groupRef.child('members/' + next + '/isHost').set(true); });
       }).catch(() => {}) : null)
       .then(() => meRef.remove().catch(() => {}))
       .then(() => groupRef.child('members').once('value'))

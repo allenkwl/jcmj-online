@@ -15,6 +15,7 @@
      ‧ 中途加入（v1.79）：亡國回到大廳的乙看得到「進行中（東 1 局）」的牌桌 → 加入、擇國、待入座；
        甲的牌桌上有提示；甲打完按繼續征戰 → 乙自動入座下一場
      ‧ 同一個瀏覽器開第二個分頁 → 不能再上桌
+     ‧ 等待室交棒（v1.81）：丙開桌、丁（待入座）戊加入 → 丙按離開，開桌馬上交給戊（不給待入座的丁、不等 10 秒）
    執行： node test/e2e-online.test.js（要 Java 與 firebase CLI；整支約 1～2 分鐘）           */
 'use strict';
 const fs = require('fs');
@@ -384,6 +385,64 @@ async function pick(p, kingdom) {
       return { toast: __toast(), asked: __vis(document.getElementById('ask-input')) };
     });
     ok(/另一個分頁/.test(blocked.toast) && !blocked.asked, '同一個瀏覽器的第二個分頁不能開桌', JSON.stringify(blocked));
+
+    // ── 等待室裡開桌的人按離開（v1.81）：開桌馬上交給最早加入、不是待入座的那位 ──
+    // v1.80 以前 leaveGroup 先清 isHost 才記 wasHost → 從來沒交棒，要等大廳 watchHostGone 的 10 秒後援
+    const C = await newPlayer(browser, base, { jcmj_my_name: '丙' });
+    const D = await newPlayer(browser, base, { jcmj_my_name: '丁' });
+    const F = await newPlayer(browser, base, { jcmj_my_name: '戊' });
+    ok(await openLobby(C.page), '丙進得了大廳');
+    await C.page.evaluate(async () => {
+      document.getElementById('lobby-create').click();
+      await __until(() => __vis(document.getElementById('ask-input')), 5000);
+      document.getElementById('ask-input').value = '交棒桌';
+      document.getElementById('ask-ok').click();
+    });
+    await pick(C.page, 'chu');
+    const joinTable = async (p, k) => {
+      await openLobby(p);
+      await p.evaluate(async () => {
+        const row = () => [...document.querySelectorAll('#lobby-groups .net-row')].find(r => /交棒桌/.test(r.textContent));
+        await __until(row, 15000);
+        row().click();
+      });
+      await pick(p, k);
+    };
+    await joinTable(D.page, 'qi');          // 丁先加入（照加入順序本來輪到他）
+    await joinTable(F.page, 'yan');
+    // 丁標成待入座（v1.79 的 pending：不在牌桌上的人）→ 開桌不能交給他
+    const ids = {};
+    for (const [n, p] of [['丙', C.page], ['丁', D.page], ['戊', F.page]]) ids[n] = await p.evaluate(() => Net.clientId);
+    await D.page.evaluate(() => Net._meRef.child('pending').set(true));
+    const before = await C.page.evaluate(async (n) => {
+      let g = {};
+      for (let i = 0; i < 80; i++) {
+        g = (await Net.db.ref('groups/' + Net.groupKey).once('value')).val() || {};
+        if (Object.keys(g.members || {}).length >= 3 && (g.members[n] || {}).pending) break;
+        await new Promise(r => setTimeout(r, 100));
+      }
+      return { host: g.host, status: g.status, n: Object.keys(g.members || {}).length, pendingD: !!(g.members[n] || {}).pending };
+    }, ids['丁']);
+    ok(before.host === ids['丙'] && before.status === 'waiting' && before.n === 3 && before.pendingD,
+       '（測試前提）交棒桌：丙開桌、三人在等待室、丁是待入座', JSON.stringify(before));
+    const t0 = Date.now();
+    await C.page.evaluate(() => document.getElementById('room-leave').click());
+    const handed = await F.page.evaluate(async () => {
+      const ok = await __until(() => Net.isHost && __vis(document.getElementById('room-start')), 6000);
+      const g = (await Net.db.ref('groups/' + Net.groupKey).once('value')).val() || {};
+      return { ok, host: g.host, flags: Object.keys(g.members || {}).map(id => [id, !!g.members[id].isHost]) };
+    });
+    const ms = Date.now() - t0;
+    ok(handed.ok && handed.host === ids['戊'] && ms < 6000,
+       '丙在等待室按離開：開桌馬上交給戊（跳過待入座的丁，不用等 10 秒）', JSON.stringify(Object.assign({ ms }, handed)));
+    ok(handed.flags.length === 2 && handed.flags.every(([id, h]) => h === (id === ids['戊'])),
+       '房間名單的開桌標記跟著換到戊、丁不是開桌', JSON.stringify(handed.flags));
+    const dView = await D.page.evaluate(async () => {
+      await __until(() => !__vis(document.getElementById('room-start')) && Net.groupKey, 3000);
+      return { start: __vis(document.getElementById('room-start')), isHost: Net.isHost };
+    });
+    ok(!dView.start && !dView.isHost, '丁那台沒有變成開桌（沒有「開始牌局」）', JSON.stringify(dView));
+    for (const X of [C, D, F]) ok(X.errors.length === 0, '交棒桌的頁面沒有 JavaScript 錯誤', X.errors.slice(0, 3).join(' | '));
 
     ok(A.errors.length === 0, '甲的頁面沒有 JavaScript 錯誤', A.errors.slice(0, 3).join(' | '));
     ok(B.errors.length === 0, '乙的頁面沒有 JavaScript 錯誤', B.errors.slice(0, 3).join(' | '));
