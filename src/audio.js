@@ -457,5 +457,8 @@ function resume() {
   return 2;
 }
 
-return { SFX, BGM, resume, unlockCtx, mediaEl };
+/* 已經建好的動畫配樂元素（統一天下、亡國）—— 老闆模式要把它們一起靜音（v1.83）。只列已經建的，不會新建 */
+function mediaAll() { return Object.keys(media).map(u => media[u]); }
+
+return { SFX, BGM, resume, unlockCtx, mediaEl, mediaAll };
 });
