@@ -4,6 +4,7 @@
      甲：登入（Email＋密碼）→ 開桌、一個人帶三家電腦開打
      丙：登入、不在牌桌上 → 大廳看到「👀 觀戰」→ 四家的牌攤開、坐在電腦的位置、即時跟著牌局、◀ ▶ 換座位、離開回大廳
      丁：沒登入（匿名）→ 按觀戰被擋（要先登入）
+     丙再看一次、改按左上 ↩ → 跟「離開觀戰」一樣回大廳、配樂換回來（v1.82）
    規則：牌桌上的甲（有登入）讀不到 /spect、匿名的丁讀不到；沒人觀戰時開桌的人不發觀戰資料。
    執行： node test/e2e-spectate.test.js                                                        */
 'use strict';
@@ -154,15 +155,37 @@ async function register(p, email) {
 
     // ── 丙離開觀戰：回大廳、觀戰登記拿掉 ──
     const out = await C.page.evaluate(async k => {
-      const uid = Net.uid;
+      const uid = Net.uid, bgmIn = MJDev.bgm();
       document.getElementById('spect-exit').click();
       const back = await __until(() => __vis(document.getElementById('net-lobby')) && !document.body.classList.contains('spectating'), 10000);
       await new Promise(r => setTimeout(r, 500));
       const w = await __read('watch/' + k + '/' + uid);
-      return { back, watching: w.val, spect: __test.spect };
+      return { back, watching: w.val, spect: __test.spect, bgmIn, bgm: MJDev.bgm() };
     }, key);
     ok(out.back, '離開觀戰：回到大廳', JSON.stringify(out));
     ok(out.watching === null && !out.spect, '觀戰登記拿掉了（開桌的人不用再發）', JSON.stringify(out));
+    ok(out.bgmIn !== 'title' && out.bgm === 'title', '離開觀戰：配樂從牌桌曲換回大廳的曲子', JSON.stringify(out));
+
+    // ── 再看一次，這次按左上的 ↩（v1.82）：跟「離開觀戰」同一條路 ──
+    // v1.81 以前走單機的「回到標題畫面？牌局不會保留」，按了只換到標題畫面：觀戰沒收掉、牌桌曲一直播
+    const back2 = await C.page.evaluate(async k => {
+      [...document.querySelectorAll('#lobby-groups .net-watch')].find(b => /觀戰測試桌/.test(b.textContent)).click();
+      await __until(() => __test.spect && __test.spect.match && __test.spect.match.hand, 15000);
+      const uid = Net.uid, bgmIn = MJDev.bgm(), title = document.getElementById('hud-back').title;
+      document.getElementById('hud-back').click();
+      await new Promise(r => setTimeout(r, 300));
+      const asked = document.getElementById('leave-ov').classList.contains('show');
+      const back = await __until(() => __vis(document.getElementById('net-lobby')) && !document.body.classList.contains('spectating'), 10000);
+      await new Promise(r => setTimeout(r, 500));
+      const w = await __read('watch/' + k + '/' + uid);
+      return { title, asked, back, spect: !!__test.spect, watching: w.val, bgmIn, bgm: MJDev.bgm(),
+               bar: __vis(document.getElementById('spect-bar')), backTitle: document.getElementById('hud-back').title };
+    }, key);
+    ok(back2.title === '離開觀戰（B）', '觀戰時 ↩ 的提示是「離開觀戰（B）」', JSON.stringify(back2));
+    ok(!back2.asked, '觀戰按 ↩：不跳單機的「牌局不會保留」確認框（跟離開觀戰一樣直接走）', JSON.stringify(back2));
+    ok(back2.back && !back2.spect && !back2.bar && back2.watching === null, '觀戰按 ↩：回大廳、觀戰收掉、觀戰登記拿掉', JSON.stringify(back2));
+    ok(back2.bgmIn !== 'title' && back2.bgm === 'title', '觀戰按 ↩：牌桌曲停掉、換回大廳的曲子', JSON.stringify(back2));
+    ok(back2.backTitle === '回標題（B）', '離開觀戰後 ↩ 的提示換回「回標題（B）」', back2.backTitle);
 
     [A, C, D].forEach((p, i) => ok(p.errors.length === 0, '甲丙丁'[i] + '的頁面沒有 JavaScript 錯誤', p.errors.slice(0, 3).join(' | ')));
   } catch (e) {
