@@ -45,6 +45,12 @@ const SHANTEN_W  = 100;
 const UKEIRE_W   = 1;     // 受入張數，同向聽時的主要排序依據（最多 ~40）
 const DANGER_MAX = 150;
 
+/* 「普通」偶爾失誤（2026-10-19 使用者：「中等難度不容易胡牌」→ 定案 A＋B 的 B）。
+   模擬：四家都是普通時，一局平均 8 巡就結束、第一家聽牌平均 3.9 巡 —— 真人根本來不及做牌。
+   這個比例的回合不照最佳打法，從「還行」的牌（向聽數最多退一步）裡挑一張；**已聽牌不失誤**（看起來太蠢）。
+   高手不失誤。數字由模擬調（見 HANDOFF.md 的難度那一項）。可改：模擬工具會直接調這個物件 */
+const SLIP = { 2: 0.30 };
+
 /* 受入計算的成本控制，理由見 chooseDiscard */
 const UKEIRE_SHANTEN_GATE   = 2;
 const UKEIRE_MAX_CANDIDATES = 5;
@@ -229,6 +235,19 @@ function chooseDiscard(hand, seat, opts) {
     return okay[pick].i;
   }
 
+  // 普通的偶爾失誤（見 SLIP）。偽隨機：全桌牌河張數、座位、手牌張數、手上第一張的編號 —— 都是牌局裡的東西，可重放
+  const slip = SLIP[level] || 0;
+  if (slip > 0 && minSh >= 1) {
+    let river = 0;
+    for (let s = 0; s < SEATS; s++) river += hand.seats[s].discards.length;
+    const h0 = (me.hand[0] && me.hand[0].uid) || 0;
+    const roll = ((river * 2654435761 + seat * 40503 + n * 97 + h0 * 131) >>> 0) % 1000;
+    if (roll < slip * 1000) {
+      const okay = rows.filter(r => r.sh <= minSh + 1);
+      return okay[(roll * 7 + river) % okay.length].i;
+    }
+  }
+
   const maxThreat = (() => {
     let t = 0;
     for (let s = 0; s < SEATS; s++) if (s !== seat) t = Math.max(t, threatLevel(hand, s));
@@ -365,7 +384,7 @@ function flowHooks() {
 }
 
 return {
-  SHANTEN_W, UKEIRE_W, DANGER_MAX,
+  SHANTEN_W, UKEIRE_W, DANGER_MAX, SLIP,
   UKEIRE_SHANTEN_GATE, UKEIRE_MAX_CANDIDATES,
   shanten, clearCache,
   visibleCount, genbutsu, isSuji, baseDanger, threatLevel,

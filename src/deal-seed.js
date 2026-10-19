@@ -71,6 +71,19 @@ const RATE = 0.52;
    0.75 → 0.95（2026-09-29）：跟 RATE 同一個理由、同樣掉了約 24%
    （同一組 seed：69.6% → 53.7%），提高補回來（0.95 → 67.8%）。 */
 const RATE_BOOST = 0.95;
+
+/* 電腦座位的種子機率，依難度（2026-10-19 使用者：「中等難度不容易胡牌」→ 定案 A＋B 的 A）。
+   四家都 52% 時，常常有電腦 3、4 巡就聽牌（模擬：第一家聽牌平均 3.9 巡）。
+   電腦拿到種子只會照最有效率的打法衝，不是在「享受特殊牌型」—— 少給電腦，牌局就慢下來，玩家才做得了牌。
+   玩家照舊 RATE（連敗 RATE_BOOST）。高手維持原樣 */
+const AI_RATE = { 1: 0.20, 2: 0.20, 3: RATE };
+/* 四家的種子機率。seats：[{ ai: 是不是電腦, level: 電腦難度, boost: 玩家的追趕機制 }]
+   斷線代打的真人座位照真人算（ai: false）—— 那是他的位子，只是暫時由電腦出手 */
+function ratesFor(seats) {
+  return (seats || []).map(x => !x ? RATE
+    : x.ai ? (AI_RATE[x.level] != null ? AI_RATE[x.level] : RATE)
+    : (x.boost ? RATE_BOOST : RATE));
+}
 /* 打散幾張：從完整的 14 張胡牌拿掉 1 張（→ 13 張正好聽牌）之後，
    再留幾個位置給原本隨機發到的牌。
 
@@ -341,7 +354,7 @@ function buildFull(type, rng) {
 }
 
 return {
-  RATE, RATE_BOOST, MAX_RETRY, WEIGHTS, TYPES,
+  RATE, RATE_BOOST, AI_RATE, ratesFor, MAX_RETRY, WEIGHTS, TYPES,
   DISRUPT_HEAVY, DISRUPT_LIGHT, LIGHT_RATE,
   seedWall, seedSeat, placeHand, pickType, buildFull, BUILDERS,
 };
