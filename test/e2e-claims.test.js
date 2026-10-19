@@ -43,8 +43,12 @@ async function scenario(page, s) {
     });
     MJDev.quickStart('qin', 2, 0);
     // 奏章 → 天下形勢 → 發牌動畫 → 占卜（押普通）→ 開代打，等到對家要摸牌
+    /* ⚠️ 一律照**時間**等，不照圈數：電腦很忙（整套測試同時跑）時一圈遠不只 25ms，
+       照圈數等的話等不到就默默往下走 —— 情境 C 曾因此偶爾失敗（代打沒關掉，碰被代打自動過掉，看起來像「沒跳出碰」） */
+    const until = async (cond, ms) => { const t0 = Date.now(); while (Date.now() - t0 < ms) { if (cond()) return true; await wait(15); } return !!cond(); };
     let chose = false, ready = false;
-    for (let i = 0; i < 1200; i++) {
+    const tStart = Date.now();
+    while (Date.now() - tStart < 45000) {
       ['dc-ok', 'map-ok'].forEach(id => { const b = document.getElementById(id); if (vis(b)) b.click(); });
       const fb = document.querySelector('#fortune-ov.show #f-bets button[data-bet="normal"]');
       if (fb) { fb.click(); chose = true; }
@@ -74,12 +78,13 @@ async function scenario(page, s) {
 
     // 我打完之後要不要關代打
     if (!s.auto) {
-      for (let i = 0; i < 600 && !D.match.hand.seats[0].discards.length; i++) await wait(15);
+      if (!await until(() => D.match.hand.seats[0].discards.length > 0, 30000))
+        return { error: '等不到我這一家打出第一張（代打沒動？）—— 測試的前提沒成立，不是宣告視窗的問題' };
       MJDev.setAuto(false);
     }
     const out = { popup: null, clicked: null, trace: [], setupTurn: h.turn };
     const t0 = Date.now(); let lastK = '';
-    while (Date.now() - t0 < 12000) {
+    while (Date.now() - t0 < 30000) {
       { const H = D.match.hand, w = D.waiting;
         const k = H.turn + ':' + H.phase + ':' + (w ? w.kind + (w.seats ? '[' + w.seats + ']' : '') + (w.window ? w.window.tile.display + '<' + w.window.from : '') : '-')
           + ':auto=' + D.auto + ':vis=' + document.visibilityState + ':pops=' + [...document.querySelectorAll('.show')].map(e => e.id || e.className).join('/');
@@ -108,7 +113,7 @@ async function scenario(page, s) {
     ok(false, '找得到 Playwright', '請在專案資料夾跑：npm i -D playwright && npx playwright install chromium');
     return finish();
   }
-  const kill = setTimeout(() => { console.log('超過 3 分鐘，強制結束'); process.exit(1); }, 180000);
+  const kill = setTimeout(() => { console.log('超過 5 分鐘，強制結束'); process.exit(1); }, 300000);
   let g = null;
   try {
     g = await E.openGame(chromium);

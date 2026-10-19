@@ -32,7 +32,7 @@ ROOT = os.path.join(os.path.dirname(os.path.abspath(__file__)), '..')
 PROJECT = 'jcmj-4p'
 STALE_WAITING_MS = 60 * 60 * 1000        # net.js：等人中的桌 1 小時
 STALE_PLAYING_MS = 12 * 60 * 60 * 1000   # net.js：進行中的桌 12 小時
-GLOBAL_NODES = {'groups', 'camps'}       # 不是「每一桌一份」的頂層資料
+GLOBAL_NODES = {'groups', 'camps', 'players'}   # 不是「每一桌一份」的頂層資料（players：登入玩家的雲端進度，v1.69）
 
 
 def group_nodes():
