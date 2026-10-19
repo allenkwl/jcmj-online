@@ -65,6 +65,7 @@ function renderRow(container, tiles, opts) {
     // 剛摸進來的那張跟牌組拉開一點 —— 狀態層刻意不把它排進去，
     // 畫面也要讓它看得出來是分開的（麻將的摸切慣例）
     if (o.gapBeforeLast && i === tiles.length - 1) c.classList.add('just-drawn');
+    c.dataset.idx = i;          // 第幾張：手機往上滑打牌用（v1.84，主程式從觸控的位置找回是哪一張）
     if (o.onClick) {
       c.style.cursor = 'pointer';
       c.addEventListener('click', () => o.onClick(i, t));
@@ -72,6 +73,7 @@ function renderRow(container, tiles, opts) {
     // 鍵盤提示，跟原版一樣標在牌下面
     if (o.keyLabels && o.keyLabels[i]) {
       const wrap = el('div', 'ph-wrap');
+      wrap.dataset.idx = i;
       if (c.classList.contains('just-drawn')) {
         c.classList.remove('just-drawn');
         wrap.classList.add('just-drawn');
