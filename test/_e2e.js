@@ -59,9 +59,17 @@ async function openGame(chromium) {
   const errors = [];
   page.on('pageerror', e => errors.push(String(e)));
   if (process.env.E2E_DEBUG) page.on('console', m => console.log('  [console]', m.type(), m.text().slice(0, 200)));
+  /* E2E_CPU=6：把這一頁的運算速度降成 1/6（Chrome 的 CPU 節流），模擬「電腦很忙」。
+     有些錯只在整套測試一起跑、機器忙的時候才出現（2026-10-23 e2e-claims 情境 C 偶發逾時），
+     單獨跑重現不了 —— 用這個開關直接把它逼出來。 */
+  const cpu = +process.env.E2E_CPU || 0;
+  if (cpu > 1) {
+    const cdp = await page.context().newCDPSession(page);
+    await cdp.send('Emulation.setCPUThrottlingRate', { rate: cpu });
+  }
   await page.goto(`http://127.0.0.1:${srv.address().port}/${encodeURI(latest)}#test&mute`);
-  await page.waitForFunction(() => window.MJDev && window.__test, null, { timeout: 20000 });
-  return { page, errors, latest, close: async () => { await browser.close(); srv.close(); } };
+  await page.waitForFunction(() => window.MJDev && window.__test, null, { timeout: 20000 * Math.max(1, cpu) });
+  return { page, errors, latest, cpu, close: async () => { await browser.close(); srv.close(); } };
 }
 
 /* ── 本機 Firebase 模擬器（連線的端對端測試用）──

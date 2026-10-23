@@ -46,9 +46,19 @@ async function scenario(page, s) {
     /* ⚠️ 一律照**時間**等，不照圈數：電腦很忙（整套測試同時跑）時一圈遠不只 25ms，
        照圈數等的話等不到就默默往下走 —— 情境 C 曾因此偶爾失敗（代打沒關掉，碰被代打自動過掉，看起來像「沒跳出碰」） */
     const until = async (cond, ms) => { const t0 = Date.now(); while (Date.now() - t0 < ms) { if (cond()) return true; await wait(15); } return !!cond(); };
-    let chose = false, ready = false;
+    let chose = false, ready = false, restarts = 0;
     const tStart = Date.now();
-    while (Date.now() - tStart < 45000) {
+    /* 準備階段的狀態記錄：等不到時一起回報，才知道卡在哪（之前只回一句「等不到」，只能猜） */
+    const setup = []; let lastS = '';
+    const note = () => {
+      const H = D.match && D.match.hand, w = D.waiting;
+      const k = (H ? 'turn' + H.turn + ':' + H.phase : 'nohand') + ':' + (w ? w.kind + (w.seat != null ? w.seat : '') : '-')
+        + ':auto=' + D.auto + ':chose=' + chose
+        + ':pops=' + [...document.querySelectorAll('.show')].map(e => e.id || e.className).join('/');
+      if (k !== lastS) { setup.push(((Date.now() - tStart) / 1000).toFixed(1) + 's ' + k); lastS = k; }
+    };
+    while (Date.now() - tStart < 45000 * (1 + restarts)) {
+      note();
       ['dc-ok', 'map-ok'].forEach(id => { const b = document.getElementById(id); if (vis(b)) b.click(); });
       const fb = document.querySelector('#fortune-ov.show #f-bets button[data-bet="normal"]');
       if (fb) { fb.click(); chose = true; }
@@ -56,9 +66,19 @@ async function scenario(page, s) {
       if (chose && h && h.phase !== 'over' && !D.auto) MJDev.setAuto(true);
       // 對家或上家要摸牌的時候動手（只等對家的話，有人碰牌跳過摸牌就會等不到）
       if (chose && D.auto && h && (h.turn === 2 || h.turn === 3) && h.phase === 'draw') { ready = true; break; }
+      /* 還沒等到就**合法地結束了**（2026-10-23 查到的偶發失敗）：玩家坐莊開代打第一手就自摸（天和）、
+         頭一兩張就被榮和 —— 模擬 3000 局約 0.3%。遊戲沒錯，是這裡只會一直等「對家摸牌」，
+         結算框跳出來沒人按，等滿 45 秒就報「開局流程卡住」。→ 重開一局（最多 3 次） */
+      if (chose && h && h.phase === 'over' && restarts < 3) {
+        restarts++;
+        setup.push(((Date.now() - tStart) / 1000).toFixed(1) + 's 這一局在準備好之前就結束了（' + ((h.result && h.result.type) || '?') + '），重開');
+        MJDev.setAuto(false);
+        MJDev.quickStart('qin', 2, 0);
+        chose = false;
+      }
       await wait(25);
     }
-    if (!ready) return { error: '等不到「對家要摸牌」的時機（開局流程卡住？）' };
+    if (!ready) return { error: '等不到「對家要摸牌」的時機（開局流程卡住？）', setup: setup.slice(-25) };
 
     // 換牌：四家都換成安排好的。
     // ⚠️ 對家、上家也要整副換掉（全是筒＋北）、連摸的牌也指定：第一版只拿掉幾張，
@@ -126,14 +146,14 @@ async function scenario(page, s) {
     // A 代打開著
     const a = await scenario(page, { mine: WAIT7, next: NEXT7, myDraw: '西', nextDraw: '南', nextDiscard: '7條',
                                      avoid: ['7條', '發', '白'], auto: true, waitForEnd: true });
-    ok(!a.error, 'A 開局流程走得到', a.error);
+    ok(!a.error, 'A 開局流程走得到', a.error && a.error + '\n      ' + (a.setup || []).join('\n      '));
     ok(a.result && a.result.type === 'ron' && a.result.winners.includes(0) && a.result.from === 1,
        'A 代打：聽七條、下家打七條 → 代打榮和', JSON.stringify({ r: a.result, setup: a.setupTurn, trace: a.trace, disc: a.disc }));
 
     // B 代打關著
     const b = await scenario(page, { mine: WAIT7, next: NEXT7, myDraw: '西', nextDraw: '南', nextDiscard: '7條',
                                      avoid: ['7條', '發', '白'], auto: false, click: '榮和', waitForEnd: true });
-    ok(!b.error, 'B 開局流程走得到', b.error);
+    ok(!b.error, 'B 開局流程走得到', b.error && b.error + '\n      ' + (b.setup || []).join('\n      '));
     ok(b.popup && b.popup.some(t => t.includes('榮和')), 'B 手動：跳出「榮和！」', JSON.stringify({ p: b.popup, setup: b.setupTurn, trace: b.trace, disc: b.disc }));
     ok(b.result && b.result.type === 'ron' && b.result.winners.includes(0),
        'B 手動：按下榮和就胡', JSON.stringify(b.result));
@@ -143,7 +163,7 @@ async function scenario(page, s) {
       mine: ['1萬', '4萬', '7萬', '2筒', '5筒', '8筒', '3條', '6條', '9條', '東', '南', '發', '發'],
       next: ['1萬', '2萬', '3萬', '4萬', '5萬', '6萬', '7萬', '8萬', '9萬', '東', '東', '南', '發'],
       myDraw: '西', nextDraw: '南', nextDiscard: '發', avoid: ['發'], auto: false, click: '過' });
-    ok(!c.error, 'C 開局流程走得到', c.error);
+    ok(!c.error, 'C 開局流程走得到', c.error && c.error + '\n      ' + (c.setup || []).join('\n      '));
     ok(c.popup && c.popup.some(t => t.includes('碰')), 'C 下家打出我有一對的發 → 跳出「碰」', JSON.stringify(c.popup));
     ok(c.popup && c.popup.some(t => t.includes('過')), 'C 視窗裡也有「過」', JSON.stringify(c.popup));
 
