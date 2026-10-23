@@ -204,6 +204,51 @@ async function pick(p, kingdom) {
         h.seats[k.k].hand = k.hand; h.seats[k.k].melds = k.melds; MJDev.redraw(); MJDev.republish(); });
     }
 
+    // ── 同一場的下一局：手牌比公開狀態晚到時，發牌動畫不能拿上一局的牌（v1.87）──
+    // 2026-10-23 使用者：「發完牌是清一色，好像是上一局的牌，占卜時就是不一樣的，之後就是占卜看到的牌」。
+    // 公開狀態與自己的手牌分開到；乙這台把手牌延遲 1.5 秒才交給遊戲，穩定重現「公開狀態先到」。
+    await B.page.evaluate(() => {
+      const ref = Net._handRef, cb0 = Net._handCb;
+      window.__hand0 = cb0;
+      ref.off('value', cb0);
+      Net._handCb = snap => setTimeout(() => cb0(snap), 1500);
+      ref.on('value', Net._handCb);
+      window.__deal = [];
+      const run0 = MJDealAnim.run;
+      MJDealAnim.run = function (o) {
+        const h = o.match.hand;
+        window.__deal.push({ handNo: h.handNo, uids: (h.seats[o.mySeat].hand || []).map(t => t.uid).join(',') });
+        return run0.apply(this, arguments);
+      };
+    });
+    const hn1 = await A.page.evaluate(() => { MJDev.drainWall(); MJDev.setAuto(true); MJDev.republish(); return window.__test.match.hand.handNo; });
+    await B.page.evaluate(() => MJDev.setAuto(true));
+    const nextHand = p => p.evaluate(async () => {
+      for (let i = 0; i < 400; i++) {
+        const b = [...document.querySelectorAll('button')].find(x => /確認，下一局/.test(x.textContent) && __vis(x));
+        if (b) { b.click(); return true; }
+        await new Promise(r => setTimeout(r, 100));
+      }
+      return false;
+    });
+    const [na, nb] = await Promise.all([nextHand(A.page), nextHand(B.page)]);
+    ok(na && nb, '第一局流局（牌山抽乾），兩邊按「確認，下一局」');
+    const [, dealB] = await Promise.all([toTable(A.page), B.page.evaluate(async (hn1) => {
+      // 等乙的占卜開出來，記下那一刻的手牌（押注之前）
+      await __until(() => document.querySelector('#fortune-ov.show') && window.__test.match.hand.handNo > hn1, 20000);
+      const m = window.__test.match, me = m.seats.findIndex(s => s.name === '乙');
+      const now = m.hand.seats[me].hand.map(t => t.uid).join(',');
+      const deal = window.__deal.filter(d => d.handNo === m.hand.handNo);
+      const fb = document.querySelector('#fortune-ov.show #f-bets button[data-bet="normal"]'); if (fb) fb.click();
+      // 手牌監聽換回原本的（後面的測試不要再延遲）
+      Net._handRef.off('value', Net._handCb); Net._handCb = window.__hand0; Net._handRef.on('value', Net._handCb);
+      return { handNo: m.hand.handNo, now, deal, all: window.__deal };
+    }, hn1)]);
+    ok(dealB.handNo === hn1 + 1, '進到同一場的第二局', JSON.stringify({ hn1, hn: dealB.handNo }));
+    ok(dealB.deal.length === 1, '第二局的發牌動畫只跑一次', JSON.stringify(dealB.all.map(d => d.handNo)));
+    ok(dealB.deal.length && dealB.deal[0].uids === dealB.now && dealB.now.length > 0,
+       '發牌動畫拿的手牌＝占卜時的手牌（不是上一局的）', JSON.stringify({ deal: dealB.deal.map(d => d.uids.slice(0, 40)), now: dealB.now.slice(0, 40) }));
+
     // ── 群主直接結算：甲第一、乙第二 ──
     await A.page.evaluate(async () => { await new Promise(r => setTimeout(r, 800)); const s = window.__test.match.seats;
       MJDev.finishMatch(s.map(x => x.name === '甲' ? 400 : x.name === '乙' ? 200 : -300)); });
