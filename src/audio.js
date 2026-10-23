@@ -359,7 +359,7 @@ const BGM = (() => {
     stopCurrent(fadeDur);
   }
 
-  return {
+  const api = {
     play,
     stop,
     setEnabled(v) {
@@ -379,7 +379,57 @@ const BGM = (() => {
     preload(scene) { if (enabled && scene) load(scene); },
     /* 在使用者手勢的當下喚醒（見檔尾 resume 的說明） */
     unlock() { try { unlockCtx(getCtx()); } catch (_) {} },
+    say, preloadVoices, lastVoice() { return lastVoice; },
   };
+
+  /* ── 主公的台詞（v1.89）：擇國而立按下主公時說一句 ──
+     2026-10-23 使用者：「擇國而立時，可以按到哪一個主公就讓他發個聲音嗎？」音檔 assets/audio/voice/<國>.mp3
+     （tools/build-lord-voices.py：H200 上的 CosyVoice 產生、-16 LUFS）。
+     ‧ 用這裡已經解鎖的 AudioContext 播，不用 <audio>：iPhone 上每個 <audio> 都要先在手勢裡播過一次才能叫它播，
+       手把按下又不算手勢（見 CLAUDE.md 的 iPhone 一節）
+     ‧ 跟著**音效**開關走（台詞算音效；靜音鈕兩個一起關）。BGM 開關不影響
+     ‧ 說話時 BGM 降到三成五，說完回來；連按別人 → 前一句停掉
+     ‧ lastVoice：最後一次要說的是誰（靜音時也記），測試用 */
+  const voiceBuf = {};
+  let voiceSrc = null, lastVoice = null, duckTimer = null;
+  const voiceUrl = id => 'assets/audio/voice/' + id + '.mp3';
+  function loadVoice(id) {
+    if (!voiceBuf[id]) voiceBuf[id] = canFetch
+      ? fetch(voiceUrl(id)).then(r => { if (!r.ok) throw new Error(r.status); return r.arrayBuffer(); })
+          .then(ab => new Promise((res, rej) => getCtx().decodeAudioData(ab, res, rej))).catch(() => null)
+      : Promise.resolve(null);
+    return voiceBuf[id];
+  }
+  function preloadVoices(ids) { (ids || []).forEach(loadVoice); }
+  function duck(on) {
+    if (!masterGain || !ctx) return;
+    const t = ctx.currentTime, g = masterGain.gain;
+    try { g.cancelScheduledValues(t); g.setValueAtTime(g.value, t); g.linearRampToValueAtTime(on ? volume * 0.35 : volume, t + (on ? 0.12 : 0.6)); } catch (_) {}
+  }
+  function say(id) {
+    lastVoice = id;
+    if (!id || !SFX.isEnabled()) return;
+    const c = getCtx();                          // 手勢當下喚醒（點擊、觸控、按鍵）
+    if (voiceSrc) { try { voiceSrc.stop(); } catch (_) {} voiceSrc = null; }
+    const me = lastVoice = id;
+    loadVoice(id).then(buf => {
+      if (lastVoice !== me) return;              // 等載入的時候又按了別人
+      if (!buf) {                                // file:// 讀不了 → 退回 <audio>（只有本機雙擊會走到）
+        try { const a = new Audio(voiceUrl(id)); a.play().catch(() => {}); } catch (_) {}
+        return;
+      }
+      const src = c.createBufferSource();
+      src.buffer = buf;
+      src.connect(c.destination);
+      src.start();
+      voiceSrc = src;
+      duck(true);
+      clearTimeout(duckTimer);
+      duckTimer = setTimeout(() => { if (voiceSrc === src) voiceSrc = null; duck(false); }, buf.duration * 1000 + 150);
+    });
+  }
+
+  return api;
 })();
 
 /* 讓呼叫端在**使用者手勢的當下**喚醒聲音（點擊、觸控結束、按鍵的處理函式裡同步呼叫）。
