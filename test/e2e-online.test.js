@@ -226,13 +226,20 @@ async function pick(p, kingdom) {
     const nextHand = p => p.evaluate(async () => {
       for (let i = 0; i < 400; i++) {
         const b = [...document.querySelectorAll('button')].find(x => /確認，下一局/.test(x.textContent) && __vis(x));
-        if (b) { b.click(); return true; }
+        if (b) {
+          window.__drawNote = { title: (document.querySelector('.ho-title') || {}).textContent || '',
+                                money: (document.querySelector('.ho-money') || {}).textContent || '' };
+          b.click(); return true;
+        }
         await new Promise(r => setTimeout(r, 100));
       }
       return false;
     });
     const [na, nb] = await Promise.all([nextHand(A.page), nextHand(B.page)]);
     ok(na && nb, '第一局流局（牌山抽乾），兩邊按「確認，下一局」');
+    // v1.88：流局有輸贏時結算框要說明分數哪來的（使用者：「流局為什麼有分數？」）
+    const dn = await B.page.evaluate(() => window.__drawNote);
+    ok(dn && dn.title === '流局' && /聽牌罰符|不罰分/.test(dn.money), '流局的結算框說明了分數的來源（聽牌罰符／不罰分）', JSON.stringify(dn));
     const [, dealB] = await Promise.all([toTable(A.page), B.page.evaluate(async (hn1) => {
       // 等乙的占卜開出來，記下那一刻的手牌（押注之前）
       await __until(() => document.querySelector('#fortune-ov.show') && window.__test.match.hand.handNo > hn1, 20000);
