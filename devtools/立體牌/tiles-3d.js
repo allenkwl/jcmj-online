@@ -8,7 +8,7 @@
 
    ── 做法：牌身用圖、牌面用程式 ──
      牌身：Codex 生的空白立體牌（正投影：左右兩邊平行，一排擺起來從頭到尾貼緊），devtools/立體牌/sprites/
-       stand  立著、牌面朝自己（自己的手牌）
+       stand  立著、牌面朝自己（自己的手牌）—— 沒有用：自己的手牌維持平面（牌面會被擠小，使用者定案）
        faceV  躺著、牌面朝上、長邊朝遠方（牌河、副露、祥瑞指示牌）　faceH  同上、長邊左右（左右兩家的牌河、副露）
        backV  躺著、牌背朝上（對家的手牌、暗槓）　　　　　　　　　　 backH  同上、長邊左右（左右兩家的手牌）
      牌面：34 種牌照舊用 tiles.js 的 drawFaceInner 畫在牌身的「頂面」上 —— AI 不用畫 34 種 × 好幾個方向
@@ -58,10 +58,12 @@
     const ctx = c.getContext('2d');
     ctx.scale(dpr, dpr);
 
+    /* 自己的手牌（立著、牌面朝自己）維持原本平面的畫法 —— 2026-10-24 使用者：「玩家手牌改立體會變小，玩家的手牌不要改吧」。
+       立著的牌身頂上多一條厚度，外框一樣大時牌面就被擠小了。stand.png 留著，沒有用到 */
+    if (!o.faceDown && tile && !thin && rot === 0) return orig(tile, opts);
     // 用哪一種牌身
     let kind;
     if (o.faceDown || !tile) kind = swap ? 'backH' : 'backV';
-    else if (!thin && rot === 0) kind = 'stand';
     else kind = swap ? 'faceH' : 'faceV';
     const im = IMG[kind];
     if (!im.complete || !im.naturalWidth) return orig(tile, opts);     // 圖還沒載完：先用原本的
