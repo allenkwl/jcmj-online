@@ -147,6 +147,10 @@ window.MJDevtools = [
   "family": "發牌動畫",
   "all": [
    {
+    "ver": "0.6",
+    "rel": "devtools/發牌動畫v0.6.html"
+   },
+   {
     "ver": "0.5",
     "rel": "devtools/發牌動畫v0.5.html"
    },
@@ -168,10 +172,10 @@ window.MJDevtools = [
    }
   ],
   "newest": {
-   "ver": "0.5",
-   "rel": "devtools/發牌動畫v0.5.html"
+   "ver": "0.6",
+   "rel": "devtools/發牌動畫v0.6.html"
   },
-  "count": 5,
+  "count": 6,
   "needsServer": true,
   "title": "發牌動畫",
   "sub": "發牌動畫實驗台：立體版（寫實的牌與骰子）、現行版、舊版對照，改的是副本，不會動到線上玩家",
