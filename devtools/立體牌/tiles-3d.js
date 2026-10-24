@@ -25,11 +25,11 @@
   /* face：牌面（花色畫在這裡）在圖裡的範圍 [x0, y0, x1, y1]，照切出來的圖量的（sprites/README.md） */
   /* top：頂面佔圖高的比例（其餘＝前緣，一個牌的厚度）—— 一列上下排的牌，下面那張要往上蓋住上面那張的前緣 */
   const BODY = {
-    stand: { face: [0.03, 0.105, 0.97, 0.985], top: 1 },
-    faceV: { face: [0.02, 0.01, 0.98, 0.653], top: 0.653 },
-    faceH: { face: [0.015, 0.02, 0.985, 0.585], top: 0.585 },
-    backV: { top: 0.653 },
-    backH: { top: 0.585 },
+    stand: { face: [0.03, 0.216, 0.97, 0.985], top: 1 },
+    faceV: { face: [0.02, 0.01, 0.98, 0.684], top: 0.684 },
+    faceH: { face: [0.015, 0.02, 0.985, 0.605], top: 0.605 },
+    backV: { top: 0.658 },
+    backH: { top: 0.603 },
   };
   const IMG = {};
   Object.keys(BODY).forEach(k => {
