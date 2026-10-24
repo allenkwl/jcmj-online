@@ -82,7 +82,15 @@ const chromium = E.findChromium();
       out.offerTitle = pop ? pop.textContent : '';
       key('Enter'); await wait(150);
       out.popPick = !!document.querySelector('#si-declare.picking') && focusIsBest();
+      /* v2.03 宣戰的比較表：每一種打法一列（打哪張 → 聽哪些、剩幾張），最好的打★；上鍵移到表上，那一列亮 */
+      const rows = [...document.querySelectorAll('#decl-panel .decl-row')];
+      out.panel = rows.map(r => ({ disp: r.dataset.disp, star: r.querySelector('.dp-star').textContent,
+        tiles: r.querySelectorAll('canvas').length, left: r.querySelector('.dp-left').textContent, title: r.title }));
+      key('ArrowUp'); await wait(60);
+      const cur = MJInput.current();
+      out.rowFocus = !!(cur && cur.classList.contains('decl-row') && cur.classList.contains('hl'));
       key('A'); await wait(120);                      // 再按一次 A：取消挑牌（測按鈕那一條路）
+      out.panelGone = !document.getElementById('decl-panel');
       out.popCancel = !document.querySelector('#si-declare.picking');
       await until(() => document.getElementById('si-declare'), 3000);
       const btn = document.getElementById('si-declare');
@@ -141,6 +149,16 @@ const chromium = E.findChromium();
     ok(r.offer === '宣戰/自己來' && /可以宣戰/.test(r.offerTitle), '聽牌視窗問的是宣戰（不是交給系統打）', JSON.stringify(r.offer));
     ok(r.popPick === true, '視窗按宣戰（Enter）：進入挑牌、焦點停在可以宣戰的牌', JSON.stringify(r.popPick));
     ok(r.popCancel === true, '再按一次 A：取消挑牌', JSON.stringify(r.popCancel));
+    ok(r.panel && r.panel.length === 2 && r.panel.map(x => x.disp).sort().join(',') === '南,西', '宣戰比較表：兩種打法（打南、打西）各一列', JSON.stringify(r.panel));
+    ok(r.panel && r.panel[0].star === '★' && r.panel[1].star === '', '最好的那個打★、排第一', JSON.stringify(r.panel));
+    // 剩幾張只算看得到的（別家前幾巡的牌河還在，南、西可能被打過）—— 格式對、★那一列剩最多
+    const nleft = x => Number((x.left.match(/剩 (\d+) 張/) || [0, -1])[1]);
+    ok(r.panel && r.panel.every(x => x.tiles === 2 && nleft(x) >= 0 && nleft(x) <= 3), '每一列：打的牌＋聽的牌畫成小牌，寫「剩 N 張」', JSON.stringify(r.panel));
+    ok(r.panel && nleft(r.panel[0]) >= nleft(r.panel[1]), '★那一列剩的最多', JSON.stringify(r.panel));
+    ok(r.panel && r.panel.some(x => x.disp === '南' && /^西 剩 \d/.test(x.title)) && r.panel.some(x => x.disp === '西' && /^南 剩 \d/.test(x.title)),
+       '打南 → 聽西、打西 → 聽南', JSON.stringify(r.panel));
+    ok(r.rowFocus === true, '方向鍵上：焦點移到表上的列，那一列亮起來', JSON.stringify(r.rowFocus));
+    ok(r.panelGone === true, '取消挑牌：比較表收起來', JSON.stringify(r.panelGone));
     ok(r.btnFocusBest === true, '按手牌上方的宣戰鈕：焦點一樣停在可以宣戰的牌', JSON.stringify(r.btnFocusBest));
     ok(r.hit === true, '宣戰鈕滑鼠、手指點得到（不被上層蓋掉）', JSON.stringify(r.hit));
     ok(r.focusable === true, '宣戰鈕手把／方向鍵選得到，Enter 按得下去', JSON.stringify(r.focusable));

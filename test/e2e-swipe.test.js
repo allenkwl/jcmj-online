@@ -47,8 +47,11 @@ const chromium = E.findChromium();
         const dc = document.querySelector('#decree-ov.show button'); if (dc) dc.click();
         const mo = document.querySelector('#map-ov.show #map-ok'); if (mo) mo.click();
         const fb = document.querySelector('#fortune-ov.show #f-bets button[data-bet="normal"]'); if (fb) fb.click();
+        /* 宣戰視窗（v1.97 起手牌能宣戰就跳，模態：開著時手牌不能滑、不能點）—— 這裡測的是打牌，按「自己來」 */
+        const no = [...document.querySelectorAll('#act-pop.show .auto-offer')].find(b => /自己來/.test(b.textContent)); if (no) no.click();
         const w = __test.waiting;
-        if (w && w.kind === 'turn' && w.seat === 0 && !document.querySelector('#fortune-ov.show')) return true;
+        if (w && w.kind === 'turn' && w.seat === 0 && !document.querySelector('#fortune-ov.show')
+            && !document.querySelector('#act-pop.show .auto-offer')) return true;
         await W(100);
       }
       return false;
@@ -103,8 +106,9 @@ const chromium = E.findChromium();
       for (let i = 0; i < 300; i++) {
         const fb = document.querySelector('#fortune-ov.show #f-bets button[data-bet="normal"]'); if (fb) fb.click();
         const pass = [...document.querySelectorAll('.popup.show button, #claim-ov.show button')].find(b => /過/.test(b.textContent)); if (pass) pass.click();
+        const no = [...document.querySelectorAll('#act-pop.show .auto-offer')].find(b => /自己來/.test(b.textContent)); if (no) no.click();
         const w = __test.waiting;
-        if (w && w.kind === 'turn' && w.seat === 0) return true;
+        if (w && w.kind === 'turn' && w.seat === 0 && !document.querySelector('#act-pop.show .auto-offer')) return true;
         await new Promise(r => setTimeout(r, 100));
       }
       return false;
