@@ -52,7 +52,8 @@ const chromium = E.findChromium();
         const h = D.match && D.match.hand;
         if (chose && h && h.phase !== 'over' && !D.auto) MJDev.setAuto(true);
         if (chose && D.auto && h && h.turn === 3 && h.phase === 'draw' && !h.seats.some(s => s.declared)) { ready = true; break; }
-        if (chose && h && h.phase === 'over' && restarts < 3) { restarts++; MJDev.setAuto(false); MJDev.quickStart('qin', 2, 0); chose = false; }
+        /* 這一局在準備好之前就結束了，或電腦先宣戰了（普通難度聽牌就宣戰，v1.92）—— 安排好的牌型會被打亂，重開一局 */
+        if (chose && h && (h.phase === 'over' || h.seats.some(s => s.declared)) && restarts < 6) { restarts++; MJDev.setAuto(false); MJDev.quickStart('qin', 2, 0); chose = false; }
         await wait(25);
       }
       if (!ready) return { error: '等不到「上家要摸牌」的時機' };
@@ -80,7 +81,16 @@ const chromium = E.findChromium();
       out.btn = btn ? btn.textContent : null;
       out.choices = (D.waiting.options.declare || []).map(i => h.seats[0].hand[i].display).sort().join(',');
       if (!btn) return Object.assign(out, { error: '沒有宣戰按鈕' });
-      btn.click();
+      /* v1.96：真的點得到（v1.92～v1.95 這顆被 .selfinfo 的 pointer-events:none 蓋掉，滑鼠、手指都點不到，
+         測試卻用 btn.click() 繞過去了）—— 看按鈕正中央點到的是不是它自己 */
+      const rc = btn.getBoundingClientRect();
+      out.hit = document.elementFromPoint(rc.left + rc.width / 2, rc.top + rc.height / 2) === btn;
+      /* 手把／方向鍵選得到（v1.92～v1.95 不在 focusables 裡）：上 → 功能鈕那一組，左右找宣戰鈕，Enter 按下 */
+      const key = k => document.dispatchEvent(new KeyboardEvent('keydown', { key: k, bubbles: true, cancelable: true }));
+      key('ArrowUp'); await wait(30);
+      for (let i = 0; i < 10 && MJInput.current() !== btn; i++) { key('ArrowRight'); await wait(30); }
+      out.focusable = MJInput.current() === btn;
+      if (out.focusable) key('Enter'); else btn.click();
       await wait(100);
       out.picking = !!document.querySelector('#si-declare.picking');
       out.okTiles = [...document.querySelectorAll('#hand-bottom .decl-ok')].length;
@@ -120,6 +130,8 @@ const chromium = E.findChromium();
     if (r.error) throw new Error(r.error);
     ok(/宣戰/.test(r.btn), '輪到我、打掉某張就聽：手牌上方有「⚔ 宣戰」', JSON.stringify(r.btn));
     ok(r.choices === '南,西', '能宣戰的是南、西', r.choices);
+    ok(r.hit === true, '宣戰鈕滑鼠、手指點得到（不被上層蓋掉）', JSON.stringify(r.hit));
+    ok(r.focusable === true, '宣戰鈕手把／方向鍵選得到，Enter 按得下去', JSON.stringify(r.focusable));
     ok(r.picking && r.okTiles === 2 && r.noTiles === 12, '挑牌模式：兩張亮紅框、其餘變暗', JSON.stringify(r));
     ok(r.afterBad.len === 14 && !r.afterBad.declared && r.afterBad.picking, '點不聽的牌：沒打出去，還在挑牌模式', JSON.stringify(r.afterBad));
     ok(r.declared && r.declared.menzen === true, '點南：宣戰成功（門清）', JSON.stringify(r.declared));
