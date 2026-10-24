@@ -67,12 +67,19 @@ async function pick(p, kingdom) {
       /* v1.98：每一段（征服 N 國／X 兩／第 N 場）不拆行 —— 原本窄卡片（手機）會斷在數字跟「兩」中間。
          無頭瀏覽器全螢幕時改不了視窗大小，就把這一張卡片暫時壓窄（強迫換行）再量，量完還原 */
       const pr = c.querySelector('.kprog'), w0 = pr ? pr.style.width : '';
-      if (pr) pr.style.width = '90px';
+      if (pr) { pr.style.width = '90px'; if (window.kprogSeps) kprogSeps(pr); }
       const segs = [...c.querySelectorAll('.kprog .kp-seg')];
-      const lines = pr ? Math.round(pr.getBoundingClientRect().height / parseFloat(getComputedStyle(pr).lineHeight || 14)) : 0;
+      /* v1.99：換行的地方不要「・」（使用者：「征服 5 國・，後面的點去掉」）——
+         看得到的「・」前後兩段要在同一行；壓窄之後一定有換行，所以至少藏掉一個 */
+      const seps = pr ? [...pr.querySelectorAll('.kp-sep')] : [];
+      const shown = seps.filter(x => getComputedStyle(x).display !== 'none');
+      const sameLine = x => { const a = x.previousElementSibling, b = x.nextElementSibling && x.nextElementSibling.nextElementSibling;
+        return a && b && Math.abs(a.getBoundingClientRect().top - b.getBoundingClientRect().top) <= 2; };
       cards[c.dataset.id] = { prog: (pr || {}).textContent || '', taken: c.classList.contains('dim'),
-        segs: segs.length, segsWhole: segs.every(x => x.getClientRects().length === 1), wrapped: lines };
-      if (pr) pr.style.width = w0;
+        segs: segs.length, segsWhole: segs.every(x => x.getClientRects().length === 1),
+        seps: seps.length, sepsHidden: seps.length - shown.length, sepsOk: shown.every(sameLine) };
+      if (pr) { pr.style.width = w0; if (window.kprogSeps) kprogSeps(pr); }
+      if (pr && seps.length) cards[c.dataset.id].sepsWideOk = [...pr.querySelectorAll('.kp-sep')].filter(x => getComputedStyle(x).display !== 'none').every(sameLine);
     });
     const card = document.querySelector('#kg-home .kcard[data-id="' + k + '"]');
     if (card) card.click();
@@ -126,6 +133,8 @@ async function pick(p, kingdom) {
        '甲的秦國卡片寫著自己的進度', JSON.stringify(aCards.qin));
     ok(aCards.zhao.prog === '尚未出征', '甲沒打過的國寫「尚未出征」', JSON.stringify(aCards.zhao));
     ok(aCards.qin.segs === 3 && aCards.qin.segsWhole, '手機窄卡片：「征服 N 國」「X 兩」「第 N 場」各自不拆行（兩不會掉到數字下一行）', JSON.stringify(aCards.qin));
+    ok(aCards.qin.seps === 2 && aCards.qin.sepsHidden >= 1 && aCards.qin.sepsOk, '窄卡片：換行的地方不留「・」，看得到的「・」前後在同一行', JSON.stringify(aCards.qin));
+    ok(aCards.qin.sepsWideOk === true, '卡片寬度還原後重排：看得到的「・」前後一樣在同一行', JSON.stringify(aCards.qin));
 
     // ── 乙：加入 → 擇國（秦國已有主公） ──
     ok(await openLobby(B.page), '乙進得了大廳');
