@@ -4,7 +4,8 @@
    本機 Firebase 模擬器＋無頭 Chromium，計時縮短（MJDev.netTiming）：
 
    第一桌：手機（帳號 X，開桌）＋ 乙（匿名）
-     1 久久不動：輪到手機出牌不動 → 中央倒數「N 秒後由○○代打」→ 武將代打（idle）→ 一碰畫面就回來
+     1 出牌時限（v2.05：每手 15 秒＋每局 30 秒備用，測試縮短）：輪到手機不動 → 中央倒數 → 備用時間 → 自動摸切（不代打）；
+       第二手又不動 → 連續兩手才判定暫離 → 武將代打（idle）→ 一碰畫面就回來
      2 手機跳背景（凍住、不再更新「正在哪一桌」）→ 電腦用同一帳號從大廳點那一桌 →
        直接回到座位、接著當開桌的人（不是待入座、不重開一場）；乙沒有接手、牌局照常往前
        → 手機回到前景：被擋「你的帳號正在…（另一台裝置）」、回大廳；成員節點還在（是電腦在用）
@@ -37,7 +38,7 @@ const HELPERS = `
     document.dispatchEvent(new Event('visibilitychange'));
   };
 `;
-const FAST = { turnMs: 5000, warnMs: 4000, stallMs: 2000 };
+const FAST = { baseMs: 2500, bankMs: 2000, warnMs: 2000, stallMs: 2000, awayAfter: 2 };   // 線上：每手 15 秒＋每局 30 秒備用
 
 async function newPlayer(browser, base, name) {
   const ctx = await browser.newContext({ viewport: { width: 1280, height: 720 } });
@@ -147,25 +148,39 @@ const discards = p => p.page.evaluate(() => { const h = window.__test.match && w
     await startTable(P, O, '活桌', 'qin', 'zhao');
     const uidP = await P.page.evaluate(() => Net.clientId);
 
-    // 1 久久不動（手機坐莊，第一手就是他）
+    // 1 出牌時限（手機坐莊，第一手就是他）
     const idle = await P.page.evaluate(async () => {
       const me = MJDev.net.me;
-      const myTurn = () => { const w = window.__test.waiting; return w && w.kind === 'turn' && w.seat === me; };
+      const W = window.__test;
+      const myTurn = () => { const w = W.waiting; return w && w.kind === 'turn' && w.seat === me; };
       if (!await __until(myTurn, 15000)) return { error: '等不到輪到手機' };
-      const warned = await __until(() => document.getElementById('idle-warn').classList.contains('show'), 6000);
-      const text = document.getElementById('idle-warn').textContent;
-      const subbed = await __until(() => { const s = window.__test.match.seats[me].sub; return s && s.idle; }, 8000);
-      const played = await __until(() => window.__test.match.hand.seats[me].discards.length > 0, 8000);
+      const out = {};
+      const lastUid = W.match.hand.seats[me].hand.slice(-1)[0].uid;
+      const warnEl = document.getElementById('idle-warn');
+      out.warned = await __until(() => warnEl.classList.contains('show') && /備用/.test(warnEl.textContent), 6000);
+      out.text1 = warnEl.textContent;
+      out.inBank = await __until(() => /備用時間/.test(warnEl.textContent), 6000);
+      out.text2 = warnEl.textContent;
+      out.discarded = await __until(() => W.match.hand.seats[me].discards.length > 0, 8000);
+      const d0 = W.match.hand.seats[me].discards[0];
+      out.tsumogiri = !!(d0 && d0.uid === lastUid);
+      out.notSubbed = !W.match.seats[me].sub;
+      // 第二手又不動：連續兩手 → 暫離、武將代打（備用已經用完，只有基本時間）
+      out.turn2 = await __until(() => myTurn() && W.match.hand.seats[me].discards.length === 1, 40000);
+      out.subbed = await __until(() => { const s = W.match.seats[me].sub; return s && s.idle; }, 10000);
       document.dispatchEvent(new Event('pointerdown'));
-      const back = await __until(() => !window.__test.match.seats[me].sub, 5000);
-      return { warned, text, subbed, played, back, subbedFlag: !!window.__test.match.seats[me].subbed };
+      out.back = await __until(() => !W.match.seats[me].sub, 5000);
+      out.subbedFlag = !!W.match.seats[me].subbed;
+      return out;
     });
     ok(!idle.error, '輪到手機出牌', idle.error);
-    ok(idle.warned && /\d+ 秒後由 .+ 代打/.test(idle.text), '最後幾秒：畫面中央倒數「N 秒後由○○代打」', JSON.stringify(idle.text));
-    ok(idle.subbed, '時間到：武將代打（久久不動）', JSON.stringify(idle));
-    ok(idle.played, '武將替他出了牌，牌局沒停');
+    ok(idle.warned && /\d+ 秒（之後用備用 \d+ 秒）/.test(idle.text1), '基本時間快到：畫面中央倒數「N 秒（之後用備用 M 秒）」', JSON.stringify(idle.text1));
+    ok(idle.inBank && /備用時間 \d+ 秒/.test(idle.text2), '進入備用時間：「備用時間 N 秒　用完自動摸切」', JSON.stringify(idle.text2));
+    ok(idle.discarded && idle.tsumogiri, '時間到：自動摸切（打掉剛摸的那張）', JSON.stringify(idle));
+    ok(idle.notSubbed, '只逾時一手：不判定暫離、沒有武將代打', JSON.stringify(idle));
+    ok(idle.turn2 && idle.subbed, '連續兩手時間到：判定暫離，武將代打', JSON.stringify(idle));
     ok(idle.back, '一碰畫面：代打收回', JSON.stringify(idle));
-    ok(!idle.subbedFlag, '久久不動不是斷線：戰果照記', JSON.stringify(idle));
+    ok(!idle.subbedFlag, '暫離不是斷線：戰果照記', JSON.stringify(idle));
 
     // 2 手機跳背景 → 電腦同一帳號回座、接著當開桌的人
     await C.page.evaluate(fast => { Net.SESSION_TTL_MS = 4000; MJDev.netTiming(fast); }, FAST);   // 測試：「正在哪一桌」4 秒就算過期（線上 30 秒）
