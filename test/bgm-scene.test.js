@@ -78,6 +78,19 @@ console.log('═══ 跟名牌的「🎯 聽」是同一個判斷 ═══');
   ok(/if \(showsTenpai\(hand, seat\) &&/.test(src), '名牌真的是用 showsTenpai 決定亮不亮（沒有另寫一套）');
 }
 
+console.log('═══ v2.01：聽牌曲只看有沒有人宣戰 ═══');
+{
+  const t = table(K4, 0, [TENPAI, NOT, TENPAI, NOT]);
+  eq(B.anyDeclared(t.hand), false, '有人聽牌、沒人宣戰 → 不算');
+  eq(B.tableScene(t, { anyTenpai: B.anyDeclared(t.hand) }), B.dealerScene(t), '→ 照莊家那一國，不放聽牌曲');
+  t.hand.seats[2].declared = { at: 3, menzen: true };
+  eq(B.anyDeclared(t.hand), true, '有人宣戰 → 算');
+  eq(B.tableScene(t, { anyTenpai: B.anyDeclared(t.hand) }), 'tenpai', '→ 聽牌曲');
+  t.hand.phase = 'over';
+  eq(B.anyDeclared(t.hand), false, '一局結束 → 不算');
+  eq(B.anyDeclared(null), false, '沒有牌局 → 不算');
+}
+
 console.log('\n─────────────────────────');
 console.log(`通過 ${pass}　失敗 ${fail}`);
 if (fail) { fails.forEach(f => console.log('  ✗ ' + f)); process.exit(1); }

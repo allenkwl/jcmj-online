@@ -195,7 +195,8 @@ async function pick(p, kingdom) {
     ok(da.shown && da.shown === db.shown && da.title === db.title, '兩台的祥瑞指示牌一樣（公開狀態有帶過去）', JSON.stringify({ da, db }));
     ok(db.keys.length === 0, '用戶端的牌局裡沒有裏指示牌的欄位', JSON.stringify(db.keys));
 
-    // ── 聽牌曲（v1.70）：群主用完整牌局算「有沒有人聽牌」，公開狀態只放有／沒有（bgmTenpai）；名牌只亮自己 ──
+    // ── 聽牌曲：v2.01 起**只在有人宣戰時放**（使用者：「只在有人宣戰時才放…才不會讓旁人聽到自己聽牌」）——
+    //    電腦暗中聽牌（沒宣戰）兩台都不放；名牌只亮自己的「🎯 聽」。宣戰之後兩台都放（見下面宣戰那一段） ──
     // 把一家電腦換成聽牌的手（1–9 萬＋1–3 筒＋5 筒，單吊 4 筒），驗完換回原本的手，不影響後面的結算
     const tp = await A.page.evaluate(async () => {
       await new Promise(r => setTimeout(r, 600));
@@ -216,17 +217,17 @@ async function pick(p, kingdom) {
     if (!tp.skip) {
       ok(tp.aiTenpai, '（測試前提）電腦那一家真的聽牌了', JSON.stringify(tp));
       ok(tp.lit === (tp.meTenpai ? 1 : 0), '群主的名牌只亮自己的「🎯 聽」，別家（電腦）聽牌不亮', JSON.stringify(tp));
-      ok(tp.bgm === 'tenpai', '群主的 BGM 切到聽牌曲', JSON.stringify(tp));
+      ok(tp.bgm !== 'tenpai', '電腦暗中聽牌（沒宣戰）：群主不放聽牌曲', JSON.stringify(tp));
       const tb2 = await B.page.evaluate(async () => {
-        await __until(() => MJDev.bgm() === 'tenpai', 8000);
+        await new Promise(r => setTimeout(r, 1500));
         const st = await Net.db.ref('states/' + Net.groupKey).once('value').then(s => s.val() || {});
         const h = window.__test.match.hand;
         const me = window.__test.match.seats.findIndex(s => s.name === '乙');
         return { bgm: MJDev.bgm(), bgmTenpai: st.bgmTenpai, lit: document.querySelectorAll('.np-tenpai').length,
                  meTenpai: MJRules.isTenpaiHand(h.seats[me].hand, h.seats[me].melds) };
       });
-      ok(tb2.bgmTenpai === true, '公開狀態只有 bgmTenpai（有人聽牌＝true），不說是誰', JSON.stringify(tb2));
-      ok(tb2.bgm === 'tenpai', '乙那台也切到聽牌曲（照群主給的有／沒有）', JSON.stringify(tb2));
+      ok(tb2.bgmTenpai === false, '公開狀態的 bgmTenpai 也是「有人宣戰」（舊版頁面照新規則）：沒人宣戰＝false', JSON.stringify(tb2));
+      ok(tb2.bgm !== 'tenpai', '乙那台也不放聽牌曲', JSON.stringify(tb2));
       ok(tb2.lit === (tb2.meTenpai ? 1 : 0), '乙的名牌只亮自己的「🎯 聽」', JSON.stringify(tb2));
       await A.page.evaluate(() => { const h = window.__test.match.hand, k = window.__keep;
         h.seats[k.k].hand = k.hand; h.seats[k.k].melds = k.melds; MJDev.redraw(); MJDev.republish(); });
@@ -239,15 +240,19 @@ async function pick(p, kingdom) {
       h.seats[k].furitenLocked = true;
       MJDev.redraw(); MJDev.republish();
       await new Promise(r => setTimeout(r, 300));
-      return { k, badges: document.querySelectorAll('.np-declare').length };
+      return { k, badges: document.querySelectorAll('.np-declare').length, bgm: MJDev.bgm() };
     });
     ok(dk.badges === 1, '群主那台：宣戰的電腦名牌掛「⚔ 宣戰」', JSON.stringify(dk));
+    ok(dk.bgm === 'tenpai', '有人宣戰：群主放聽牌曲', JSON.stringify(dk));
     const dkb = await B.page.evaluate(async (k) => {
       await __until(() => document.querySelectorAll('.np-declare').length === 1, 8000);
       const st = await Net.db.ref('states/' + Net.groupKey).once('value').then(s => s.val() || {});
       const ps = st.match && st.match.hand && st.match.hand.seats && st.match.hand.seats[k];
-      return { badges: document.querySelectorAll('.np-declare').length, declared: !!(ps && ps.declared), locked: ps ? ps.furitenLocked : 'none' };
+      await __until(() => MJDev.bgm() === 'tenpai', 8000);
+      return { badges: document.querySelectorAll('.np-declare').length, declared: !!(ps && ps.declared), locked: ps ? ps.furitenLocked : 'none',
+               bgm: MJDev.bgm(), bgmTenpai: st.bgmTenpai };
     }, dk.k);
+    ok(dkb.bgm === 'tenpai' && dkb.bgmTenpai === true, '有人宣戰：乙那台也放聽牌曲（公開狀態 bgmTenpai＝true）', JSON.stringify(dkb));
     ok(dkb.badges === 1 && dkb.declared, '乙那台也看得到那家宣戰了', JSON.stringify(dkb));
     ok(!dkb.locked, '公開狀態裡沒有永久振聽（furitenLocked 一律 false）', JSON.stringify(dkb));
     await A.page.evaluate((k) => { const h = window.__test.match.hand;

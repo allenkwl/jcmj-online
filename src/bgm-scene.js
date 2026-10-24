@@ -43,6 +43,12 @@ function anyTenpaiFull(hand, isTenpai) {
   return !!(hand && hand.phase !== 'over' && hand.seats && hand.seats.some(st => st && isTenpai(st)));
 }
 
+/* 有沒有人宣戰（v2.01 起聽牌曲只看這個）—— 2026-10-24 使用者：「只在有人宣戰時才放，自己聽牌但沒宣戰就不放，
+   若幾個人一起玩才不會讓旁人聽到自己聽牌」「觀戰和玩家一致」。宣戰是公開的，每一台（含觀戰）自己算得出來 */
+function anyDeclared(hand) {
+  return !!(hand && hand.phase !== 'over' && hand.seats && hand.seats.some(st => st && st.declared));
+}
+
 /* 牌桌上現在該播的：有人聽牌 → tenpai；否則莊家那一國。
    opts.anyTenpai：連線時群主算好的有／沒有（帶了就照它） */
 function tableScene(match, opts) {
@@ -51,5 +57,5 @@ function tableScene(match, opts) {
   return any && match.hand.phase !== 'over' ? 'tenpai' : dealerScene(match);
 }
 
-return { KINGDOM_SCENES, tenpaiSeats, dealerScene, tableScene, anyTenpaiFull };
+return { KINGDOM_SCENES, tenpaiSeats, dealerScene, tableScene, anyTenpaiFull, anyDeclared };
 });
