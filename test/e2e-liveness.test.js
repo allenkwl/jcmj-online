@@ -22,6 +22,12 @@ const HELPERS = `
   window.__until = async (cond, max) => { const t0 = Date.now(); while (Date.now() - t0 < (max || 10000)) { try { if (cond()) return true; } catch (_) {} await new Promise(r => setTimeout(r, 80)); } try { return !!cond(); } catch (_) { return false; } };
   window.__vis = el => { if (!el) return false; if (el.offsetParent) return true; const cs = getComputedStyle(el); return cs.position === 'fixed' && cs.display !== 'none' && cs.visibility !== 'hidden'; };
   window.__toast = () => [(document.getElementById('lobby-toast') || {}).textContent || '', (document.getElementById('toast') || {}).textContent || ''].join(' | ');
+  /* 測試裡的玩家跳出鳴牌視窗就按「過」—— 不按的話視窗要等滿 20 秒逾時（規則本來就這樣），
+     「牌局照常往前」會偶爾等不到（v1.94 查到：那張牌乙其實吃得到，不是換開桌出錯） */
+  setInterval(() => {
+    const b = [...document.querySelectorAll('#int-pop.show button')].find(x => x.textContent.trim() === '過');
+    if (b) b.click();
+  }, 300);
   /* 模擬跳背景／回前景。手機在背景時計時器會停，「正在哪一桌」也就不再更新 —— 無頭瀏覽器的計時器不會停，自己擋 */
   window.__bg = on => {
     if (on) { window.__claim = window.__claim || Net.claimSession; Net.claimSession = () => Promise.resolve(true); }
@@ -167,6 +173,16 @@ const discards = p => p.page.evaluate(() => { const h = window.__test.match && w
     await P.page.evaluate(() => __bg(true));
     ok(await P.page.evaluate(() => MJDev.netFrozen), '手機跳背景：凍住');
     await new Promise(r => setTimeout(r, 4600));
+    /* 四位真人的桌（v1.94）：另外塞兩筆成員，名單湊滿 4 筆（手機只是在背景，它那一筆還在）——
+       大廳顯示「坐滿了」，但還是要點得進去回座 */
+    await O.page.evaluate(() => Promise.all(['fake1', 'fake2'].map(id =>
+      Net.db.ref('groups/' + Net.groupKey + '/members/' + id).set({ name: id, joinedAt: Date.now() }))));
+    const fullRow = await C.page.evaluate(async () => {
+      await __until(() => [...document.querySelectorAll('#lobby-groups .net-row')].some(r => r.textContent.includes('活桌') && r.textContent.includes('坐滿了')), 8000);
+      const r = [...document.querySelectorAll('#lobby-groups .net-row')].find(x => x.textContent.includes('活桌'));
+      return { text: r && r.textContent, disabled: r && r.disabled };
+    });
+    ok(/坐滿了/.test(fullRow.text) && fullRow.disabled === false, '四人坐滿的桌：寫著坐滿了，但點得下去', JSON.stringify(fullRow));
     ok(await clickTable(C, '活桌'), '電腦在大廳點「活桌」');
     const cIn = await C.page.evaluate(async () => {
       const inGame = await __until(() => MJDev.net && MJDev.net.isHost, 12000);
@@ -176,6 +192,17 @@ const discards = p => p.page.evaluate(() => { const h = window.__test.match && w
     });
     ok(cIn.inGame && cIn.net.isHost, '電腦直接回到座位、接著當開桌的人', JSON.stringify(cIn));
     ok(cIn.host === uidP && !cIn.pending && cIn.seated, '開桌的還是這個帳號、不是待入座、坐在原本的座位', JSON.stringify(cIn));
+    // 沒有座位的人點坐滿的桌：照舊說坐滿了
+    const S = await newPlayer(browser, base, '路人');
+    all.push(S);
+    ok(await openLobby(S), '路人進得了大廳');
+    ok(await clickTable(S, '活桌'), '路人點坐滿的「活桌」');
+    const sRes = await S.page.evaluate(async () => {
+      await __until(() => /坐滿/.test(__toast()), 6000);
+      return { toast: __toast(), inRoom: __vis(document.getElementById('net-room')), net: MJDev.net };
+    });
+    ok(/這一桌已經坐滿四位主公了/.test(sRes.toast) && !sRes.inRoom && !sRes.net, '沒有座位的人：「這一桌已經坐滿四位主公了」，進不去', JSON.stringify(sRes));
+    await O.page.evaluate(() => Promise.all(['fake1', 'fake2'].map(id => Net.db.ref('groups/' + Net.groupKey + '/members/' + id).remove())));
     const d0 = await discards(O);
     let d1 = d0;
     for (let i = 0; i < 30 && d1 <= d0; i++) { await new Promise(r => setTimeout(r, 500)); d1 = await discards(O); }
@@ -227,9 +254,12 @@ const discards = p => p.page.evaluate(() => { const h = window.__test.match && w
     });
     ok(qBack.demoted, '丙回前景：發現被接手了，退成一般玩家', JSON.stringify(qBack));
     const r0 = await discards(Q);
-    await new Promise(r => setTimeout(r, 8000));
-    const r1 = await discards(Q);
-    ok(r1 > r0, '丙那台看得到牌局照常往前', r0 + ' → ' + r1);
+    let r1 = r0;
+    for (let i = 0; i < 30 && r1 <= r0; i++) { await new Promise(r => setTimeout(r, 500)); r1 = await discards(Q); }
+    const rDiag = await R.page.evaluate(() => { const h = window.__test.match.hand, w = window.__test.waiting;
+      return { w: w && { kind: w.kind, seat: w.seat, seats: w.seats }, phase: h.phase, me: MJDev.net && MJDev.net.me,
+               subs: window.__test.match.seats.map(s => s.sub && { idle: s.sub.idle }), d: MJDev.netDiag && MJDev.netDiag() }; });
+    ok(r1 > r0, '丙那台看得到牌局照常往前', r0 + ' → ' + r1 + ' ' + JSON.stringify(rDiag));
 
     all.forEach(p => ok(p.errors.length === 0, p.name + '：頁面沒有 JavaScript 錯誤', p.errors.slice(0, 3).join(' | ')));
   } catch (e) {

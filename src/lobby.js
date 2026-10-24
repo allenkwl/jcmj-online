@@ -415,9 +415,11 @@ function renderGroupList(list) {
     const info = mid
       ? `進行中${g.progress ? '（' + esc(g.progress) + '）' : ''}・${full ? '坐滿了' : '空 ' + (SEATS - n) + ' 位，下一場入座'}　電腦：${lv}`
       : `${n}/${SEATS} 人　電腦：${lv}${full ? '　（滿了）' : ''}`;
+    /* 進行中、坐滿了也能點（v1.94）：可能是我的座位 —— 同一帳號換裝置時，手機只是在背景、成員節點還在，
+       名單算起來是 4 筆。點下去查這一場有沒有我的座位：有就回座，沒有才說坐滿了 */
     box.appendChild(row('net-row' + (full ? ' full' : '') + (mid ? ' playing' : ''),
       `<b>${esc(g.name || g.key)}</b><span>${info}</span>`,
-      full ? null : () => doJoin(g.key, mid)));
+      full ? (mid ? () => doJoinFull(g.key) : null) : () => doJoin(g.key, mid)));
     // 觀戰（v1.80）：進行中的桌，坐滿了也能看。舊版頁面沒有觀戰畫面（沒給 onSpectate）就不放
     if (mid && cfg.onSpectate) {
       const w = row('net-watch', '👀 觀戰「' + esc(g.name || g.key) + '」', () => doSpectate(g.key, g.name || g.key, null, false));
@@ -507,6 +509,12 @@ function openTable(name, extra) {
 
 function doJoin(key, mid) {
   blockedElsewhere().then(b => { if (!b) doJoin2(key, mid); });
+}
+function doJoinFull(key) {
+  blockedElsewhere().then(b => {
+    if (b) return;
+    Net.mySeatIn(key).then(mine => { if (mine) doRejoin(key); else toast('這一桌已經坐滿四位主公了'); });
+  });
 }
 function doJoin2(key, mid) {
   /* 進行中的桌、這一場有我的座位（同一帳號換裝置、重新整理）→ 直接回座，不當待入座（v1.93 定案 1） */
