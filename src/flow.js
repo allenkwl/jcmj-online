@@ -154,9 +154,18 @@ function withSubs(match, o) {
 /* 電腦真的替這一家出手了 → 這一場不算他的。
    ⚠️ 記在「真的出手」而不是「開始代打」的那一刻：
    人斷線、武將接手，但還沒輪到他就回來了 —— 電腦一步都沒動，那不該算代打。 */
+/* 久久不動（sub.idle，v1.93，docs/host-liveness.md 定案 4）：人沒斷線，戰果照記 ——
+   到下一局開始還沒回來才比照斷線（idleToGone） */
 function markSubbed(match, seat) {
   const st = match.seats && match.seats[seat];
-  if (st && st.sub && !st.subbed) st.subbed = true;
+  if (st && st.sub && !st.sub.idle && !st.subbed) st.subbed = true;
+}
+
+/* 新的一局開始時：還在「久久不動代打」的人比照斷線 —— 這一場不記給他 */
+function idleToGone(match) {
+  (match.seats || []).forEach(st => {
+    if (st && st.sub && st.sub.idle) st.subbed = true;    // idle 留著：還是等他自己回來（不靠在場名單收回）
+  });
 }
 
 /* 群主呼叫：這一家斷線，由某武將接手。回傳要廣播的事件。 */
@@ -165,16 +174,17 @@ function startSub(match, seat, info) {
   if (!st || st.sub) return [];
   const o = info || {};
   st.sub = { general: o.general || '武將', since: o.now != null ? o.now : Date.now() };
-  return [{ t: 'subStart', seat, general: st.sub.general }];
+  if (o.idle) st.sub.idle = true;              // 輪到他出牌 30 秒沒動（人還連著）
+  return [{ t: 'subStart', seat, general: st.sub.general, idle: !!o.idle }];
 }
 
 /* 群主呼叫：這一家回來了。subbed 不清 —— 回來可以繼續打完，但這一場已經不算了。 */
 function endSub(match, seat) {
   const st = match.seats && match.seats[seat];
   if (!st || !st.sub) return [];
-  const general = st.sub.general;
+  const general = st.sub.general, idle = !!st.sub.idle;
   st.sub = null;
-  return [{ t: 'subEnd', seat, general, subbed: !!st.subbed }];
+  return [{ t: 'subEnd', seat, general, subbed: !!st.subbed, idle }];
 }
 
 function isAI(ctx, seat) {
@@ -533,6 +543,7 @@ function run(match, ctx) {
         return { events, waiting: { kind: 'matchOver' } };
       }
       initHandFields(match.hand);
+      idleToGone(match);
       ev(events, 'handStart', {
         handNo: match.hand.handNo, dealer: match.hand.dealer, honba: match.hand.honba,
       });
@@ -710,7 +721,7 @@ function eventsFor(events, viewerSeat) {
 
 return {
   MAX_STEPS,
-  turnOptions, waiting, run, submit, eventsFor, startSub, endSub, declareTiles, DECLARE_MIN_WALL,
+  turnOptions, waiting, run, submit, eventsFor, startSub, endSub, idleToGone, declareTiles, DECLARE_MIN_WALL,
   startMatch, standings, normalize, initHandFields, applyHandLimit,
   defaultChooseDiscard,
 };

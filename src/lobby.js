@@ -33,7 +33,7 @@ const RECENT_KEY = 'jcmj_recent_groups';
 const NAME_KEY = 'jcmj_my_name';
 const SEATS = 4;
 
-let cfg = { onEnterGame: null, onBack: null, onRoom: null, onPickKingdom: null, onPickTaken: null };
+let cfg = { onEnterGame: null, onBack: null, onRoom: null, onPickKingdom: null, onPickTaken: null, onSuperseded: null };
 let myName = '';
 let cur = null;          // { key, displayName, isHost }
 let watching = false;
@@ -81,9 +81,26 @@ function takeLock(info) {
   lockTimer = setInterval(() => {
     try { OP().lock(localStorage, TAB, {}); } catch (_) {}
     const l = OP().readLock(localStorage);
-    Net.claimSession({ tab: TAB, table: (l && l.table) || '' });
+    // 更新不進去＝同一帳號的另一台已經接手這一桌（v1.93，docs/host-liveness.md 第六節）
+    Net.claimSession({ tab: TAB, table: (l && l.table) || '' }).then(ok => { if (!ok) superseded(); });
   }, 10000);
   return true;
+}
+/* 被同一帳號的另一台換掉：跟另一台被擋時說同一句，安靜退場回大廳（不刪成員節點 —— 那是另一台在用的）。
+   牌局中由遊戲那邊收拾牌桌（cfg.onSuperseded），這裡收大廳的部分 */
+function superseded(v) {
+  if (!cur) return;
+  const table = (v && v.table) || cur.displayName || '另一桌';
+  clearInterval(lockTimer); lockTimer = null;
+  try { OP() && OP().unlock(localStorage, TAB); } catch (_) {}
+  cancelOrphanWatch(); cancelHostWatch();
+  watching = false;
+  const inGame = !!cur.entered;
+  cur = null;
+  Net.abandonGroup();
+  if (inGame && cfg.onSuperseded) cfg.onSuperseded(table);
+  else screen('net-lobby');
+  toast('你的帳號正在「' + table + '」（另一台裝置）—— 同一個玩家一次只能在一桌', 6000);
 }
 function dropLock() {
   clearInterval(lockTimer); lockTimer = null;
@@ -105,7 +122,7 @@ function blockedElsewhere() {
   return Net.readSession().then(v => {
     if (!v || v.tab === TAB) return false;
     const now = Date.now() + (Net.timeOffset || 0);
-    if (now - (v.at || 0) > SESSION_TTL) return false;           // 過期（那台關掉了、網路斷了）
+    if (now - (v.at || 0) > (Net.SESSION_TTL_MS || SESSION_TTL)) return false;   // 過期（那台關掉了、網路斷了、在背景）
     toast('你的帳號正在「' + (v.table || '另一桌') + '」（另一台裝置或分頁）—— 同一個玩家一次只能在一桌');
     return true;
   }).catch(() => false);
@@ -492,6 +509,23 @@ function doJoin(key, mid) {
   blockedElsewhere().then(b => { if (!b) doJoin2(key, mid); });
 }
 function doJoin2(key, mid) {
+  /* 進行中的桌、這一場有我的座位（同一帳號換裝置、重新整理）→ 直接回座，不當待入座（v1.93 定案 1） */
+  (mid ? Net.mySeatIn(key) : Promise.resolve(false)).then(rejoin => {
+    if (rejoin) return doRejoin(key);
+    doJoin3(key, mid);
+  });
+}
+function doRejoin(key) {
+  Net.joinGroup(key, myName, { mid: true, rejoin: true })
+    .then(g => {
+      const dn = (g && g.displayName) || key;
+      rememberGroup(dn);
+      toast('回到牌桌⋯');
+      enterRoom(key, dn, g && g.host === Net.clientId, { rejoin: true });
+    })
+    .catch(e => toast('回不到牌桌：' + (e && e.message)));
+}
+function doJoin3(key, mid) {
   Net.joinGroup(key, myName, { mid: !!mid })
     .then(g => {
       const dn = (g && g.displayName) || key;
@@ -777,6 +811,7 @@ function enterGame(g) {
     isHost: g.host === Net.clientId,
     members: (g.members || []).slice(),
     aiLevel: g.aiLevel || 2,
+    rejoin: !!cur.rejoin,          // 回到進行中的牌局（v1.93）：開桌的是自己也不要重開一場，從 /secret 接著打
     campaign: null,                // v1.68：牌桌不再是一段戰役（進度跟著人走）
     myClientId: Net.clientId,
   };
@@ -891,6 +926,6 @@ function showRoom() {
   if (cur.last) renderRoom(cur.last);
 }
 
-return { init, open, close, hide, leave: quit, backToRoom, showRoom, afterSpectate, slots, slotsSave, rosterOf, syncMyProgress, lockKingdom, pushProgress,
+return { init, open, close, hide, leave: quit, backToRoom, superseded, get tab() { return TAB; }, showRoom, afterSpectate, slots, slotsSave, rosterOf, syncMyProgress, lockKingdom, pushProgress,
          get myName() { return myName; }, get current() { return cur; } };
 });

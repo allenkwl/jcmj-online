@@ -339,11 +339,35 @@ const Net = {
     if (!this.account().loggedIn) return Promise.resolve(null);
     return this._playerRef('session').once('value').then(s => s.val()).catch(() => null);
   },
+  /* 回 true＝這一筆現在是我（tab）的；false＝別台拿著、而且還沒過期 —— 我被換掉了（v1.93）。
+     ⚠️ 只有紀錄是自己的、沒有、或過期才寫（transaction）：同一帳號從手機換到電腦之後，
+        手機醒來時這個 10 秒一次的更新可能先跑 —— 直接覆寫會把電腦的紀錄蓋回手機（docs/host-liveness.md 第六節）
+     ⚠️ 不再掛 onDisconnect().remove()：手機的連線晚一點才真的斷，伺服器照手機當初掛的 onDisconnect
+        刪掉的會是**電腦的**紀錄。正常關頁面走 pagehide 的 releaseSession；當機、斷網就等 30 秒過期
+     ServerValue 不能放進 transaction（會先在本機試算），時間用本機時間＋伺服器時差 */
+  SESSION_TTL_MS: 30000,
   claimSession(info) {
-    if (!this.account().loggedIn) return Promise.resolve();
+    if (!this.account().loggedIn) return Promise.resolve(true);
     const ref = this._playerRef('session');
-    ref.onDisconnect().remove();
-    return ref.set(stripUndefined(Object.assign({}, info, { at: firebase.database.ServerValue.TIMESTAMP }))).catch(() => {});
+    const now = Date.now() + (this.timeOffset || 0);
+    const rec = stripUndefined(Object.assign({}, info, { at: now }));
+    return ref.transaction(cur => {
+      if (cur && cur.tab !== info.tab && now - (cur.at || 0) <= this.SESSION_TTL_MS) return;   // 別台、還沒過期
+      return rec;
+    }).then(res => !!(res && res.committed)).catch(() => true);   // 網路錯誤不當成被換掉
+  },
+  /* 醒來先確認：這個帳號現在是不是這個分頁在打。'mine'／'other'（別台、沒過期）／'free'。
+     ⚠️ 一定要從**伺服器**讀（get）—— 剛醒來的本機快取還寫著是自己 */
+  checkSession(tab) {
+    if (!this.account().loggedIn) return Promise.resolve({ state: 'mine' });
+    return this._playerRef('session').get().then(s => {
+      const v = s.val();
+      const now = Date.now() + (this.timeOffset || 0);
+      if (!v) return { state: 'free' };
+      if (v.tab === tab) return { state: 'mine', v };
+      if (now - (v.at || 0) > this.SESSION_TTL_MS) return { state: 'free', v };
+      return { state: 'other', v };
+    }).catch(() => ({ state: 'mine' }));          // 讀不到（還沒連上）不要把自己踢掉
   },
   releaseSession(tab) {
     if (!this.account().loggedIn) return Promise.resolve();
@@ -477,6 +501,25 @@ const Net = {
       }))
       .then(alive => { cleanup(); return alive; }, err => { cleanup(); throw err; });
   },
+  /* 只問某一台在不在（v1.93，docs/host-liveness.md 定案 6）：開桌的人該動卻沒動時，遞補的那一台問他。
+     他頁面在背景（pingGate 回 false）就不回答 —— 等於不在。回 true＝有回答 */
+  pingMember(key, toId) {
+    const reqRef = this.db.ref('pings/' + key).push();
+    const pongRef = this.db.ref('pongs/' + key + '/' + reqRef.key + '/' + toId);
+    const cleanup = () => { reqRef.remove().catch(() => {}); this.db.ref('pongs/' + key + '/' + reqRef.key).remove().catch(() => {}); };
+    return reqRef.set({ from: this.clientId, to: toId, at: firebase.database.ServerValue.TIMESTAMP })
+      .catch(() => {})
+      .then(() => new Promise(resolve => {
+        let done = false;
+        const cb = snap => { if (done || !snap.exists()) return; done = true; pongRef.off('value', cb); resolve(true); };
+        pongRef.on('value', cb);
+        setTimeout(() => { if (done) return; done = true; pongRef.off('value', cb); resolve(false); }, this.PING_TIMEOUT_MS);
+      }))
+      .then(alive => { cleanup(); return alive; });
+  },
+  pingGate: null,               // 遊戲那邊掛：() => 這一台現在算不算「在」（頁面在前景、沒凍住）
+  cmdGameId: null,              // 遊戲那邊掛：() => 現在這一場的 gameId（pushCmd 用）
+
   // 只要人還在群組裡（不管是在等待室還是遊戲中），就會自動回應別人的存活探測，
   // 證明「我還連著」。回應完隨手把自己那筆清掉，不留垃圾。
   _watchPings(key) {
@@ -486,6 +529,11 @@ const Net = {
     // 直接用它自己的 key 回應即可。
     this._pingsCb = snap => {
       if (!snap || !snap.key) return;
+      const v = snap.val() || {};
+      if (v.to) {                    // 指定對象的：不是問我就不理；問我但我在背景也不理（pingMember）
+        if (v.to !== this.clientId) return;
+        if (this.pingGate && !this.pingGate()) return;
+      }
       this.db.ref('pongs/' + key + '/' + snap.key + '/' + this.clientId).set(true).catch(() => {});
     };
     this._pingsRef.on('child_added', this._pingsCb);
@@ -609,9 +657,10 @@ const Net = {
       if (!g) throw new Error('GONE');
       const started = g.status !== 'waiting';
       if (started && !mid) throw new Error('STARTED');
-      if (started && Object.keys(g.members || {}).length >= 4) throw new Error('FULL');
+      // 同一帳號回座（v1.93）：成員節點可能還留著自己的（換裝置），不能把自己算進「坐滿」
+      if (started && Object.keys(g.members || {}).filter(id => id !== this.clientId).length >= 4) throw new Error('FULL');
       this.isHost = (g.host === this.clientId);
-      this._pendingJoin = started;
+      this._pendingJoin = started && !(opts && opts.rejoin);   // 回到自己的座位：不是待入座
       // 回傳整份群組資料 —— 大廳要用 displayName 與建房時定案的設定（電腦強度）
       return this._enter(key, g.displayName || key, playerName).then(() => g);
     });
@@ -635,7 +684,7 @@ const Net = {
     return this._meRef.onDisconnect().remove()
       .then(() => this._meRef.set(Object.assign({joinedAt: firebase.database.ServerValue.TIMESTAMP}, this._meData)))
       .then(() => this._meRef.child('joinedAt').once('value'))
-      .then(s => { this._joinedAt = s.val(); this._watchRejoin(); this._watchPings(key); return true; });
+      .then(s => { this._joinedAt = s.val(); this._watchRejoin(); this._watchPings(key); this._watchMyNode(); return true; });
   },
 
   /* 網路斷一下又連回來：onDisconnect 已經在伺服器那邊把我的成員節點刪了，
@@ -655,6 +704,46 @@ const Net = {
         .catch(() => {});
     };
     this.db.ref('.info/connected').on('value', this._rejoinCb);
+  },
+
+  /* 自己的成員節點在牌局中被刪掉、我卻還連著 → 補寫回去（v1.93，docs/host-liveness.md 第五節）。
+     同一帳號從手機換到電腦，成員節點是同一個（members/{uid}）：手機的連線晚一點真的斷掉時，
+     伺服器照手機當初掛的 onDisconnect 刪掉的是電腦的節點 → 別台以為電腦走了。
+     ⚠️ 整桌被刪（解散、清掉）時不寫回去 —— 那會生出一個只有自己的幽靈群組 */
+  _watchMyNode() {
+    this._unwatchMyNode();
+    if (!this._meRef) return;
+    const me = this._meRef, group = this._groupRef;
+    this._myNodeRef = me;
+    this._myNodeCb = snap => {
+      if (snap.exists() || this._meRef !== me || !this._meData) return;
+      this.db.ref('.info/connected').once('value').then(c => {
+        if (!c.val() || this._meRef !== me) return null;       // 自己斷線了：交給 _watchRejoin
+        return group.child('host').get().then(h => {
+          if (!h.exists() || this._meRef !== me) return null;   // 整桌沒了
+          return me.onDisconnect().remove()
+            .then(() => me.set(Object.assign({ joinedAt: this._joinedAt || firebase.database.ServerValue.TIMESTAMP },
+                                             this._meData, { isHost: this.isHost })));
+        });
+      }).catch(() => {});
+    };
+    me.on('value', this._myNodeCb);
+  },
+  _unwatchMyNode() {
+    if (this._myNodeRef && this._myNodeCb) this._myNodeRef.off('value', this._myNodeCb);
+    this._myNodeRef = null; this._myNodeCb = null;
+  },
+
+  /* 被同一帳號的另一台換掉了（v1.93）：安靜退場 —— 不刪成員節點（那是新那台在用的）、不交棒開桌、
+     取消自己掛的 onDisconnect，監聽全部停掉 */
+  abandonGroup() {
+    this.unwatchRoom(); this.unwatchState(); this.unwatchMyHand(); this.unwatchLive(); this.unwatchClaims();
+    this._unwatchPings(); this.unwatchReady(); this.unwatchNudges(); this.unwatchPause(); this.unwatchBots();
+    this.unwatchToken(); this.unwatchCmds(); this._unwatchMyNode();
+    const meRef = this._meRef;
+    this._meRef = null; this._groupRef = null; this._meData = null;
+    this.groupKey = null; this.groupName = null; this.isHost = false;
+    if (meRef) meRef.onDisconnect().cancel().catch(() => {});
   },
 
   /* 接手群主：只有在群主**還是**那個斷線的人時才換成我（transaction，兩台同時搶只有一台成功）。
@@ -871,6 +960,18 @@ const Net = {
     try { s.sp.off('value', s.dataCb); s.gr.off('value', s.groupCb); } catch (_) {}
     s.me.onDisconnect().cancel().catch(() => {});
     s.me.remove().catch(() => {});
+  },
+
+  /* 進行中的這一桌，現在這一場有沒有我的座位（同一帳號換裝置、重新整理之後回座，v1.93）。
+     公開狀態（/states）登入的人都讀得到；比對 gameId，上一場的殘留不算 */
+  mySeatIn(key) {
+    return Promise.all([this.db.ref('groups/' + key + '/gameId').get(), this.db.ref('states/' + key).get()])
+      .then(([gid, st]) => {
+        const v = st.val(), g = gid.val();
+        if (!v || !g || v.gameId !== g || !v.match || !v.match.seats) return false;
+        const seats = Array.isArray(v.match.seats) ? v.match.seats : Object.values(v.match.seats);
+        return seats.some(x => x && x.clientId === this.clientId);
+      }).catch(() => false);
   },
 
   /* 中途加入的人：入座了（或牌桌回到等待中）就不再是「待入座」 */
@@ -1228,6 +1329,12 @@ const Net = {
   },
   // 群主是誰，以 Firebase 上那份為準。本機的 Net.hostId 是 watchRoom 回來才填的，
   // 交接 token 給電腦代跑者時不能只信它（見 rules 的 handOffToken）。
+  /* 同上，但一定從伺服器讀（醒來先確認用，v1.93）—— 剛醒來的快取還寫著舊的開桌的人 */
+  readHostIdFresh() {
+    if (!this.groupKey) return Promise.resolve(null);
+    return this.db.ref('groups/' + this.groupKey + '/host').get()
+      .then(s => s.val() || null).catch(() => undefined);     // undefined＝讀不到（不要據此退位）
+  },
   readHostId() {
     if (!this.groupKey) return Promise.resolve(null);
     return this.db.ref('groups/' + this.groupKey + '/host').once('value')
@@ -1276,19 +1383,28 @@ const Net = {
   pushCmd(cmd) {
     if (!this.groupKey) return;
     const ref = this.db.ref('cmds/' + this.groupKey).push();
-    ref.set(Object.assign({at: firebase.database.ServerValue.TIMESTAMP}, cmd)).catch(() => {});
+    // 這是哪一場的指令（v1.93）：換開桌的人時新的那台會補收最近的指令，靠它濾掉上一場的
+    const gid = this.cmdGameId ? this.cmdGameId() : null;
+    ref.set(Object.assign({at: firebase.database.ServerValue.TIMESTAMP}, gid ? { gameId: gid } : {}, cmd)).catch(() => {});
     setTimeout(() => ref.remove().catch(() => {}), 30000);   // 用完即丟，不留歷史
   },
-  watchCmds(cb) {
+  /* opts.replayMs（v1.93）：接手開桌時，比自己早的指令也補收這麼久以內的（第二個參數標 replay）——
+     舊的開桌那台在背景凍住時收到、還沒處理的指令（例如別台回的「過」），不補收的話那個視窗要等滿逾時。
+     已經處理過的會被 flow 擋掉（不合法），呼叫端再用 gameId 濾掉上一場的 */
+  watchCmds(cb, opts) {
     this.unwatchCmds();
     if (!this.groupKey) return;
     this._cmdsRef = this.db.ref('cmds/' + this.groupKey).limitToLast(10);
     const attachedAt = Date.now() + this.timeOffset;
+    const replayMs = (opts && opts.replayMs) || 0;
     this._cmdsCb = snap => {
       const c = snap.val();
       if (!c) return;
       // 掛上監聽的瞬間 child_added 會把現有的每一筆都補送一次，濾掉比自己早的
-      if (c.at && c.at < attachedAt - 2000) return;
+      if (c.at && c.at < attachedAt - 2000) {
+        if (replayMs && c.at >= attachedAt - replayMs) cb(c, { replay: true });
+        return;
+      }
       cb(c);
     };
     this._cmdsRef.on('child_added', this._cmdsCb);
@@ -1521,6 +1637,7 @@ const Net = {
     this.unwatchBots();
     this.unwatchToken();
     this.unwatchCmds();
+    this._unwatchMyNode();
     this.tokenHolder = null; this.tokenTurn = -1;
     const meRef = this._meRef, groupRef = this._groupRef;
     // ⚠️ 要在下面清掉 isHost 之前先記下來 —— v1.80 以前順序反了，wasHost 永遠是 false，
