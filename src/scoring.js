@@ -52,6 +52,12 @@ const NOTEN_POT    = 8 * POINT_SCALE;   // 流局罰符的總額（一個基本�
    ⚠️ 加在**整條乘法鏈之後**：押注倍率、莊家加成、秦楚的技能倍率都不乘；齊「善守」付款時也不打折
    （祥瑞是「這張牌今天值錢」，跟你押什麼、是哪一國無關 —— 定案 2026-10-24） */
 const DORA_PTS     = 2 * POINT_SCALE;   // 20（基本和牌 80 的四分之一）
+/* 宣戰（v1.92，docs/dora-and-declare.md 第三節、第十一節定案）：
+   宣戰的人胡牌 → 翻裏祥瑞（每張指示牌底下那張的下一張）＋ DECLARE_PTS，門清宣戰再＋ DECLARE_MENZEN_PTS。
+   跟祥瑞一樣加在乘法鏈之後、善守不打折。押金 DECLARE_STAKE 兩進彩池（有人胡就拿走，跟押注同一個彩池） */
+const DECLARE_PTS        = 3 * POINT_SCALE;   // 30
+const DECLARE_MENZEN_PTS = 2 * POINT_SCALE;   // 20
+const DECLARE_STAKE      = 5 * POINT_SCALE;   // 50 兩
 
 /* 指示牌 → 祥瑞：下一張。數牌 9→1；風 東→南→西→北→東；三元 白→發→中→白 */
 const WIND_NEXT = { 東: '南', 南: '西', 西: '北', 北: '東' };
@@ -65,10 +71,11 @@ function doraOf(indicator) {
   if (!(n >= 1 && n <= 9) || !suit) return null;
   return (n === 9 ? 1 : n + 1) + suit;
 }
-/* 這一家整手牌（手牌＋副露）裡的祥瑞張數。指示牌重複（翻到同一種）就各算一次 */
-function countDora(hand, seat) {
+/* 這一家整手牌（手牌＋副露）裡的祥瑞張數。指示牌重複（翻到同一種）就各算一次。
+   indicators：不給就用已翻開的表指示牌；算裏祥瑞時傳裏指示牌 */
+function countDora(hand, seat, indicators) {
   const st = hand && hand.seats && hand.seats[seat];
-  const shown = (hand && hand.doraShown) || [];
+  const shown = indicators || (hand && hand.doraShown) || [];
   if (!st || !shown.length) return { count: 0, pts: 0, dora: [] };
   const tiles = (st.hand || []).map(t => t.display)
     .concat(...(st.melds || []).map(m => (m.tiles || []).map(t => t.display)));
@@ -76,6 +83,16 @@ function countDora(hand, seat) {
   let count = 0;
   dora.forEach(d => { tiles.forEach(t => { if (t === d) count++; }); });
   return { count, pts: count * DORA_PTS, dora };
+}
+/* 裏指示牌：每一張已翻開的表指示牌底下那張（王牌 doraBase + 2k + 1）。
+   ⚠️ 只有握有 wall 的那台算得出來（單機、群主）—— 用戶端的 wall 是空的；結果隨結算廣播。不存欄位（見 game-state 的 DORA_SLOTS） */
+function uraIndicators(hand) {
+  const n = ((hand && hand.doraShown) || []).length;
+  const w = (hand && hand.wall) || [];
+  const base = hand && hand.doraBase != null ? hand.doraBase : w.length - 14;
+  const out = [];
+  for (let k = 0; k < n; k++) if (w[base + 2 * k + 1]) out.push(w[base + 2 * k + 1]);
+  return out;
 }
 
 /* ── 押注的押金（v1.61）──────────────────────────────────
@@ -166,9 +183,23 @@ function handValue(hand, seat, opts) {
   const dora = countDora(hand, seat);           // 祥瑞：乘法鏈之後才加（見 DORA_PTS）
   total += dora.pts;
 
+  // 宣戰：裏祥瑞＋宣戰加成（同樣在乘法鏈之後）
+  const decl = hand.seats[seat] && hand.seats[seat].declared;
+  let ura = null, declarePts = 0;
+  if (decl) {
+    const ind = uraIndicators(hand);
+    ura = Object.assign(countDora(hand, seat, ind), { indicators: ind.map(t => t.display) });
+    declarePts = DECLARE_PTS + (decl.menzen ? DECLARE_MENZEN_PTS : 0);
+    total += ura.pts + declarePts;
+  }
+
   return {
     seat, total,
-    dora: dora.count, doraPts: dora.pts,
+    dora: dora.count,
+    // 不打折的那一段（祥瑞＋裏祥瑞＋宣戰加成）：善守只打在其餘的部分（settleWin）
+    doraPts: dora.pts + (ura ? ura.pts : 0) + declarePts,
+    declared: !!decl, menzen: !!(decl && decl.menzen), declarePts,
+    ura: ura ? ura.count : 0, uraIndicators: ura ? ura.indicators : [],
     base, special: special ? { name: special.name, pts: special.pts } : null,
     yakuhai: yaku.pts, yakuhaiHits: yaku.hits,
     isDealer, dealerMult: isDealer ? DEALER_MULT : 1,
@@ -290,6 +321,13 @@ function settleStakes(match, hand, result, opts) {
     stakes.push({ seat, pts });
     transfers.push({ from: seat, to: POT, pts, reason: 'stake' });
   });
+  // 宣戰押金（v1.92）：宣戰的人一律進彩池（胡了也是 —— 但彩池接著就給胡的人，等於拿回來）
+  [0, 1, 2, 3].forEach(seat => {
+    const st = hand && hand.seats && hand.seats[seat];
+    if (!st || !st.declared) return;
+    stakes.push({ seat, pts: DECLARE_STAKE, declare: true });
+    transfers.push({ from: seat, to: POT, pts: DECLARE_STAKE, reason: 'declare' });
+  });
   let pot = (match.pot || 0) + stakes.reduce((n, x) => n + x.pts, 0);
   let paid = [];
   if (result.type !== 'draw' && winners.length && pot > 0) {
@@ -375,7 +413,7 @@ return {
   growthTier, kingdomMods,
   yakuhaiBonus, handValue,
   settleWin, settleDraw, settleStakes, potToLeader, applyTransfers, distribute, payerAmount,
-  DORA_PTS, doraOf, countDora,
+  DORA_PTS, doraOf, countDora, uraIndicators, DECLARE_PTS, DECLARE_MENZEN_PTS, DECLARE_STAKE,
   nextDealer, standings,
 };
 });

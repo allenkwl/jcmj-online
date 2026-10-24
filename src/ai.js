@@ -125,6 +125,8 @@ function baseDanger(display) {
    有沒有役牌副露（有役才敢鳴）。                                    */
 function threatLevel(hand, seat) {
   const s = hand.seats[seat];
+  // 宣戰了 → 「這一家聽牌」從推測變成確定（docs/dora-and-declare.md 6.2）
+  if (s.declared) return 1;
   const turns = s.discards.length;
   let t = Math.min(1, turns / 14);            // 約十四巡，該聽的都聽了
 
@@ -269,14 +271,65 @@ function chooseDiscard(hand, seat, opts) {
     });
   }
 
+  // 祥瑞（v1.92）：打掉祥瑞要多付一點代價 —— 牌效差不多時留著它。不到一個向聽，所以不會為了祥瑞拆牌
+  const dora = doraSet(hand);
   let best = rows[0], bestScore = Infinity;
   rows.forEach(r => {
     const u = uke[r.i] || 0;
     const danger = tileDanger(hand, r.display, seat, level);
-    const score = r.sh * SHANTEN_W - u * UKEIRE_W + danger * dangerWeight;
+    const keep = dora[r.display] ? DORA_KEEP_W * dora[r.display] : 0;
+    const score = r.sh * SHANTEN_W - u * UKEIRE_W + danger * dangerWeight + keep;
     if (score < bestScore) { bestScore = score; best = r; }
   });
   return best.i;
+}
+
+/* ── 祥瑞（v1.92）──────────────────────────────────────────
+   跟 scoring.js 的 doraOf 同一套（指示牌的下一張）。ai.js 不 require scoring（載入順序），所以這裡另寫一份 */
+const DORA_KEEP_W = 12;
+const WIND_NEXT = { 東: '南', 南: '西', 西: '北', 北: '東' };
+const DRAGON_NEXT = { 白: '發', 發: '中', 中: '白' };
+function doraOfDisp(d) {
+  if (WIND_NEXT[d]) return WIND_NEXT[d];
+  if (DRAGON_NEXT[d]) return DRAGON_NEXT[d];
+  const n = parseInt(d, 10);
+  return n >= 1 && n <= 9 ? (n === 9 ? 1 : n + 1) + d.slice(String(n).length) : null;
+}
+/* 祥瑞 → 這一種值幾張（翻到兩張一樣的指示牌就是 2） */
+function doraSet(hand) {
+  const out = Object.create(null);
+  ((hand && hand.doraShown) || []).forEach(t => { const d = doraOfDisp(t.display); if (d) out[d] = (out[d] || 0) + 1; });
+  return out;
+}
+
+/* ── 宣戰（v1.92，docs/dora-and-declare.md 6.1、第十一節定案）──────────
+   candidates：打掉之後聽牌、可以拿來宣戰的那幾張（flow.declareTiles）。回傳要宣戰打出的那張，或 null（不宣戰）。
+     1 初學　不宣戰
+     2 普通　**一律宣戰**（能宣就宣；條件只有規則本身：聽牌、活牌山 ≥ 4）—— 2026-10-24 使用者：「中級一律宣戰」
+     3 高手　有人宣戰了就不宣戰（轉防守）；自己的聽牌要夠好（看得到的剩張 ≥ 4）才宣戰，活牌山 ≥ 6
+   打哪一張：剩張最多的那一張（一樣多就照平常的棄牌選擇）。⚠️ 不准用 Math.random（可重放） */
+function declareFor(hand, seat, level, candidates) {
+  const lv = level || 2;
+  if (lv <= 1 || !candidates || !candidates.length) return null;
+  const live = S.liveWallCount(hand);
+  if (lv >= 3) {
+    if (live < 6) return null;
+    if (hand.seats.some((st, i) => i !== seat && st.declared)) return null;
+  }
+  const me = hand.seats[seat];
+  const left = i => {
+    const rest = me.hand.filter((_, j) => j !== i);
+    return R.winningTiles(rest, me.melds).reduce((n, d) => n + Math.max(0, 4 - visibleCount(hand, d, seat)
+      + (me.hand[i].display === d ? 1 : 0)), 0);
+  };
+  const usual = chooseDiscard(hand, seat, { level: lv });
+  let best = null, bestLeft = -1;
+  candidates.forEach(i => {
+    const n = left(i);
+    if (n > bestLeft || (n === bestLeft && i === usual)) { best = i; bestLeft = n; }
+  });
+  if (lv >= 3 && bestLeft < 4) return null;
+  return bestLeft > 0 ? best : null;
 }
 
 /* ── 宣告（吃碰槓）──────────────────────────────────────────
@@ -380,6 +433,7 @@ function flowHooks() {
   return {
     chooseDiscard: (hand, seat, level) => chooseDiscard(hand, seat, { level }),
     decideClaim: (hand, seat, options, level) => decideClaim(hand, seat, options, { level }),
+    declareFor: (hand, seat, level, candidates) => declareFor(hand, seat, level, candidates),
   };
 }
 
@@ -387,7 +441,7 @@ return {
   SHANTEN_W, UKEIRE_W, DANGER_MAX, SLIP,
   UKEIRE_SHANTEN_GATE, UKEIRE_MAX_CANDIDATES,
   shanten, clearCache,
-  visibleCount, genbutsu, isSuji, baseDanger, threatLevel,
+  visibleCount, genbutsu, isSuji, baseDanger, threatLevel, declareFor, doraSet, DORA_KEEP_W,
   tileDangerAgainst, tileDanger,
   relevantTiles, ukeire, pressureOf,
   chooseDiscard, decideClaim, tenpaiAutoDiscard, discardFor, claimFor, flowHooks,

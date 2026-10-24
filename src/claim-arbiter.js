@@ -68,7 +68,10 @@ function buildOptions(hand, seat, opts) {
 
   // 榮和（含振聽判定）
   const ron = R.canRonWith(me.hand, me.melds, tile, me.discards,
-                           { temporary: me.furitenTemp });
+                           { temporary: me.furitenTemp || me.furitenLocked });
+
+  // 宣戰（v1.92，docs/dora-and-declare.md 3.2）：鎖手 —— 只剩榮和，吃碰槓一律不行
+  if (me.declared) return { ron, pong: false, kong: false, chi: [], any: ron };
 
   // 搶槓視窗只問榮和 —— 加槓的那張牌不在牌河也不在手裡，碰吃槓都無從談起
   if (o.kongAdded) {
@@ -361,7 +364,12 @@ function resolve(win, opts) {
 /* 同巡振聽：可以榮和卻放過的人，在摸到下一張牌之前不能胡。
    沒有這一條的話，玩家可以放過一張再等下一家打同一張 —— 白吃的。 */
 function applyDeclinedRonFuriten(hand, outcome) {
-  (outcome.declinedRon || []).forEach(seat => S.setTemporaryFuriten(hand, seat, true));
+  (outcome.declinedRon || []).forEach(seat => {
+    S.setTemporaryFuriten(hand, seat, true);
+    // 宣戰後放過榮和 → 這一局都不能榮和（振聽升級，3.2）。同巡振聽摸牌就解除，這個不解除
+    const st = hand.seats[seat];
+    if (st && st.declared) st.furitenLocked = true;
+  });
   return hand;
 }
 

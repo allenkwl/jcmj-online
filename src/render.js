@@ -147,7 +147,13 @@ function renderNameplate(node, match, hand, seat, mySeat, ui) {
         所以線上對戰只有自己這一家會亮，這是資料本來就不在手上，不是漏做。 */
   /* ⚠️ tenpaiSelfOnly（連線）：只亮自己。群主的畫面是用**完整牌局**畫的（裁判手上本來就有每一家的牌），
      不擋的話開桌的人看得到別家誰聽牌 —— 2026-10-16 做 BGM 時查到的洩漏 */
-  if (showsTenpai(hand, seat) && !(ui && ui.tenpaiSelfOnly && seat !== mySeat)) {
+  /* 宣戰（v1.92）：公開的，每一台都看得到；宣戰的人一定聽牌，就不再另外掛「🎯 聽」 */
+  const decl = hand.seats[seat] && hand.seats[seat].declared;
+  if (decl) {
+    const dc = el('span', 'np-declare', node);
+    dc.textContent = '宣戰';
+    dc.title = '已經宣戰：一定聽牌，手牌鎖住只能摸切' + (decl.menzen ? '（門清）' : '');
+  } else if (showsTenpai(hand, seat) && !(ui && ui.tenpaiSelfOnly && seat !== mySeat)) {
     const tp = el('span', 'np-tenpai', node);
     tp.textContent = '🎯 聽';
     tp.title = '聽牌';

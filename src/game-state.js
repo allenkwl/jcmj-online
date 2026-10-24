@@ -179,6 +179,8 @@ function startHand(match, options) {
       discards: [],
       riichiLike: false,                       // 保留欄位（目前無立直）
       furitenTemp: false,                      // 同巡振聽
+      declared: null,                          // 宣戰（v1.92）：null | { at: 宣戰時已打幾張, menzen }
+      furitenLocked: false,                    // 宣戰後放過榮和 → 這一局永久振聽（⚠️ 不公開，netPublicState 會清掉）
       score: 0,                                // 本局得分
     })),
     result: null,                              // {type:'win'|'draw', ...}
@@ -222,6 +224,11 @@ function normalize(match) {
     h.wall = h.wall || [];
     h.seats = h.seats || [];
     h.doraShown = h.doraShown || [];           // 祥瑞指示牌（v1.91）：Firebase 吃掉空陣列；舊存檔沒有這欄
+    h.seats.forEach(st => {                    // 宣戰（v1.92）：Firebase 吃掉 null／false
+      if (!st) return;
+      if (st.declared === undefined) st.declared = null;
+      st.furitenLocked = !!st.furitenLocked;
+    });
     if (h.doraBase == null) h.doraBase = (h.wall.length || 136) - DEAD_WALL;
     for (let i = 0; i < SEATS; i++) {
       const s = h.seats[i] || (h.seats[i] = { seat: i });

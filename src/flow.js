@@ -45,9 +45,36 @@ const MAX_STEPS = 2000;          // 防跑飛：一局最多 70 摸 + 鳴牌，2
 /* ── 這一家輪到自己時能做什麼 ──────────────────────────────
    槓要能補嶺上牌才算數 —— 王牌抽完或活牌山見底就不能槓，
    否則會槓出一個補不到牌的局面。                                */
-function turnOptions(hand, seat) {
+/* 宣戰（v1.92，docs/dora-and-declare.md 第三節）
+   ‧ 條件：還沒宣戰、活牌山 ≥ DECLARE_MIN_WALL、打掉某一張之後聽牌（宣戰＝宣告＋打出那一張）。不要求門清
+   ‧ 代價：鎖手（只能打剛摸的那張、不能槓、不能吃碰槓）、放過榮和就整局振聽、押 50 兩進彩池（scoring 的 DECLARE_STAKE）
+   ‧ 國庫夠不夠付押金是戰役層的事（畫面擋），規則層不管 */
+const DECLARE_MIN_WALL = 4;
+function declareTiles(hand, seat) {
+  const me = hand.seats[seat];
+  if (!me || me.declared || S.liveWallCount(hand) < DECLARE_MIN_WALL) return [];
+  /* 便宜的前置檢查：整手（14 張）的向聽數 > 0 ＝ 打哪一張都不會聽，不用逐張試。
+     ⚠️ 少了這一道，每一次輪到電腦都要逐張判聽牌 —— flow 測試從 6 秒變 47 秒 */
+  const disp = me.hand.map(t => t.display);
+  if (R.shantenNum(disp, me.melds.length) > 0) return [];
+  const out = [], seen = {};
+  me.hand.forEach((t, i) => {
+    if (seen[t.display] != null) { if (seen[t.display]) out.push(i); return; }
+    const rest = me.hand.filter((_, j) => j !== i);
+    seen[t.display] = R.isTenpaiHand(rest, me.melds);
+    if (seen[t.display]) out.push(i);
+  });
+  return out;
+}
+/* 宣戰時算不算門清：沒有吃碰明槓（暗槓不算破門清） */
+function isMenzen(me) { return !(me.melds || []).some(m => m.type !== 'kong_dark'); }
+
+function turnOptions(hand, seat, opts) {
   const me = hand.seats[seat];
   const canTsumo = R.canWinInHand(me.hand, me.melds);
+
+  // 宣戰了：只能打剛摸的那張（手牌最後一張）、可以自摸，不能槓
+  if (me.declared) return { canTsumo, kongs: [], canDiscard: true, onlyIndex: me.hand.length - 1, declare: [] };
 
   const kongs = [];
   const canKongAtAll = hand.rinshanTaken < 4 && !S.isWallEmpty(hand);
@@ -64,7 +91,16 @@ function turnOptions(hand, seat) {
     });
   }
 
-  return { canTsumo, kongs, canDiscard: true };
+  // noDeclare：電腦沒有 declareFor（測試用的簡化 AI）就不用算 —— 少算一次向聽數，模擬才不會變慢
+  return { canTsumo, kongs, canDiscard: true, declare: opts && opts.noDeclare ? [] : declareTiles(hand, seat) };
+}
+
+/* 宣戰：記下來、廣播、打出那一張 */
+function doDeclare(match, events, ctx, seat, tileIndex, opts) {
+  const h = match.hand, me = h.seats[seat];
+  me.declared = { at: me.discards.length, menzen: isMenzen(me) };
+  ev(events, 'declare', { seat, menzen: me.declared.menzen });
+  return doDiscard(match, events, ctx, seat, tileIndex, opts);
 }
 
 /* ── 現在卡在等什麼 ────────────────────────────────────────
@@ -412,13 +448,22 @@ function settleClaim(match, events, ctx) {
 function aiTakeTurn(match, events, ctx, seat) {
   markSubbed(match, seat);
   const h = match.hand;
-  const opt = turnOptions(h, seat);
+  const opt = turnOptions(h, seat, { noDeclare: !ctx.declareFor });
   if (opt.canTsumo) return doTsumo(match, events, ctx, seat);
+
+  // 宣戰了（含真人宣戰後斷線、武將代打）：摸切
+  if (h.seats[seat].declared) return doDiscard(match, events, ctx, seat, h.seats[seat].hand.length - 1);
 
   if (opt.kongs.length && aiLevelOf(ctx, seat) > 1) {
     const k = opt.kongs[0];
     const r = doSelfKong(match, events, ctx, seat, k.kind, k.display);
     if (r) return r;
+  }
+
+  // 要不要宣戰（ai.js 的 declareFor；難度、牌況在那邊決定）
+  if (opt.declare && opt.declare.length && ctx.declareFor) {
+    const di = ctx.declareFor(h, seat, aiLevelOf(ctx, seat), opt.declare);
+    if (di != null && opt.declare.includes(di)) return doDeclare(match, events, ctx, seat, di);
   }
 
   // 難度傳給棄牌函式 —— ai.js 要靠它決定用哪些防守資訊
@@ -567,9 +612,17 @@ function submit(match, action, ctx) {
       if (!events) return reject('這個槓不成立');
       return finish(match, events, o);
     }
+    if (a.type === 'declare') {
+      const opt = turnOptions(h, a.seat);
+      if (!(opt.declare || []).includes(a.tileIndex)) return reject('不能宣戰（沒聽牌、牌山不夠、或已經宣戰過）');
+      const events = doDeclare(match, [], o, a.seat, a.tileIndex, { guarded: a.guarded });   // 宣戰那張也吃魏的護送
+      if (!events) return reject('宣戰失敗');
+      return finish(match, events, o);
+    }
     if (a.type === 'discard') {
       const me = h.seats[a.seat];
       if (!(a.tileIndex >= 0 && a.tileIndex < me.hand.length)) return reject('沒有這張牌');
+      if (me.declared && a.tileIndex !== me.hand.length - 1) return reject('宣戰後只能打剛摸到的那張');
       const events = doDiscard(match, [], o, a.seat, a.tileIndex, { guarded: a.guarded });
       if (!events) return reject('棄牌失敗');
       return finish(match, events, o);
@@ -657,7 +710,7 @@ function eventsFor(events, viewerSeat) {
 
 return {
   MAX_STEPS,
-  turnOptions, waiting, run, submit, eventsFor, startSub, endSub,
+  turnOptions, waiting, run, submit, eventsFor, startSub, endSub, declareTiles, DECLARE_MIN_WALL,
   startMatch, standings, normalize, initHandFields, applyHandLimit,
   defaultChooseDiscard,
 };

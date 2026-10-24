@@ -109,8 +109,13 @@ console.log('═══ 不作弊（最重要的一項）═══');
   // 原始碼層級：AI 不該出現任何讀「別家 hand」的寫法
   const src = fs.readFileSync(path.join(__dirname, '../src/ai.js'), 'utf8');
   const code = src.replace(/\/\*[\s\S]*?\*\//g, '').replace(/\/\/.*$/gm, '');
-  ok(!/canRon|canWinOnDiscard|canRonWith|winningTiles|isTenpaiHand/.test(code),
+  ok(!/canRon|canWinOnDiscard|canRonWith|isTenpaiHand/.test(code),
      'AI 沒有呼叫任何需要別家手牌的判定');
+  // winningTiles（聽哪幾張）只准用在**自己的**手牌上：宣戰時算自己的剩張（v1.92 的 declareFor）
+  const wt = code.match(/winningTiles\([^)]*\)/g) || [];
+  ok(wt.length > 0 && wt.every(c => /^winningTiles\(rest, me\.melds\)$/.test(c))
+     && /const me = hand\.seats\[seat\];[\s\S]*const rest = me\.hand\.filter/.test(code),
+     'winningTiles 只算自己的手牌（宣戰時的剩張）', JSON.stringify(wt));
   ok(!/Math\.random/.test(code),
      'AI 沒有用 Math.random（線上版要能重放）');
 }

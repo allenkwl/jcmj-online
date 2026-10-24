@@ -213,6 +213,27 @@ async function pick(p, kingdom) {
       await A.page.evaluate(() => { const h = window.__test.match.hand, k = window.__keep;
         h.seats[k.k].hand = k.hand; h.seats[k.k].melds = k.melds; MJDev.redraw(); MJDev.republish(); });
     }
+    // ── 宣戰（v1.92）：宣戰是公開的，兩台的名牌都要掛「⚔ 宣戰」；永久振聽（furitenLocked）是私人的，不能出現在公開狀態 ──
+    const dk = await A.page.evaluate(async () => {
+      const m = window.__test.match, h = m.hand;
+      const k = m.seats.findIndex(s => s.isAI);
+      h.seats[k].declared = { at: h.seats[k].discards.length, menzen: true };
+      h.seats[k].furitenLocked = true;
+      MJDev.redraw(); MJDev.republish();
+      await new Promise(r => setTimeout(r, 300));
+      return { k, badges: document.querySelectorAll('.np-declare').length };
+    });
+    ok(dk.badges === 1, '群主那台：宣戰的電腦名牌掛「⚔ 宣戰」', JSON.stringify(dk));
+    const dkb = await B.page.evaluate(async (k) => {
+      await __until(() => document.querySelectorAll('.np-declare').length === 1, 8000);
+      const st = await Net.db.ref('states/' + Net.groupKey).once('value').then(s => s.val() || {});
+      const ps = st.match && st.match.hand && st.match.hand.seats && st.match.hand.seats[k];
+      return { badges: document.querySelectorAll('.np-declare').length, declared: !!(ps && ps.declared), locked: ps ? ps.furitenLocked : 'none' };
+    }, dk.k);
+    ok(dkb.badges === 1 && dkb.declared, '乙那台也看得到那家宣戰了', JSON.stringify(dkb));
+    ok(!dkb.locked, '公開狀態裡沒有永久振聽（furitenLocked 一律 false）', JSON.stringify(dkb));
+    await A.page.evaluate((k) => { const h = window.__test.match.hand;
+      h.seats[k].declared = null; h.seats[k].furitenLocked = false; MJDev.redraw(); MJDev.republish(); }, dk.k);
 
     // ── 同一場的下一局：手牌比公開狀態晚到時，發牌動畫不能拿上一局的牌（v1.87）──
     // 2026-10-23 使用者：「發完牌是清一色，好像是上一局的牌，占卜時就是不一樣的，之後就是占卜看到的牌」。

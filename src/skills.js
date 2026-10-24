@@ -119,6 +119,8 @@ function canUse(st, hand, seat) {
     if (turn !== seat) return { ok: false, why: '輪到你的時候才能用' };
   }
   if (sk.kind === 'swap' && S.isWallEmpty(hand)) return { ok: false, why: '牌山沒牌了' };
+  // 宣戰之後手牌鎖住：換牌等於改了宣戰時亮出來的聽牌（v1.92，docs/dora-and-declare.md 定案 9）
+  if (sk.kind === 'swap' && hand.seats[seat] && hand.seats[seat].declared) return { ok: false, why: '宣戰之後不能換牌' };
   return { ok: true, why: '' };
 }
 
