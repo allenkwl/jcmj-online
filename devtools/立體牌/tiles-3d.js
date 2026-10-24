@@ -26,10 +26,10 @@
   /* top：頂面佔圖高的比例（其餘＝前緣，一個牌的厚度）—— 一列上下排的牌，下面那張要往上蓋住上面那張的前緣 */
   const BODY = {
     stand: { face: [0.03, 0.216, 0.97, 0.985], top: 1 },
-    faceV: { face: [0.02, 0.01, 0.98, 0.70], top: 0.70 },
-    faceH: { face: [0.015, 0.02, 0.985, 0.61], top: 0.61 },
-    backV: { top: 0.70 },
-    backH: { top: 0.59 },
+    faceV: { face: [0.02, 0.01, 0.98, 0.735], top: 0.735 },
+    faceH: { face: [0.015, 0.02, 0.985, 0.676], top: 0.676 },
+    backV: { top: 0.735 },
+    backH: { top: 0.676 },
   };
   const IMG = {};
   const loads = Object.keys(BODY).map(k => new Promise(ok => {
@@ -48,16 +48,6 @@
     const sd = thin ? 0 : T.SIDE;
     const fullW = w + sd + 2, fullH = h + sd + 2;
     const swap = (rot === 90 || rot === 270);
-    const cssW = swap ? fullH : fullW, cssH = swap ? fullW : fullH;
-
-    const c = document.createElement('canvas');
-    const dpr = Math.min(3, (window.devicePixelRatio || 1));
-    c.width = Math.round(cssW * dpr); c.height = Math.round(cssH * dpr);
-    c.style.width = cssW + 'px'; c.style.height = cssH + 'px';
-    c.className = 'tile' + (o.selected ? ' sel' : '') + (o.faceDown ? ' back' : '') + (o.className ? ' ' + o.className : '');
-    const ctx = c.getContext('2d');
-    ctx.scale(dpr, dpr);
-
     /* 自己的手牌（立著、牌面朝自己）維持原本平面的畫法 —— 2026-10-24 使用者：「玩家手牌改立體會變小，玩家的手牌不要改吧」。
        立著的牌身頂上多一條厚度，外框一樣大時牌面就被擠小了。stand.png 留著，沒有用到 */
     if (!o.faceDown && tile && !thin && rot === 0) return orig(tile, opts);
@@ -67,6 +57,17 @@
     else kind = swap ? 'faceH' : 'faceV';
     const im = IMG[kind];
     if (!im.complete || !im.naturalWidth) return orig(tile, opts);     // 圖還沒載完：先用原本的
+    // 橫的牌照圖的真實比例（同 src/tiles.js：塞進平面牌的框會被壓扁）
+    const cssW = swap ? fullH : fullW;
+    const cssH = Math.round(cssW * im.naturalHeight / im.naturalWidth);
+
+    const c = document.createElement('canvas');
+    const dpr = Math.min(3, (window.devicePixelRatio || 1));
+    c.width = Math.round(cssW * dpr); c.height = Math.round(cssH * dpr);
+    c.style.width = cssW + 'px'; c.style.height = cssH + 'px';
+    c.className = 'tile' + (o.selected ? ' sel' : '') + (o.faceDown ? ' back' : '') + (o.className ? ' ' + o.className : '');
+    const ctx = c.getContext('2d');
+    ctx.scale(dpr, dpr);
 
     ctx.drawImage(im, 0, 0, cssW, cssH);
     c.dataset.k3d = kind;

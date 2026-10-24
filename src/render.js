@@ -109,6 +109,35 @@ function renderMelds(container, melds, opts) {
   });
 }
 
+/* ── 立體牌的收緊（v1.95）──────────────────────────────────
+   2026-10-24 使用者：「麻將牌緊連在一起，不會出現側面的立體白邊」。
+   上下排的一列牌（左右兩家的手牌、牌河、副露）：每一張往上疊一個前緣高（tiles.js 的 data-edge＝牌的厚度），
+   下面那張蓋住上面那張的前緣，只有最靠近自己的那張露出側面。z-index 照畫面上的順序（越下面越前面）。
+   左右排的不用動（一張貼一張，前緣本來就該看得到）。平面的牌沒有 data-edge，整段不作用。
+   ⚠️ 要在 paint 裡畫完就做：fitSizes 量的高度要是收緊之後的 */
+function pack3D(container) {
+  if (!container) return;
+  const lists = [container].concat([...container.querySelectorAll('.river-row, .meld-group')]);
+  lists.forEach(list => {
+    const tiles = [...list.children].filter(c => c.tagName === 'CANVAS' && c.dataset.edge);
+    if (tiles.length < 2) return;
+    const dir = getComputedStyle(list).flexDirection;
+    if (dir !== 'column' && dir !== 'column-reverse') return;
+    const n = tiles.length;
+    tiles.forEach((c, i) => {
+      const e = Number(c.dataset.edge) || 0;
+      c.style.position = 'relative';
+      if (dir === 'column') {
+        if (i > 0) c.style.marginTop = (-e) + 'px';
+        c.style.zIndex = String(i + 1);
+      } else {                                   // column-reverse：DOM 第一張在最下面
+        if (i > 0) c.style.marginBottom = (-e) + 'px';
+        c.style.zIndex = String(n - i);
+      }
+    });
+  });
+}
+
 /* ── 牌河 ──────────────────────────────────────────────────
    被鳴走的那張不畫（它在別人的副露裡），用 visibleDiscards 濾掉。
    一列幾張看 layout 的 river.perRow。
@@ -721,6 +750,7 @@ function paint(dom, match, ui, mySeat) {
 
     renderNameplate(z.name, match, hand, seat, mySeat, ui);
     renderRiver(z.river, hand, seat, pos);
+    pack3D(z.river);
 
     if (pos === 'bottom') {
       renderMelds(z.melds, hand.seats[seat].melds, SIZE.ownMeld);
@@ -735,6 +765,7 @@ function paint(dom, match, ui, mySeat) {
     } else {
       renderMelds(z.melds, hand.seats[seat].melds,
                   { w: SIZE.oppMeld.w, h: SIZE.oppMeld.h, rotate: rot });
+      pack3D(z.melds);
       /* 別家的手牌只畫張數，不畫內容 —— 線上版根本拿不到，
          單機版也刻意不畫，免得日後接線時忘了這裡有洞。
          例外：胡牌的那一家在局末攤牌（見 revealedOf 的說明）。 */
@@ -753,6 +784,7 @@ function paint(dom, match, ui, mySeat) {
           thin: true, faceDown: true,
         });
       }
+      pack3D(z.hand);
     }
   });
 
@@ -766,7 +798,7 @@ return {
   get RIVER_PER_ROW() { return RIVER_PER_ROW_OF(); },
   get RIVER_MAX_ROWS() { return RIVER_MAX_ROWS_OF(); },
   LIMITS,
-  renderRow, renderMelds, renderRiver, renderNameplate, renderCenterInfo, renderCenterLord,
+  renderRow, renderMelds, renderRiver, renderNameplate, renderCenterInfo, renderCenterLord, pack3D,
   revealedOf,
   renderSelfInfo, handIsKnown, showsTenpai,
   renderAll, el, clear,

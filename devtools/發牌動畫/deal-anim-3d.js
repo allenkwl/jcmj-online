@@ -1,16 +1,22 @@
 /* ═══════════════════════════════════════════════════════════════
-   deal-anim-3d.js — 發牌動畫・立體版【實驗中，遊戲還沒用】
+   devtools/發牌動畫/deal-anim-3d.js — 發牌實驗台用的**副本**（v0.5 起跟 src/deal-anim-3d.js 同一份內容）
+   在實驗台調好（T_ 等）要抄回 src/deal-anim-3d.js 才會上線；實驗台注入時會蓋掉 iframe 裡遊戲的 MJDealAnim3D。
    ───────────────────────────────────────────────────────────────
-   2026-10-24 使用者：「發牌動畫的牌畫得有點醜，能畫成立體的嗎？」「參考一下小球貓電鐵的骰子」
-   「先改發牌測試程式，不要接進遊戲」。
-   這一支是 src/deal-anim.js（v1.94）的副本，只有 devtools/發牌動畫v0.3.html 會載入，掛在 MJDealAnim3D。
-   跟本體不一樣的只有**畫法**：
-     ‧ 牌牆：平面的牌背 canvas → 寫實渲染的牌（Codex 生圖、透明背景，devtools/發牌動畫/sprites/）
-         tileV-*：長邊直放（上下兩道牆）　tileH-*：長邊橫放（左右兩道牆）；-1 單張、-2 兩張疊（目前只用單張自己疊）
-     ‧ 骰子：CSS 畫的點 → 跟小球貓同一種畫風的六面圖（die1～6，一點、四點紅）
-   流程、節奏（T_）、開門算法完全照本體。決定採用再搬回本體、另存新版。
+   以下是遊戲那一支的說明：
+   deal-anim-3d.js — 發牌動畫・立體版（v1.95 起遊戲用這一支；原型在 devtools/發牌動畫/deal-anim-3d.js、實驗台 v0.4）
    ───────────────────────────────────────────────────────────────
-   以下是本體原本的說明：
+   2026-10-24 使用者：「發牌動畫的牌畫得有點醜，能畫成立體的嗎？」「參考一下小球貓電鐵的骰子」→ 實驗台看過 →
+   「發牌動畫後，變回平面？」（牌桌也要是立體牌）→「好，接進遊戲吧」。
+   掛在 MJDealAnim3D。主程式在牌桌是立體牌（MJTiles.bodiesReady()）時用這一支，否則照舊用 src/deal-anim.js ——
+   共用模組沒有版號，舊版頁面呼叫的仍是 MJDealAnim，不受影響。
+   跟 deal-anim.js 不一樣的只有**畫法**：
+     ‧ 牌牆、飛出去的牌：牌桌同一組立體牌背（assets/tiles3d/backV、backH）；只有直的、橫的兩種，
+       一排緊貼、左右兩道下面那張蓋住上面那張的前緣、兩層疊就是上層墊一個牌的厚度（使用者：「全部應該只畫兩種麻將牌」）
+     ‧ 落點：牌桌上每一張的位置與大小（牌桌已經是立體牌、render.js 收緊過）—— 結束時露出來的那一張跟剛落下的完全疊在一起
+     ‧ 骰子：小球貓電鐵同一種畫風的六面圖（assets/dice/die1～6，一點、四點紅）
+   流程、節奏（T_）、開門算法照 deal-anim.js。⚠️ 改節奏兩支要同步。
+   ───────────────────────────────────────────────────────────────
+   以下是 deal-anim.js 原本的說明：
    deal-anim.js — 發牌動畫（牌牆＋擲骰）
    ───────────────────────────────────────────────────────────────
    v1.54 起換成這一版（2026-10-14 使用者在實驗台看過之後：「幫我整合進遊戲」）。
@@ -100,12 +106,12 @@ const T_ = {
 };
 
 /* ── 立體版的圖（相對於遊戲頁，也就是專案根目錄）── */
-const SPR = 'devtools/發牌動畫/sprites/';
+const SPR = 'assets/dice/';
 /* 牌牆、飛出去的牌：跟牌桌同一組牌身（devtools/立體牌/sprites/ 的牌背，2026-10-24 定案的那一組）——
    使用者：「發牌動畫後，變回平面？」：動畫跟牌桌要是同一種牌，結束時才不會換一種樣子 */
-const BODY = 'devtools/立體牌/sprites/';
-const IMG = { tileV: BODY + 'backV.png', tileH: BODY + 'backH.png' };
-for (let n = 1; n <= 6; n++) IMG['die' + n] = SPR + 'die' + n + '.png';
+const BODY = 'assets/tiles3d/';
+const IMG = { tileV: BODY + 'backV.webp', tileH: BODY + 'backH.webp' };
+for (let n = 1; n <= 6; n++) IMG['die' + n] = SPR + 'die' + n + '.webp';
 /* ── 只有兩種牌：直的（tileV，長邊朝遠方）、橫的（tileH，長邊左右）──
    2026-10-24 使用者：「麻將牌緊連在一起，不會出現側面的立體白邊」「全部應該只畫兩種麻將牌，直的和橫的，
    牌和牌相連自然只看到背面，兩層疊在一起也一樣」。
@@ -117,8 +123,8 @@ for (let n = 1; n <= 6; n++) IMG['die' + n] = SPR + 'die' + n + '.png';
        只有最靠近自己的那張露出側面
      ‧ 疊兩層：上層往上墊一個牌的厚度（前緣高），同一張圖
    牌的大小統一（橫的牌寬＝直的牌寬 × 4/3），所以左右兩道牆會比上下兩道短 —— 就是斜著看桌面的透視 */
-const ASPECT = { tileV: 315 / 240, tileH: 164 / 240 };   // 立體牌的 backV、backH（sprites/README.md）
-const TOP = { tileV: 0.70, tileH: 0.59 };
+const ASPECT = { tileV: 340 / 240, tileH: 207 / 240 };   // 立體牌的 backV、backH（devtools/立體牌/sprites/README.md）
+const TOP = { tileV: 0.735, tileH: 0.676 };
 const LONG = 4 / 3;                      // 長邊÷短邊
 function preload() {
   return Promise.all(Object.values(IMG).map(src => new Promise(ok => {
@@ -204,9 +210,6 @@ function run(opts) {
   const T = window.MJTiles;
   if (!T || !T.makeTile) return Promise.resolve('skip:notiles');
 
-  /* 牌桌是立體牌時，先收緊（左右兩家一列互相蓋住前緣）再量 —— 立體牌是 DOM 一變就排一次收緊（setTimeout），
-     剛重畫完那一瞬間量的是還沒收緊的位置，動畫結束時那兩列會跳一下 */
-  if (window.MJ3D && window.MJ3D.active && window.MJ3D.pack) window.MJ3D.pack();
   // 動畫開始前先量好每一家每一張的最終位置
   const targets = ZONES.map(measure);
   if (!targets[0].length) return Promise.resolve('skip:notrendered');
@@ -434,9 +437,9 @@ function run(opts) {
          對家（一排左右）：一張貼一張，整排置中在原本的位置
          上家、下家（一排上下）：橫的牌，每張往下前進「頂面高」，整排置中
        自己：照遊戲手牌的位置（落手後要翻成遊戲的牌） */
-    /* 牌桌也是立體牌（實驗台 v0.4 注入 devtools/立體牌/tiles-3d.js）：牌桌上每一張的位置、大小就是落點 ——
+    /* 牌桌也是立體牌（tiles.js 的 setBodies；render.js 畫的時候就收緊了）：牌桌上每一張的位置、大小就是落點 ——
        動畫結束時露出來的那一張，跟剛落下的那一張完全疊在一起，不會跳 */
-    const table3d = !!(window.MJ3D && window.MJ3D.active);
+    const table3d = !!(T.bodiesReady && T.bodiesReady());
     const landing = targets.map((rs, pos) => {
       if (!rs.length) return [];
       if (table3d) return rs.map(r => ({ x: r.x, y: r.y, w: r.w, h: r.h }));

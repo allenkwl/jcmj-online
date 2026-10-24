@@ -253,12 +253,15 @@ async function pick(p, kingdom) {
       new MutationObserver(() => { const d = !!document.getElementById('deal-anim');
         if (d !== window.__dOn) { window.__dOn = d; if (d) window.__le.push({ t: Date.now(), deal: true }); } })
         .observe(document.body, { childList: true, subtree: true });
-      const run0 = MJDealAnim.run;
-      MJDealAnim.run = function (o) {
-        const h = o.match.hand;
-        window.__deal.push({ handNo: h.handNo, uids: (h.seats[o.mySeat].hand || []).map(t => t.uid).join(',') });
-        return run0.apply(this, arguments);
-      };
+      // v1.95 起牌桌是立體牌時用立體版的發牌動畫（MJDealAnim3D），兩支都盯
+      [window.MJDealAnim, window.MJDealAnim3D].filter(Boolean).forEach(A => {
+        const run0 = A.run;
+        A.run = function (o) {
+          const h = o.match.hand;
+          window.__deal.push({ handNo: h.handNo, uids: (h.seats[o.mySeat].hand || []).map(t => t.uid).join(',') });
+          return run0.apply(this, arguments);
+        };
+      });
     });
     const hn1 = await A.page.evaluate(() => { MJDev.drainWall(); MJDev.setAuto(true); MJDev.republish(); return window.__test.match.hand.handNo; });
     await B.page.evaluate(() => MJDev.setAuto(true));

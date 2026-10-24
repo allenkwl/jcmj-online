@@ -1,0 +1,146 @@
+<!doctype html>
+<html lang="zh-Hant">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>立體牌</title>
+<meta name="description" content="遊戲本體的立體麻將牌（v1.95 起）：對著真的牌桌看，跟平面牌一鍵切換對照（切的是遊戲自己的開關）">
+<meta name="launcher-icon" content="🀄">
+<meta name="launcher-cat" content="畫面">
+<meta name="launcher-needs-server" content="1">
+<!--
+  v0.2（2026-10-24）：v1.95 起立體牌已經在遊戲本體（src/tiles.js 的 setBodies／use3D、src/render.js 的 pack3D）。
+  這一版不再注入 devtools/立體牌/tiles-3d.js，改切遊戲自己的開關 MJTiles.use3D() —— 看到的就是線上玩家看到的
+  （使用者：「測試程式也要更新」）。v0.1（注入預覽版）保留不刪。
+
+  2026-10-24 使用者：「正面的牌也能畫成立體嗎？遊戲畫面全改成立體麻將牌」「牌可以畫厚一點嗎？麻將牌沒那麼薄」。
+  先在這裡看，確定了再接進遊戲（同一天：「先改發牌測試程式，不要接進遊戲」）。
+
+  做法跟發牌實驗台一樣：iframe 載最新版遊戲的 #preview（假牌局、不讀寫存檔），
+  再把 devtools/立體牌/tiles-3d.js 注入進去，換掉 MJTiles.makeTile —— 畫面的版面完全是遊戲自己的，不是另外畫一張假牌桌。
+  ⚠️ 要經開發伺服器開（http://），file:// 讀不到 iframe 裡面。
+-->
+<style>
+:root{--bg:#0b120e;--panel:#141d17;--line:#2a3a2f;--ink:#e9e3cf;--quiet:#9fb3a6;--gold:#e8c46a;}
+*{box-sizing:border-box;}
+html,body{height:100%;margin:0;background:var(--bg);color:var(--ink);font:13px/1.5 -apple-system,'PingFang TC','Noto Sans TC',sans-serif;}
+body{display:grid;grid-template-columns:260px 1fr;}
+#panel{background:var(--panel);border-right:1px solid var(--line);padding:16px;overflow:auto;}
+h1{font-size:16px;margin:0 0 4px;color:var(--gold);}
+.sub{color:var(--quiet);font-size:12px;margin:0 0 14px;}
+.note{border:1px solid var(--line);border-radius:6px;padding:8px 10px;color:var(--quiet);font-size:12px;margin-bottom:14px;}
+.note b{color:var(--ink);}
+label{display:block;margin:10px 0 4px;color:var(--quiet);font-size:12px;}
+select{width:100%;background:#0e1611;color:var(--ink);border:1px solid var(--line);border-radius:4px;padding:5px 6px;font:inherit;}
+button{background:#22301f;color:var(--ink);border:1px solid #3b5235;border-radius:6px;padding:8px 10px;font:inherit;cursor:pointer;width:100%;}
+button.on{background:var(--gold);color:#20160a;border-color:var(--gold);font-weight:600;}
+.two{display:grid;grid-template-columns:1fr 1fr;gap:6px;}
+#status{margin-top:10px;font-size:12px;color:var(--quiet);min-height:2em;white-space:pre-wrap;}
+#stage{position:relative;overflow:hidden;}
+#frameWrap{position:absolute;transform-origin:0 0;box-shadow:0 0 0 1px var(--line);}
+#frameWrap iframe{border:0;display:block;background:#000;}
+#size{position:absolute;right:10px;bottom:8px;color:var(--quiet);font-size:11px;}
+</style>
+</head>
+<body>
+<div id="panel">
+  <h1>立體牌</h1>
+  <p class="sub" id="ver">載入中⋯</p>
+  <div class="note">v1.95 起立體牌<b>已經在遊戲本體</b>（牌身 <code>assets/tiles3d/</code>，34 種牌面照舊用程式畫）。
+  這裡切的是遊戲自己的開關 <code>MJTiles.use3D()</code>，看到的就是線上的樣子。自己的手牌維持平面。
+  按 <b>T</b> 快速切換平面／立體。</div>
+
+  <div class="two"><button id="b2d">平面（現在）</button><button id="b3d" class="on">立體</button></div>
+
+  <label>牌局</label>
+  <select id="scn">
+    <option value="mid" selected>打到一半（副露、牌河）</option>
+    <option value="start">剛開局</option>
+  </select>
+
+  <label>本國</label>
+  <select id="kingdom">
+    <option value="qi">齊</option><option value="chu">楚</option><option value="yan">燕</option>
+    <option value="han">韓</option><option value="wei">魏</option><option value="zhao">趙</option>
+    <option value="qin" selected>秦</option>
+  </select>
+
+  <label>畫面尺寸</label>
+  <select id="vp">
+    <option value="1920x1080">桌機 1920×1080</option>
+    <option value="1280x720" selected>筆電 1280×720</option>
+    <option value="932x430">手機橫放 932×430（大支）</option>
+    <option value="667x375">手機橫放 667×375（SE）</option>
+  </select>
+  <p style="margin-top:12px"><button id="again">重擺一次牌局</button></p>
+  <div id="status"></div>
+</div>
+<div id="stage"><div id="frameWrap"></div><div id="size"></div></div>
+
+<script src="../latest.js"></script>
+<script>
+'use strict';
+const $ = id => document.getElementById(id);
+const file = window.MJ_LATEST && window.MJ_LATEST.file;
+let frame = null, want3d = true;
+const status = (m, err) => { $('status').textContent = m; $('status').style.color = err ? '#f0a08a' : ''; };
+
+function mount() {
+  if (!file) { status('讀不到 ../latest.js', true); return; }
+  if (location.protocol === 'file:') { status('⚠ 要經開發伺服器開（http://）', true); return; }
+  $('ver').textContent = '遊戲：' + file;
+  frame = document.createElement('iframe');
+  frame.src = '../' + encodeURI(file) + '#preview&mute';
+  frame.addEventListener('load', ready);
+  $('frameWrap').appendChild(frame);
+  applyViewport();
+}
+function ready() {
+  const t0 = Date.now();
+  const tick = () => {
+    const w = frame.contentWindow;
+    if (w && w.MJDev && w.MJTiles && w.MJTiles.use3D) { scene(); apply3d(); return; }
+    if (w && w.MJDev && w.MJTiles && Date.now() - t0 > 3000) { status('這一版遊戲沒有內建立體牌（v1.95 以前）—— 用立體牌 v0.1', true); return; }
+    if (Date.now() - t0 > 15000) { status('等不到遊戲的 MJDev', true); return; }
+    setTimeout(tick, 150);
+  };
+  tick();
+}
+function redraw() { try { frame.contentWindow.MJDev.redraw(); } catch (_) {} }
+function apply3d() {
+  const w = frame.contentWindow;
+  if (!w || !w.MJTiles || !w.MJTiles.use3D) return;
+  w.MJTiles.use3D(want3d);
+  $('b3d').classList.toggle('on', want3d); $('b2d').classList.toggle('on', !want3d);
+  redraw();
+  status(want3d ? '立體' : '平面（遊戲現在的樣子）');
+}
+function scene() {
+  const w = frame.contentWindow;
+  try { w.MJAudio && w.MJAudio.SFX.setEnabled(false); w.MJAudio && w.MJAudio.BGM.setEnabled(false); } catch (_) {}
+  w.MJDev.scenario($('scn').value, $('kingdom').value);
+  setTimeout(redraw, 300);
+}
+function applyViewport() {
+  if (!frame) return;
+  const [vw, vh] = $('vp').value.split('x').map(Number);
+  frame.style.width = vw + 'px'; frame.style.height = vh + 'px';
+  const st = $('stage').getBoundingClientRect();
+  const k = Math.min((st.width - 24) / vw, (st.height - 24) / vh, 1);
+  const wrap = $('frameWrap');
+  wrap.style.transform = `scale(${k})`;
+  wrap.style.left = ((st.width - vw * k) / 2) + 'px';
+  wrap.style.top = ((st.height - vh * k) / 2) + 'px';
+  $('size').textContent = `${vw}×${vh}　顯示 ${(k * 100).toFixed(0)}%`;
+  setTimeout(redraw, 200);
+}
+$('b3d').onclick = () => { want3d = true; apply3d(); };
+$('b2d').onclick = () => { want3d = false; apply3d(); };
+$('scn').onchange = scene; $('kingdom').onchange = scene; $('again').onclick = scene;
+$('vp').onchange = applyViewport;
+window.addEventListener('resize', applyViewport);
+document.addEventListener('keydown', e => { if (e.key === 't' || e.key === 'T') { want3d = !want3d; apply3d(); } });
+mount();
+</script>
+</body>
+</html>

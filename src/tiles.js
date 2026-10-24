@@ -308,6 +308,8 @@ function drawFaceInner(ctx, tile, x, y, w, h) {
    canvas 的長寬會依旋轉角度對調，所以版面直接照元素尺寸排就好。   */
 function makeTile(tile, opts) {
   const o = opts || {};
+  // 立體牌（v1.95）：主程式開了（setBodies）、圖都載完，而且不是自己的手牌 → 用立體的牌身
+  if (BODIES && bodiesReady() && !isOwnStanding(tile, o)) return make3D(tile, o);
   const w = o.w || 40, h = o.h || 56;
   const rot = ((o.rotate || 0) % 360 + 360) % 360;
   const thin = !!o.thin;
@@ -355,8 +357,93 @@ function makeTile(tile, opts) {
   return c;
 }
 
+/* ── 立體牌（v1.95，devtools/立體牌/、docs 見 devtools/立體牌/sprites/README.md）────────────
+   2026-10-24 使用者：「正面的牌也能畫成立體嗎？遊戲畫面全改成立體麻將牌」→ 預覽看過、定案後：「好，接進遊戲吧」。
+   牌身用圖、牌面用程式：Codex 生的空白立體牌（正投影、真牌厚度、側面褐白各半），34 種牌面照舊用 drawFaceInner 畫在頂面上。
+     faceV  躺著、牌面朝上、長邊朝遠方（牌河、副露、祥瑞指示牌）　faceH  同上、長邊左右（左右兩家）
+     backV  躺著、牌背朝上（對家的手牌、暗槓）　　　　　　　　　　 backH  同上、長邊左右（左右兩家的手牌）
+   ‧ **自己的手牌（立著、牌面朝自己）維持原本平面的** —— 使用者：「玩家手牌改立體會變小，玩家的手牌不要改吧」
+   ‧ 只有主程式呼叫 setBodies() 才開：共用模組沒有版號，還開著舊版頁面的人照舊是平面
+   ‧ 元素外框照原本 makeTile 算（版面不動），牌身拉到外框大小；data-edge＝前緣（牌的厚度）的高，
+     render.js 用它把上下排的一列牌收緊（下面那張蓋住上面那張的前緣）
+   ‧ face：牌面在圖裡的範圍 [x0,y0,x1,y1]；top：頂面佔圖高（其餘是前緣）—— 照圖量的，換圖要重量 */
+const BODY = {
+  faceV: { file: 'faceV', face: [0.02, 0.01, 0.98, 0.735], top: 0.735 },
+  faceH: { file: 'faceH', face: [0.015, 0.02, 0.985, 0.676], top: 0.676 },
+  backV: { file: 'backV', top: 0.735 },
+  backH: { file: 'backH', top: 0.676 },
+};
+let BODIES = null;
+let BODIES_ON = true;          // 開發工具（devtools/立體牌、發牌實驗台）切平面／立體對照用
+function use3D(on) { BODIES_ON = on !== false; }
+function setBodies(base) {
+  BODIES = {};
+  return Promise.all(Object.keys(BODY).map(k => new Promise(ok => {
+    const im = new Image();
+    im.onload = im.onerror = () => ok();
+    im.src = base + BODY[k].file + '.webp';
+    BODIES[k] = im;
+  })));
+}
+function bodiesReady() {
+  return BODIES_ON && !!BODIES && Object.keys(BODY).every(k => BODIES[k] && BODIES[k].complete && BODIES[k].naturalWidth > 0);
+}
+function isOwnStanding(tile, o) {
+  const rot = ((o.rotate || 0) % 360 + 360) % 360;
+  return !o.faceDown && !!tile && !o.thin && rot === 0;
+}
+function make3D(tile, o) {
+  const w = o.w || 40, h = o.h || 56;
+  const rot = ((o.rotate || 0) % 360 + 360) % 360;
+  const sd = o.thin ? 0 : SIDE;
+  const fullW = w + sd + 2, fullH = h + sd + 2;
+  const swap = (rot === 90 || rot === 270);
+  const kind = (o.faceDown || !tile) ? (swap ? 'backH' : 'backV') : (swap ? 'faceH' : 'faceV');
+  const cssW = swap ? fullH : fullW;
+  /* 照圖的真實比例畫（寬照原本的框，高照圖），不塞進原本平面牌的框 —— 那個框是給平面牌的，
+     頂面加前緣塞進去，頂面會被壓扁（2026-10-24 使用者：「兩側的牌壓得太扁」「直的不要太扁，再拉長一點點，讓牌面多顯示一點」）。
+     左右兩家一列互相疊著（render.js 的 pack3D），間距由「頂面高」決定 */
+  const im = BODIES[kind];
+  const cssH = Math.round(cssW * im.naturalHeight / im.naturalWidth);
+  const c = document.createElement('canvas');
+  const dpr = Math.min(3, (window.devicePixelRatio || 1));
+  c.width = Math.round(cssW * dpr); c.height = Math.round(cssH * dpr);
+  c.style.width = cssW + 'px'; c.style.height = cssH + 'px';
+  c.className = 'tile tile3d' + (o.selected ? ' sel' : '') + (o.faceDown ? ' back' : '') + (o.className ? ' ' + o.className : '');
+  const ctx = c.getContext('2d');
+  ctx.scale(dpr, dpr);
+
+  ctx.drawImage(im, 0, 0, cssW, cssH);
+  c.dataset.edge = String(Math.round(cssH * (1 - BODY[kind].top)));
+
+  const f = BODY[kind].face;
+  if (f && tile) {
+    const fx = cssW * f[0], fy = cssH * f[1], fw = cssW * (f[2] - f[0]), fh = cssH * (f[3] - f[1]);
+    ctx.save();
+    ctx.translate(fx + fw / 2, fy + fh / 2);
+    // 花色的方向照原本的 rotate（左右兩家轉 90°／270°、對家轉 180°）
+    if (rot === 90) ctx.rotate(Math.PI / 2);
+    else if (rot === 180) ctx.rotate(Math.PI);
+    else if (rot === 270) ctx.rotate(-Math.PI / 2);
+    const gw = swap ? fh : fw, gh = swap ? fw : fh;
+    drawFaceInner(ctx, tile, -gw / 2, -gh / 2, gw, gh);
+    ctx.restore();
+    if (o.selected) {
+      rrect(ctx, fx + 1, fy + 1, fw - 2, fh - 2, Math.max(3, fw * 0.08));
+      ctx.strokeStyle = 'rgba(231,76,60,.45)'; ctx.lineWidth = 4; ctx.stroke();
+      ctx.strokeStyle = '#e74c3c'; ctx.lineWidth = 2; ctx.stroke();
+    }
+  }
+  if (o.dim) {
+    ctx.globalCompositeOperation = 'source-atop';
+    ctx.fillStyle = 'rgba(20,10,0,.45)'; ctx.fillRect(0, 0, cssW, cssH);
+    ctx.globalCompositeOperation = 'source-over';
+  }
+  return c;
+}
+
 return {
-  SIDE, NUM_CH, setFaceImages,
+  SIDE, NUM_CH, setFaceImages, setBodies, bodiesReady, use3D,
   rrect, draw3DSides, drawShell, drawBack,
   drawWan, drawTong, drawTiao, drawHonor, drawFaceInner,
   makeTile,
