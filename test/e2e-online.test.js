@@ -64,7 +64,15 @@ async function pick(p, kingdom) {
     await __until(() => document.querySelector('#sel-screen.show.online') && document.querySelectorAll('#kg-home .kcard').length === 7, 15000);
     const cards = {};
     document.querySelectorAll('#kg-home .kcard').forEach(c => {
-      cards[c.dataset.id] = { prog: (c.querySelector('.kprog') || {}).textContent || '', taken: c.classList.contains('dim') };
+      /* v1.98：每一段（征服 N 國／X 兩／第 N 場）不拆行 —— 原本窄卡片（手機）會斷在數字跟「兩」中間。
+         無頭瀏覽器全螢幕時改不了視窗大小，就把這一張卡片暫時壓窄（強迫換行）再量，量完還原 */
+      const pr = c.querySelector('.kprog'), w0 = pr ? pr.style.width : '';
+      if (pr) pr.style.width = '90px';
+      const segs = [...c.querySelectorAll('.kprog .kp-seg')];
+      const lines = pr ? Math.round(pr.getBoundingClientRect().height / parseFloat(getComputedStyle(pr).lineHeight || 14)) : 0;
+      cards[c.dataset.id] = { prog: (pr || {}).textContent || '', taken: c.classList.contains('dim'),
+        segs: segs.length, segsWhole: segs.every(x => x.getClientRects().length === 1), wrapped: lines };
+      if (pr) pr.style.width = w0;
     });
     const card = document.querySelector('#kg-home .kcard[data-id="' + k + '"]');
     if (card) card.click();
@@ -117,6 +125,7 @@ async function pick(p, kingdom) {
     ok(/征服 2 國/.test(aCards.qin.prog) && /2,450 兩/.test(aCards.qin.prog) && /第 6 場/.test(aCards.qin.prog),
        '甲的秦國卡片寫著自己的進度', JSON.stringify(aCards.qin));
     ok(aCards.zhao.prog === '尚未出征', '甲沒打過的國寫「尚未出征」', JSON.stringify(aCards.zhao));
+    ok(aCards.qin.segs === 3 && aCards.qin.segsWhole, '手機窄卡片：「征服 N 國」「X 兩」「第 N 場」各自不拆行（兩不會掉到數字下一行）', JSON.stringify(aCards.qin));
 
     // ── 乙：加入 → 擇國（秦國已有主公） ──
     ok(await openLobby(B.page), '乙進得了大廳');
