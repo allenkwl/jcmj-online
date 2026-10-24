@@ -187,6 +187,39 @@ if (JSON.parse(fs.readFileSync('database.rules.json', 'utf8')).rules.players) {
   await no('session 缺欄位',             () => db(A).ref('players/' + A + '/session').set({ table: '桌' }));
 }
 
+/* ══ 10. 意見反應 /feedback/{uid}/{id}（v2.07，docs/feedback.md）══
+   玩家只能新增、讀自己的；回覆／狀態只有管理者（/admins/{uid} = true，只能用 CLI 寫）能寫 */
+if (JSON.parse(fs.readFileSync('database.rules.json', 'utf8')).rules.feedback) {
+  const ADM = 'uidAdmin';
+  await env.clearDatabase();
+  await env.withSecurityRulesDisabled(c => c.database().ref('admins/' + ADM).set(true));
+  const fb = { cat: 'bug', text: '牌河的牌不見了', at: Date.now(), ver: 'v2.07', name: 'A', info: '{"ua":"x"}', contact: 'a@b.c' };
+  await ok('玩家送出意見',               () => db(A).ref('feedback/' + A + '/f1').set(fb));
+  await ok('讀自己的意見',               () => db(A).ref('feedback/' + A).once('value'));
+  await no('改自己已經送出的意見',       () => db(A).ref('feedback/' + A + '/f1/text').set('改掉'));
+  await no('刪自己的意見',               () => db(A).ref('feedback/' + A + '/f1').remove());
+  await no('自己寫回覆',                 () => db(A).ref('feedback/' + A + '/f2').set({ ...fb, reply: '自問自答' }));
+  await no('自己標成已處理',             () => db(A).ref('feedback/' + A + '/f3').set({ ...fb, status: 'done' }));
+  await no('寫到別人名下',               () => db(B).ref('feedback/' + A + '/f4').set(fb));
+  await no('讀別人的意見',               () => db(B).ref('feedback/' + A).once('value'));
+  await no('讀全部的意見（一般玩家）',   () => db(B).ref('feedback').once('value'));
+  await no('沒登入送意見',               () => env.unauthenticatedContext().database().ref('feedback/' + A + '/f5').set(fb));
+  await no('缺欄位',                     () => db(A).ref('feedback/' + A + '/f6').set({ cat: 'bug', text: 'x' }));
+  await no('不認得的分類',               () => db(A).ref('feedback/' + A + '/f7').set({ ...fb, cat: 'spam' }));
+  await no('空白內容',                   () => db(A).ref('feedback/' + A + '/f8').set({ ...fb, text: '' }));
+  await no('內容太長',                   () => db(A).ref('feedback/' + A + '/f9').set({ ...fb, text: 'x'.repeat(2001) }));
+  await no('多塞不認得的欄位',           () => db(A).ref('feedback/' + A + '/fa').set({ ...fb, extra: 1 }));
+  await no('時間寫到未來',               () => db(A).ref('feedback/' + A + '/fb').set({ ...fb, at: Date.now() + 3600000 }));
+  await no('自己把自己加成管理者',       () => db(A).ref('admins/' + A).set(true));
+  await ok('管理者確認自己是管理者',     () => db(ADM).ref('admins/' + ADM).once('value'));
+  await no('讀別人是不是管理者',         () => db(A).ref('admins/' + ADM).once('value'));
+  await ok('管理者讀全部的意見',         () => db(ADM).ref('feedback').once('value'));
+  await ok('管理者寫回覆',               () => db(ADM).ref('feedback/' + A + '/f1').update({ reply: '已修好，謝謝', replyAt: Date.now(), status: 'replied' }));
+  await ok('玩家讀到回覆',               () => db(A).ref('feedback/' + A + '/f1/reply').once('value'));
+  await no('管理者也不能塞不認得的欄位', () => db(ADM).ref('feedback/' + A + '/f1/extra').set(1));
+  await ok('管理者刪掉垃圾意見',         () => db(ADM).ref('feedback/' + A + '/f1').remove());
+}
+
 await env.cleanup();
 console.log(`\n通過 ${pass}　失敗 ${fail}`);
 if (fail) { fails.forEach(f => console.log('  ✗ ' + f)); process.exit(1); }

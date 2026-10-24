@@ -1,0 +1,240 @@
+<!doctype html>
+<html lang="zh-Hant">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>意見反應</title>
+<meta name="description" content="玩家從遊戲說明送來的問題反應與意見：看、篩選、回覆、標狀態（回覆寫回 Firebase，玩家下次開遊戲就看得到）">
+<meta name="launcher-icon" content="📬">
+<meta name="launcher-cat" content="其他">
+<meta name="launcher-needs-server" content="1">
+<!--
+  2026-10-25 使用者：「我們處理後是否也可以寫回 firebase 該玩家上線就可以看到？」「會另外出一個管理者程式嗎？」
+  遊戲那一邊是 src/feedback.js，資料與規則見 docs/feedback.md。
+
+  ‧ 只有管理者讀得到：規則看 /admins/{uid} === true，那個節點網頁寫不進去，只能用 firebase CLI 加：
+      firebase database:set /admins/<uid> --data true --project jcmj-4p -f
+    還不是管理者時，這頁會顯示登入帳號的 uid，交給 Claude（或自己跑上面那行）加進去。
+  ‧ 這頁公開放在 GitHub Pages 上沒關係：別人打開、登入了也什麼都讀不到。
+  ‧ 用**獨立命名的 Firebase app**（'admin'）：登入狀態跟遊戲分開存，在這裡登入／登出不會把同一個瀏覽器裡遊戲的身分換掉。
+  ‧ ?emu=1 改連本機模擬器（test/e2e-feedback.test.js 用）。
+-->
+<style>
+:root{--bg:#0b120e;--panel:#141d17;--line:#2a3a2f;--ink:#e9e3cf;--quiet:#9fb3a6;--gold:#e8c46a;--red:#e7704f;--ok:#7fc79a;}
+*{box-sizing:border-box;}
+html,body{margin:0;background:var(--bg);color:var(--ink);font:14px/1.6 -apple-system,'PingFang TC','Noto Sans TC',sans-serif;}
+header{position:sticky;top:0;z-index:2;background:var(--panel);border-bottom:1px solid var(--line);padding:10px 16px;display:flex;flex-wrap:wrap;gap:10px;align-items:center;}
+h1{font-size:17px;margin:0;color:var(--gold);}
+#who{color:var(--quiet);font-size:12.5px;flex:1;min-width:200px;}
+#who code{color:var(--ink);background:#0e1611;padding:1px 5px;border-radius:4px;user-select:all;}
+button,select,input,textarea{font:inherit;color:var(--ink);}
+button{background:#22301f;border:1px solid #3b5235;border-radius:6px;padding:5px 12px;cursor:pointer;}
+button:hover{border-color:var(--gold);}
+button.pri{background:var(--gold);color:#20160a;border-color:var(--gold);font-weight:600;}
+button:disabled{opacity:.45;cursor:default;}
+select,input[type=search]{background:#0e1611;border:1px solid var(--line);border-radius:6px;padding:5px 8px;}
+main{max-width:920px;margin:0 auto;padding:14px 16px 60px;}
+#bar{display:flex;flex-wrap:wrap;gap:8px;align-items:center;margin-bottom:12px;}
+#bar .cnt{color:var(--quiet);font-size:12.5px;margin-left:auto;}
+#msg{padding:10px 12px;border:1px solid var(--line);border-radius:8px;color:var(--quiet);margin-bottom:12px;display:none;}
+#msg.show{display:block;}
+#msg.err{color:#f3b19e;border-color:#6b3a2c;}
+.item{border:1px solid var(--line);border-radius:10px;padding:10px 12px;margin-bottom:10px;background:#0f1813;}
+.item.st-new{border-left:4px solid var(--red);}
+.item.st-seen{border-left:4px solid var(--gold);}
+.item.st-replied{border-left:4px solid var(--ok);}
+.item.st-done{opacity:.72;}
+.meta{display:flex;flex-wrap:wrap;gap:6px 12px;font-size:12px;color:var(--quiet);}
+.chip{padding:0 7px;border-radius:9px;background:#22301f;color:var(--ink);}
+.chip.bug{background:#5a2a20;}
+.chip.idea{background:#26404a;}
+.text{white-space:pre-wrap;word-break:break-word;margin:6px 0;font-size:14.5px;}
+details{font-size:12px;color:var(--quiet);}
+details pre{white-space:pre-wrap;word-break:break-all;background:#0b120e;border:1px solid var(--line);border-radius:6px;padding:6px 8px;margin:4px 0 0;}
+.reply{display:flex;flex-direction:column;gap:6px;margin-top:8px;}
+.reply textarea{width:100%;min-height:60px;background:#0e1611;border:1px solid var(--line);border-radius:6px;padding:6px 8px;resize:vertical;}
+.reply .row{display:flex;flex-wrap:wrap;gap:6px;align-items:center;}
+.reply .row .when{color:var(--quiet);font-size:12px;margin-left:auto;}
+.empty{color:var(--quiet);text-align:center;padding:30px 0;}
+</style>
+</head>
+<body>
+<header>
+  <h1>📬 意見反應</h1>
+  <div id="who">連線中⋯</div>
+  <button id="b-google">Google 登入</button>
+  <button id="b-email">Email 登入</button>
+  <button id="b-out" style="display:none">登出</button>
+</header>
+<main>
+  <div id="msg"></div>
+  <div id="bar" style="display:none">
+    <select id="f-st">
+      <option value="todo" selected>未處理（新的＋已讀）</option>
+      <option value="new">新的</option>
+      <option value="replied">已回覆</option>
+      <option value="done">已處理</option>
+      <option value="all">全部</option>
+    </select>
+    <select id="f-cat">
+      <option value="">全部分類</option>
+      <option value="bug">問題回報</option>
+      <option value="idea">意見建議</option>
+      <option value="other">其他</option>
+    </select>
+    <input type="search" id="f-q" placeholder="搜尋內容／名字／版本">
+    <span class="cnt" id="cnt"></span>
+  </div>
+  <div id="list"></div>
+</main>
+
+<script src="https://www.gstatic.com/firebasejs/12.17.1/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/12.17.1/firebase-auth-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/12.17.1/firebase-database-compat.js"></script>
+<script>
+'use strict';
+// 跟 src/net.js 的 FIREBASE_CONFIG 同一份
+const CONFIG = {
+  apiKey: "AIzaSyAEXY4tOqdf2IQS_D6v93OhED_Uy5kBwUk",
+  authDomain: "jcmj-4p.firebaseapp.com",
+  databaseURL: "https://jcmj-4p-default-rtdb.asia-southeast1.firebasedatabase.app",
+  projectId: "jcmj-4p",
+  storageBucket: "jcmj-4p.firebasestorage.app",
+  messagingSenderId: "743964311095",
+  appId: "1:743964311095:web:ab7a5afe5fc937bce889b2",
+};
+const CATS = { bug: '問題回報', idea: '意見建議', other: '其他' };
+const STATUS = { '': '新的', seen: '已讀', replied: '已回覆', done: '已處理' };
+const $ = id => document.getElementById(id);
+const esc = t => String(t == null ? '' : t).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+const fmt = t => t ? new Date(t).toLocaleString('zh-TW', { hour12: false }) : '';
+
+const app = firebase.initializeApp(CONFIG, 'admin');      // 獨立命名：登入狀態不跟遊戲共用
+const auth = app.auth(), db = app.database();
+if (new URLSearchParams(location.search).has('emu')) {
+  db.useEmulator('127.0.0.1', 9123);
+  auth.useEmulator('http://127.0.0.1:9099');
+}
+
+let items = [], feedRef = null, isAdmin = false;
+const drafts = {};                         // 打到一半的回覆（資料更新重畫時不要被洗掉）
+function msg(t, err) { const m = $('msg'); m.innerHTML = t || ''; m.className = t ? 'show' + (err ? ' err' : '') : ''; }
+
+auth.onAuthStateChanged(u => {
+  if (feedRef) { feedRef.off(); feedRef = null; }
+  isAdmin = false; items = []; render();
+  $('bar').style.display = 'none';
+  $('b-google').style.display = $('b-email').style.display = u ? 'none' : '';
+  $('b-out').style.display = u ? '' : 'none';
+  if (!u) { $('who').textContent = '還沒登入'; msg('用遊戲裡同一個 Google／Email 帳號登入。'); return; }
+  $('who').innerHTML = esc(u.email || '（沒有 Email）') + '　uid <code>' + esc(u.uid) + '</code>';
+  msg('確認管理者身分⋯');
+  db.ref('admins/' + u.uid).once('value').then(s => {
+    if (s.val() !== true) throw new Error('not-admin');
+    isAdmin = true; msg('');
+    $('bar').style.display = '';
+    feedRef = db.ref('feedback');
+    feedRef.on('value', snap => {
+      const v = snap.val() || {};
+      items = [];
+      Object.keys(v).forEach(uid => Object.keys(v[uid] || {}).forEach(id => items.push(Object.assign({ uid, id }, v[uid][id]))));
+      items.sort((a, b) => (b.at || 0) - (a.at || 0));
+      render();
+    }, e => msg('讀不到意見：' + esc(e.message || e), true));
+  }).catch(() => {
+    msg('這個帳號還不是管理者。把上面的 uid 交給 Claude，或自己跑：<br><code>firebase database:set /admins/' + esc(u.uid)
+      + ' --data true --project jcmj-4p -f</code><br>加好之後重新整理這一頁。', true);
+  });
+});
+
+$('b-google').onclick = () => {
+  const p = new firebase.auth.GoogleAuthProvider();
+  p.setCustomParameters({ prompt: 'select_account' });
+  auth.signInWithPopup(p).catch(e => {
+    /* Firebase 只允許 jcmj-4p.firebaseapp.com、jcmj-4p.web.app、allenkwl.github.io 用 Google 登入，
+       從啟動台（localhost:9987）開會被擋（2026-10-25 實際踩到） */
+    if (/unauthorized-domain/.test(e.code || '')) {
+      msg('這個網址（' + esc(location.host) + '）不能用 Google 登入。請改從 GitHub Pages 開這一頁：<br><a style="color:var(--gold)" href="https://allenkwl.github.io/jcmj-online/devtools/'
+        + encodeURI('意見反應v0.1.html') + '">allenkwl.github.io/jcmj-online/devtools/意見反應v0.1.html</a><br>（或用 Email 登入，Email 不受網址限制）', true);
+      return;
+    }
+    msg('登入失敗：' + esc(e.code || e.message), true);
+  });
+};
+$('b-email').onclick = () => {
+  const em = prompt('Email'); if (!em) return;
+  const pw = prompt('密碼'); if (!pw) return;
+  auth.signInWithEmailAndPassword(em.trim(), pw).catch(e => msg('登入失敗：' + esc(e.code || e.message), true));
+};
+$('b-out').onclick = () => auth.signOut();
+['f-st', 'f-cat', 'f-q'].forEach(id => $(id).addEventListener('input', render));
+
+function pass(f) {
+  const st = f.status || '', want = $('f-st').value;
+  if (want === 'todo' && !(st === '' || st === 'seen')) return false;
+  if (want === 'new' && st !== '') return false;
+  if ((want === 'replied' || want === 'done') && st !== want) return false;
+  if ($('f-cat').value && f.cat !== $('f-cat').value) return false;
+  const q = $('f-q').value.trim().toLowerCase();
+  if (q && ![f.text, f.name, f.ver, f.contact, f.reply, f.uid].some(x => String(x || '').toLowerCase().includes(q))) return false;
+  return true;
+}
+function render() {
+  const box = $('list');
+  if (!isAdmin) { box.innerHTML = ''; $('cnt').textContent = ''; return; }
+  // 正在打回覆的那一格先存起來
+  box.querySelectorAll('textarea[data-k]').forEach(t => { drafts[t.dataset.k] = t.value; });
+  const shown = items.filter(pass);
+  const n = s => items.filter(f => (f.status || '') === s).length;
+  $('cnt').textContent = `顯示 ${shown.length}／共 ${items.length}　新的 ${n('')}・已讀 ${n('seen')}・已回覆 ${n('replied')}・已處理 ${n('done')}`;
+  if (!shown.length) { box.innerHTML = '<div class="empty">' + (items.length ? '這個篩選沒有意見' : '還沒有人送意見') + '</div>'; return; }
+  box.innerHTML = shown.map(f => {
+    const k = f.uid + '/' + f.id;
+    let info = f.info;
+    try { info = JSON.stringify(JSON.parse(f.info), null, 2); } catch (_) {}
+    let mode = '';
+    try { const o = JSON.parse(f.info); mode = [o.mode, o.table, o.handNo != null ? '第 ' + o.handNo + ' 局' : ''].filter(Boolean).join('・'); } catch (_) {}
+    const draft = drafts[k] != null ? drafts[k] : (f.reply || '');
+    return `<div class="item st-${f.status || 'new'}" data-k="${esc(k)}">
+      <div class="meta"><span class="chip ${esc(f.cat)}">${esc(CATS[f.cat] || f.cat)}</span>
+        <span>${esc(fmt(f.at))}</span><span>${esc(f.ver)}</span>
+        ${f.name ? `<span>👤 ${esc(f.name)}</span>` : ''}${mode ? `<span>${esc(mode)}</span>` : ''}
+        ${f.contact ? `<span>✉ ${esc(f.contact)}</span>` : ''}
+        <span>狀態：<b>${esc(STATUS[f.status || ''] || f.status)}</b></span></div>
+      <div class="text">${esc(f.text)}</div>
+      <details><summary>附帶資訊（uid ${esc(f.uid.slice(0, 8))}⋯）</summary><pre>${esc(info)}</pre></details>
+      <div class="reply">
+        <textarea data-k="${esc(k)}" placeholder="回覆玩家（玩家下次開遊戲會看到）">${esc(draft)}</textarea>
+        <div class="row">
+          <button class="pri" data-act="reply">送出回覆</button>
+          <button data-act="seen">標為已讀</button>
+          <button data-act="done">標為已處理</button>
+          <button data-act="del">刪除</button>
+          ${f.replyAt ? `<span class="when">回覆於 ${esc(fmt(f.replyAt))}</span>` : ''}
+        </div>
+      </div>
+    </div>`;
+  }).join('');
+}
+$('list').addEventListener('click', e => {
+  const b = e.target.closest('button[data-act]');
+  if (!b) return;
+  const card = b.closest('.item'), k = card.dataset.k, ref = db.ref('feedback/' + k);
+  const act = b.dataset.act;
+  let p;
+  if (act === 'reply') {
+    const text = card.querySelector('textarea').value.trim();
+    if (!text) { msg('回覆是空的', true); return; }
+    p = ref.update({ reply: text, replyAt: firebase.database.ServerValue.TIMESTAMP, status: 'replied' }).then(() => { delete drafts[k]; });
+  } else if (act === 'seen' || act === 'done') {
+    p = ref.update({ status: act });
+  } else if (act === 'del') {
+    if (!confirm('刪掉這則意見？（玩家那邊也會消失）')) return;
+    p = ref.remove().then(() => { delete drafts[k]; });
+  }
+  b.disabled = true;
+  p.then(() => msg('')).catch(err => msg('寫入失敗：' + esc(err.message || err), true)).finally(() => { b.disabled = false; });
+});
+</script>
+</body>
+</html>

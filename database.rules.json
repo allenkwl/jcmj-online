@@ -195,6 +195,55 @@
           ".validate": "!newData.exists() || newData.isBoolean()"
         }
       }
+    },
+    "admins": {
+      "$uid": {
+        ".read": "auth != null && auth.uid === $uid"
+      }
+    },
+    "feedback": {
+      ".read": "auth != null && root.child('admins').child(auth.uid).val() === true",
+      "$uid": {
+        ".read": "auth != null && (auth.uid === $uid || root.child('admins').child(auth.uid).val() === true)",
+        ".validate": "$uid.length <= 128",
+        "$id": {
+          ".write": "auth != null && ((auth.uid === $uid && !data.exists() && newData.exists()) || root.child('admins').child(auth.uid).val() === true)",
+          ".validate": "$id.length <= 40 && newData.hasChildren(['cat', 'text', 'at', 'ver'])",
+          "cat": {
+            ".validate": "newData.isString() && (newData.val() === 'bug' || newData.val() === 'idea' || newData.val() === 'other')"
+          },
+          "text": {
+            ".validate": "newData.isString() && newData.val().length >= 1 && newData.val().length <= 2000"
+          },
+          "contact": {
+            ".validate": "newData.isString() && newData.val().length <= 200"
+          },
+          "at": {
+            ".validate": "newData.isNumber() && newData.val() <= now + 60000"
+          },
+          "ver": {
+            ".validate": "newData.isString() && newData.val().length <= 40"
+          },
+          "name": {
+            ".validate": "newData.isString() && newData.val().length <= 40"
+          },
+          "info": {
+            ".validate": "newData.isString() && newData.val().length <= 4000"
+          },
+          "status": {
+            ".validate": "root.child('admins').child(auth.uid).val() === true && newData.isString() && newData.val().length <= 20"
+          },
+          "reply": {
+            ".validate": "root.child('admins').child(auth.uid).val() === true && newData.isString() && newData.val().length <= 4000"
+          },
+          "replyAt": {
+            ".validate": "root.child('admins').child(auth.uid).val() === true && newData.isNumber()"
+          },
+          "$other": {
+            ".validate": false
+          }
+        }
+      }
     }
   }
 }

@@ -107,6 +107,25 @@ window.MJDevtools = [
   "cat": "美術"
  },
  {
+  "family": "意見反應",
+  "all": [
+   {
+    "ver": "0.1",
+    "rel": "devtools/意見反應v0.1.html"
+   }
+  ],
+  "newest": {
+   "ver": "0.1",
+   "rel": "devtools/意見反應v0.1.html"
+  },
+  "count": 1,
+  "needsServer": true,
+  "title": "意見反應",
+  "sub": "玩家從遊戲說明送來的問題反應與意見：看、篩選、回覆、標狀態（回覆寫回 Firebase，玩家下次開遊戲就看得到）",
+  "ico": "📬",
+  "cat": "其他"
+ },
+ {
   "family": "牌面檢視器",
   "all": [
    {
@@ -128,6 +147,10 @@ window.MJDevtools = [
   "family": "發牌動畫",
   "all": [
    {
+    "ver": "0.5",
+    "rel": "devtools/發牌動畫v0.5.html"
+   },
+   {
     "ver": "0.4",
     "rel": "devtools/發牌動畫v0.4.html"
    },
@@ -145,10 +168,10 @@ window.MJDevtools = [
    }
   ],
   "newest": {
-   "ver": "0.4",
-   "rel": "devtools/發牌動畫v0.4.html"
+   "ver": "0.5",
+   "rel": "devtools/發牌動畫v0.5.html"
   },
-  "count": 4,
+  "count": 5,
   "needsServer": true,
   "title": "發牌動畫",
   "sub": "發牌動畫實驗台：立體版（寫實的牌與骰子）、現行版、舊版對照，改的是副本，不會動到線上玩家",
@@ -159,18 +182,22 @@ window.MJDevtools = [
   "family": "立體牌",
   "all": [
    {
+    "ver": "0.2",
+    "rel": "devtools/立體牌v0.2.html"
+   },
+   {
     "ver": "0.1",
     "rel": "devtools/立體牌v0.1.html"
    }
   ],
   "newest": {
-   "ver": "0.1",
-   "rel": "devtools/立體牌v0.1.html"
+   "ver": "0.2",
+   "rel": "devtools/立體牌v0.2.html"
   },
-  "count": 1,
+  "count": 2,
   "needsServer": true,
   "title": "立體牌",
-  "sub": "遊戲畫面換成立體麻將牌（牌身用圖、牌面用程式）的預覽，對著真的牌桌看，跟現在的平面牌一鍵切換對照",
+  "sub": "遊戲本體的立體麻將牌（v1.95 起）：對著真的牌桌看，跟平面牌一鍵切換對照（切的是遊戲自己的開關）",
   "ico": "🀄",
   "cat": "畫面"
  },
