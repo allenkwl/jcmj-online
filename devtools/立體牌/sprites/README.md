@@ -47,3 +47,14 @@ Codex CLI（`/Applications/ChatGPT.app/Contents/Resources/codex-cli/bin/codex`�
 | stand | 240×370 | 牌面從第 80 列 | 頂上 38 : 38 |
 
 `tiles-3d.js` 的 `BODY.top`（頂面佔圖高）與 `face`（牌面範圍）照這張表寫，換圖要重量。
+
+## 拉直（2026-10-24 之後一版）
+
+使用者看上一版「前小後大、怪怪的」。量過外框與頂面邊線都沒有斜（正投影本身會讓人覺得後面比較大），
+但前緣下方的圓角比頂面後端大很多，前端看起來縮進去。使用者：「叫 codex 拉直就好」。
+描述加：*perfectly STRAIGHT rectangular block … near end and far end EXACTLY the same width … SAME SMALL corner radius on all four
+corners … do NOT round the bottom corners of the side bands more than the top corners*。
+四張躺著的重畫（立著那張不變）。四個角一樣圓、每一列一樣寬。
+牌背兩張的側面又偏白（約 39:61）→ 側面褐、白兩條**整條**上下調成一半（等比縮放色帶，外形、角不動）：直的 45:48、橫的 32:34。
+牌面兩張本來就對（直的 44:47、橫的 30:32）。`tiles-3d.js` 的 `BODY` 照新圖：top 直 0.70、橫 0.59～0.61。
+

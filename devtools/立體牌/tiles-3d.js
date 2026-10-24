@@ -26,10 +26,10 @@
   /* top：頂面佔圖高的比例（其餘＝前緣，一個牌的厚度）—— 一列上下排的牌，下面那張要往上蓋住上面那張的前緣 */
   const BODY = {
     stand: { face: [0.03, 0.216, 0.97, 0.985], top: 1 },
-    faceV: { face: [0.02, 0.01, 0.98, 0.684], top: 0.684 },
-    faceH: { face: [0.015, 0.02, 0.985, 0.605], top: 0.605 },
-    backV: { top: 0.658 },
-    backH: { top: 0.603 },
+    faceV: { face: [0.02, 0.01, 0.98, 0.70], top: 0.70 },
+    faceH: { face: [0.015, 0.02, 0.985, 0.61], top: 0.61 },
+    backV: { top: 0.70 },
+    backH: { top: 0.59 },
   };
   const IMG = {};
   Object.keys(BODY).forEach(k => {
