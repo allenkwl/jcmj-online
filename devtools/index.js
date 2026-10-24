@@ -152,6 +152,25 @@ window.MJDevtools = [
   "cat": "動畫"
  },
  {
+  "family": "立體牌",
+  "all": [
+   {
+    "ver": "0.1",
+    "rel": "devtools/立體牌v0.1.html"
+   }
+  ],
+  "newest": {
+   "ver": "0.1",
+   "rel": "devtools/立體牌v0.1.html"
+  },
+  "count": 1,
+  "needsServer": true,
+  "title": "立體牌",
+  "sub": "遊戲畫面換成立體麻將牌（牌身用圖、牌面用程式）的預覽，對著真的牌桌看，跟現在的平面牌一鍵切換對照",
+  "ico": "🀄",
+  "cat": "畫面"
+ },
+ {
   "family": "統一天下動畫",
   "all": [
    {

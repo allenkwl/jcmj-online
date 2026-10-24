@@ -101,7 +101,10 @@ const T_ = {
 
 /* ── 立體版的圖（相對於遊戲頁，也就是專案根目錄）── */
 const SPR = 'devtools/發牌動畫/sprites/';
-const IMG = { tileV: SPR + 'tileV.png', tileH: SPR + 'tileH.png' };
+/* 牌牆、飛出去的牌：跟牌桌同一組牌身（devtools/立體牌/sprites/ 的牌背，2026-10-24 定案的那一組）——
+   使用者：「發牌動畫後，變回平面？」：動畫跟牌桌要是同一種牌，結束時才不會換一種樣子 */
+const BODY = 'devtools/立體牌/sprites/';
+const IMG = { tileV: BODY + 'backV.png', tileH: BODY + 'backH.png' };
 for (let n = 1; n <= 6; n++) IMG['die' + n] = SPR + 'die' + n + '.png';
 /* ── 只有兩種牌：直的（tileV，長邊朝遠方）、橫的（tileH，長邊左右）──
    2026-10-24 使用者：「麻將牌緊連在一起，不會出現側面的立體白邊」「全部應該只畫兩種麻將牌，直的和橫的，
@@ -114,8 +117,8 @@ for (let n = 1; n <= 6; n++) IMG['die' + n] = SPR + 'die' + n + '.png';
        只有最靠近自己的那張露出側面
      ‧ 疊兩層：上層往上墊一個牌的厚度（前緣高），同一張圖
    牌的大小統一（橫的牌寬＝直的牌寬 × 4/3），所以左右兩道牆會比上下兩道短 —— 就是斜著看桌面的透視 */
-const ASPECT = { tileV: 126 / 120, tileH: 109 / 150 };
-const TOP = { tileV: 96 / 126, tileH: 78 / 109 };
+const ASPECT = { tileV: 315 / 240, tileH: 164 / 240 };   // 立體牌的 backV、backH（sprites/README.md）
+const TOP = { tileV: 0.70, tileH: 0.59 };
 const LONG = 4 / 3;                      // 長邊÷短邊
 function preload() {
   return Promise.all(Object.values(IMG).map(src => new Promise(ok => {
@@ -201,6 +204,9 @@ function run(opts) {
   const T = window.MJTiles;
   if (!T || !T.makeTile) return Promise.resolve('skip:notiles');
 
+  /* 牌桌是立體牌時，先收緊（左右兩家一列互相蓋住前緣）再量 —— 立體牌是 DOM 一變就排一次收緊（setTimeout），
+     剛重畫完那一瞬間量的是還沒收緊的位置，動畫結束時那兩列會跳一下 */
+  if (window.MJ3D && window.MJ3D.active && window.MJ3D.pack) window.MJ3D.pack();
   // 動畫開始前先量好每一家每一張的最終位置
   const targets = ZONES.map(measure);
   if (!targets[0].length) return Promise.resolve('skip:notrendered');
@@ -428,8 +434,12 @@ function run(opts) {
          對家（一排左右）：一張貼一張，整排置中在原本的位置
          上家、下家（一排上下）：橫的牌，每張往下前進「頂面高」，整排置中
        自己：照遊戲手牌的位置（落手後要翻成遊戲的牌） */
+    /* 牌桌也是立體牌（實驗台 v0.4 注入 devtools/立體牌/tiles-3d.js）：牌桌上每一張的位置、大小就是落點 ——
+       動畫結束時露出來的那一張，跟剛落下的那一張完全疊在一起，不會跳 */
+    const table3d = !!(window.MJ3D && window.MJ3D.active);
     const landing = targets.map((rs, pos) => {
       if (!rs.length) return [];
+      if (table3d) return rs.map(r => ({ x: r.x, y: r.y, w: r.w, h: r.h }));
       if (pos === 0) return rs.map(r => ({ x: r.x, y: r.y + (r.h - Math.round(r.w * ASPECT.tileV)) / 2, w: r.w }));
       const xs = rs.map(r => r.x), ys = rs.map(r => r.y);
       const midX = (Math.min(...xs) + Math.max(...rs.map(r => r.x + r.w))) / 2;
@@ -467,7 +477,8 @@ function run(opts) {
       const kind = (rot === 90 || rot === 270) ? 'tileH' : 'tileV';
       const ld = landing[pos][k];
       const el = sprite(kind, ld.w);
-      const ew = ld.w, eh = Math.round(ld.w * ASPECT[kind]), ex = ld.x, ey = ld.y;
+      const ew = ld.w, eh = ld.h || Math.round(ld.w * ASPECT[kind]), ex = ld.x, ey = ld.y;
+      if (ld.h) el.style.height = ld.h + 'px';         // 照牌桌那一張的大小（牌桌的立體牌是拉到原本的外框）
       place(el, ex, ey);
       el.style.zIndex = String(100000 + Math.round(ey));   // 蓋在牌牆上；左右兩家下面那張蓋住上面那張
       el.style.transformOrigin = '0 0';

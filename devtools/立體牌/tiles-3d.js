@@ -32,12 +32,13 @@
     backH: { top: 0.59 },
   };
   const IMG = {};
-  Object.keys(BODY).forEach(k => {
+  const loads = Object.keys(BODY).map(k => new Promise(ok => {
     const im = new Image();
-    im.onload = () => { if (window.MJ3D && window.MJ3D.onload) window.MJ3D.onload(); };
+    im.onload = () => { ok(); if (window.MJ3D && window.MJ3D.onload) window.MJ3D.onload(); };
+    im.onerror = () => ok();
     im.src = SPR + k + '.png';
     IMG[k] = im;
-  });
+  }));
 
   function make3D(tile, opts) {
     const o = opts || {};
@@ -99,9 +100,13 @@
      2026-10-24 使用者：「麻將牌緊連在一起，不會出現側面的立體白邊」。
      遊戲的版面每張之間留 1px、每張都露出完整的前緣；這裡在立體模式下把直向排列的牌往上疊一個前緣高，
      z-index 照畫面上的高度（越下面越前面）。⚠️ 只在這個預覽裡做，接進遊戲時要改在 layout／CSS */
+  /* ⚠️ 只排牌桌上的牌：發牌動畫（#deal-anim）裡的牌是自己定位的（position:fixed），
+     被改成 relative 會一張張往下排（2026-10-24 發牌實驗台 v0.4 實測：自己的牌落到手牌那一排下面去） */
+  const onTable = c => !c.closest('#deal-anim') && getComputedStyle(c).position !== 'fixed';
   function pack() {
     const doc = document;
-    doc.querySelectorAll('canvas.tile[data-k3d]').forEach(c => {
+    const tiles = [...doc.querySelectorAll('canvas.tile[data-k3d]')].filter(onTable);
+    tiles.forEach(c => {
       const par = c.parentElement;
       if (!par) return;
       const dir = getComputedStyle(par).flexDirection;
@@ -111,7 +116,7 @@
       if (dir === 'column-reverse' && c !== par.firstElementChild) c.style.marginBottom = (-e) + 'px';
     });
     // 疊的順序：照畫面上的高度
-    doc.querySelectorAll('canvas.tile[data-k3d]').forEach(c => {
+    tiles.forEach(c => {
       c.style.position = 'relative';
       c.style.zIndex = String(Math.round(c.getBoundingClientRect().top) + 1000);
     });
@@ -126,6 +131,7 @@
   T.makeTile = make3D;
   window.MJ3D = {
     pack,
+    ready: Promise.all(loads),          // 牌身的圖都載完（還沒載完時 makeTile 會先用原本平面的）
     on() { T.makeTile = make3D; },
     off() { T.makeTile = orig; },
     get active() { return T.makeTile === make3D; },
