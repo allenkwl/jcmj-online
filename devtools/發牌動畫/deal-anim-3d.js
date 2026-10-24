@@ -101,11 +101,22 @@ const T_ = {
 
 /* ── 立體版的圖（相對於遊戲頁，也就是專案根目錄）── */
 const SPR = 'devtools/發牌動畫/sprites/';
-const IMG = { tileV: SPR + 'tileV-1.png', tileH: SPR + 'tileH-1.png' };
+const IMG = { tileV: SPR + 'tileV.png', tileH: SPR + 'tileH.png' };
 for (let n = 1; n <= 6; n++) IMG['die' + n] = SPR + 'die' + n + '.png';
-/* 圖的長寬比（寬:高）與前緣厚度佔整張高度的比例 —— 照切出來的圖量的 */
-const ASPECT = { tileV: 124 / 120, tileH: 102 / 150 };
-const EDGE = 0.36;                       // 牌的厚度（前緣）約佔圖高的 36%：疊第二層就往上錯開這麼多
+/* ── 只有兩種牌：直的（tileV，長邊朝遠方）、橫的（tileH，長邊左右）──
+   2026-10-24 使用者：「麻將牌緊連在一起，不會出現側面的立體白邊」「全部應該只畫兩種麻將牌，直的和橫的，
+   牌和牌相連自然只看到背面，兩層疊在一起也一樣」。
+   圖＝頂面（牌背）＋看得到的前緣（一個牌的厚度）。照切出來的圖量（sprites/README.md）：
+     ASPECT  高÷寬　　TOP  頂面佔圖高的比例（其餘是前緣＝牌的厚度）
+   排法：
+     ‧ 左右排（上下兩道牆、對家的手牌）：一張貼一張
+     ‧ 上下排（左右兩道牆、上家下家的手牌）：每往下一張只前進「頂面高」，下面那張蓋住上面那張的前緣 ——
+       只有最靠近自己的那張露出側面
+     ‧ 疊兩層：上層往上墊一個牌的厚度（前緣高），同一張圖
+   牌的大小統一（橫的牌寬＝直的牌寬 × 4/3），所以左右兩道牆會比上下兩道短 —— 就是斜著看桌面的透視 */
+const ASPECT = { tileV: 126 / 120, tileH: 109 / 150 };
+const TOP = { tileV: 96 / 126, tileH: 78 / 109 };
+const LONG = 4 / 3;                      // 長邊÷短邊
 function preload() {
   return Promise.all(Object.values(IMG).map(src => new Promise(ok => {
     const im = new Image(); im.onload = im.onerror = () => ok(); im.src = src;
@@ -209,13 +220,24 @@ function run(opts) {
     .getBoundingClientRect();
   const cx = area.left + area.width / 2;
   const cy = area.top + area.height / 2;
-  // 外框 ≈ 17 墩 + 兩邊各一個牌深 + 疊高，換算成牌寬約 20.3 個
-  let tw = Math.floor(Math.min(area.width, area.height) * 0.86 / (STACKS + 2 * RATIO + 0.5));
-  tw = Math.max(6, Math.min(26, tw));
-  const th = Math.round(tw * RATIO);
-  const lift = Math.max(2, Math.round(th * 0.2));   // 上層那張往上錯開，看起來是疊兩層
+  /* 立體版的尺寸（見檔頭「只有兩種牌」）：
+       tw  直的牌寬（上下兩道牆每墩的寬）　 wH  橫的牌寬＝tw×4/3（左右兩道牆的牌寬）
+       fV／fH  頂面高　 eV／eH  前緣高（一個牌的厚度）　 sH  左右兩道牆每墩往下前進多少＝橫的牌的頂面高
+     外框：寬 17tw＋兩邊各一張橫的牌；高 17sH＋上下各一張直的牌（含兩層疊高） */
+  const fit = t => {
+    const wH = t * LONG, hV = t * ASPECT.tileV, hH = wH * ASPECT.tileH;
+    return { W: STACKS * t + 2 * wH + 6, H: STACKS * hH * TOP.tileH + 2 * (hV + hV * (1 - TOP.tileV)) + 6 };
+  };
+  let tw = 26;
+  while (tw > 6 && (fit(tw).W > area.width * 0.86 || fit(tw).H > area.height * 0.86)) tw--;
+  const wH = Math.round(tw * LONG);
+  const hV = Math.round(tw * ASPECT.tileV), hH = Math.round(wH * ASPECT.tileH);
+  const fV = Math.round(hV * TOP.tileV), eV = hV - fV;
+  const fH = Math.round(hH * TOP.tileH), eH = hH - fH;
+  const sH = fH;
+  const th = fV;                                     // 給後面沿用的名字（骰子位置等）
   const g = 2;                                       // 牌牆與中央方框之間的縫
-  const L = STACKS * tw;
+  const L = STACKS * tw, LV = STACKS * sH;
 
   /* 牌牆一圈 68 墩，照**順時針**編號（抓牌就是沿這個方向前進）：
        0..16  下（自己的牆）  從右往左
@@ -224,12 +246,13 @@ function run(opts) {
       51..67  右（下家）      從上往下
      每道牆的第 0 墩剛好都是「牆主人的右手邊」—— 開門時要從那一端數起。 */
   const BASE = [0, 51, 34, 17];        // 畫面位置 → 那道牆的第 0 墩是全圈第幾墩
+  /* 立體版：回傳這一墩**下層那張牌頂面的左上角**（x, y）與用哪一種牌 */
   function stackRect(r) {
     const wall = Math.floor(r / STACKS), j = r % STACKS;
-    if (wall === 0) return { x: cx + L / 2 - (j + 1) * tw, y: cy + L / 2 + g, w: tw, h: th, v: false };
-    if (wall === 1) return { x: cx - L / 2 - th - g, y: cy + L / 2 - (j + 1) * tw, w: th, h: tw, v: true };
-    if (wall === 2) return { x: cx - L / 2 + j * tw, y: cy - L / 2 - th - g, w: tw, h: th, v: false };
-    return { x: cx + L / 2 + g, y: cy - L / 2 + j * tw, w: th, h: tw, v: true };
+    if (wall === 0) return { x: cx + L / 2 - (j + 1) * tw, y: cy + LV / 2 + g, w: tw, h: fV, v: false };
+    if (wall === 1) return { x: cx - L / 2 - wH - g, y: cy + LV / 2 - (j + 1) * sH, w: wH, h: sH, v: true };
+    if (wall === 2) return { x: cx - L / 2 + j * tw, y: cy - LV / 2 - fV - eV - g, w: tw, h: fV, v: false };
+    return { x: cx + L / 2 + g, y: cy - LV / 2 + j * sH, w: wH, h: sH, v: true };
   }
 
   const layer = document.createElement('div');
@@ -260,14 +283,13 @@ function run(opts) {
   for (let r = 0; r < RING; r++) {
     const rc = stackRect(r);
     const kind = rc.v ? 'tileH' : 'tileV';
-    const w = rc.v ? rc.w : rc.w + 1;
-    const h = Math.round(w * ASPECT[kind]);
-    const by = rc.y + rc.h - h;
-    const up = Math.round(h * EDGE);
-    const bottom = place(sprite(kind, w), rc.x, by);
-    const top = place(sprite(kind, w), rc.x, by - up);
-    bottom.style.zIndex = String(Math.round(by) * 2);
-    top.style.zIndex = String(Math.round(by) * 2 + 1);
+    const w = rc.v ? wH : tw + 1;                     // 直的多 1px：相鄰兩張貼緊、不留縫
+    const up = rc.v ? eH : eV;                        // 上層墊一個牌的厚度
+    const bottom = place(sprite(kind, w), rc.x, rc.y);
+    const top = place(sprite(kind, w), rc.x, rc.y - up);
+    // 越下面越前面：下面那張蓋住上面那張的前緣；同一墩上層蓋下層
+    bottom.style.zIndex = String(Math.round(rc.y) * 2);
+    top.style.zIndex = String(Math.round(rc.y) * 2 + 1);
     [bottom, top].forEach(el => { el.style.opacity = '0'; el.style.transform = 'translateY(8px)'; });
     wall.push({ rc, top, bottom });
   }
@@ -335,7 +357,7 @@ function run(opts) {
     const DIR = [[0, 1], [1, 0], [0, -1], [-1, 0]];
     const [dx, dy] = DIR[posOf(dealer)];
     const ds = Math.max(22, Math.round(tw * 2.1));        // 立體版的骰子大一點（圖有透視，同寬看起來比較小）
-    const mx = cx + dx * L * 0.22, my = cy + dy * L * 0.22;
+    const mx = cx + dx * L * 0.22, my = cy + dy * LV * 0.22;
     const ox = dy !== 0 ? ds * 0.7 : 0, oy = dx !== 0 ? ds * 0.7 : 0;   // 兩顆並排，垂直於莊家方向
     const dice = [makeDie(ds), makeDie(ds)];
     dice[0].style.left = (mx - ox - ds / 2) + 'px'; dice[0].style.top = (my - oy - ds / 2) + 'px';
@@ -402,6 +424,33 @@ function run(opts) {
       return el;
     }
 
+    /* 落點（立體版）：別家的手牌照「緊貼」重排 ——
+         對家（一排左右）：一張貼一張，整排置中在原本的位置
+         上家、下家（一排上下）：橫的牌，每張往下前進「頂面高」，整排置中
+       自己：照遊戲手牌的位置（落手後要翻成遊戲的牌） */
+    const landing = targets.map((rs, pos) => {
+      if (!rs.length) return [];
+      if (pos === 0) return rs.map(r => ({ x: r.x, y: r.y + (r.h - Math.round(r.w * ASPECT.tileV)) / 2, w: r.w }));
+      const xs = rs.map(r => r.x), ys = rs.map(r => r.y);
+      const midX = (Math.min(...xs) + Math.max(...rs.map(r => r.x + r.w))) / 2;
+      const midY = (Math.min(...ys) + Math.max(...rs.map(r => r.y + r.h))) / 2;
+      const order = rs.map((r, i) => i);
+      if (pos === 2) {
+        const w = Math.min(...rs.map(r => r.w)) + 4;               // 牌寬照原本的，加一點補掉遊戲手牌之間的縫
+        order.sort((a, b) => rs[a].x - rs[b].x);
+        const out = [];
+        order.forEach((i, n) => { out[i] = { x: midX - rs.length * w / 2 + n * w, y: rs[i].y, w: w + 1 }; });
+        return out;
+      }
+      const w = Math.max(...rs.map(r => r.w));
+      const step = Math.round(w * ASPECT.tileH * TOP.tileH);
+      const total = (rs.length - 1) * step + Math.round(w * ASPECT.tileH);
+      order.sort((a, b) => rs[a].y - rs[b].y);
+      const out = [];
+      order.forEach((i, n) => { out[i] = { x: midX - w / 2, y: midY - total / 2 + n * step, w }; });
+      return out;
+    });
+
     // 自己的牌：抓到時落在「到手的順序」位置（亂的），理牌時才移到真正的位置
     const perm = shuffled(targets[0].length, rnd);
     const slotN = [0, 0, 0, 0];
@@ -413,13 +462,14 @@ function run(opts) {
       if (!rect) return;
       const sr = srcEl.getBoundingClientRect();
       const rot = ROT[pos];
-      /* 立體版：飛出去的牌也用寫實的牌（跟牌牆同一種），落在那一家手牌的位置。
-         自己的牌落手後照舊翻成遊戲的牌（正面） */
+      /* 立體版：飛出去的牌也是那兩種牌，落點照「緊貼」重排（landing）。
+         自己的牌落手後照舊翻成遊戲的牌（正面，位置照遊戲的手牌） */
       const kind = (rot === 90 || rot === 270) ? 'tileH' : 'tileV';
-      const el = sprite(kind, rect.w);
-      const ew = rect.w, eh = Math.round(rect.w * ASPECT[kind]), ex = rect.x, ey = rect.y + (rect.h - eh) / 2;
+      const ld = landing[pos][k];
+      const el = sprite(kind, ld.w);
+      const ew = ld.w, eh = Math.round(ld.w * ASPECT[kind]), ex = ld.x, ey = ld.y;
       place(el, ex, ey);
-      el.style.zIndex = '99999';            // 立體版：牌牆照高度排了 z-index，飛出去的牌要蓋在上面
+      el.style.zIndex = String(100000 + Math.round(ey));   // 蓋在牌牆上；左右兩家下面那張蓋住上面那張
       el.style.transformOrigin = '0 0';
       el.style.transform = `translate(${sr.left - ex}px,${sr.top - ey}px) scale(${sr.width / ew},${sr.height / eh})`;
       el.style.opacity = '0';
