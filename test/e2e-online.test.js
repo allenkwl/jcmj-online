@@ -214,6 +214,14 @@ async function pick(p, kingdom) {
       Net._handCb = snap => setTimeout(() => cb0(snap), 1500);
       ref.on('value', Net._handCb);
       window.__deal = [];
+      // v1.90：記下主公動畫（放大／小）與發牌動畫的先後 —— 新的一局發牌前不該放大主公
+      window.__le = []; window.__dOn = false;
+      const LE = window.MJLordEntrance, lp = LE.play;
+      LE.play = function (o) { const h = window.__test.match && window.__test.match.hand;
+        window.__le.push({ t: Date.now(), big: !!o.big, hand: h && h.handNo }); return lp.apply(this, arguments); };
+      new MutationObserver(() => { const d = !!document.getElementById('deal-anim');
+        if (d !== window.__dOn) { window.__dOn = d; if (d) window.__le.push({ t: Date.now(), deal: true }); } })
+        .observe(document.body, { childList: true, subtree: true });
       const run0 = MJDealAnim.run;
       MJDealAnim.run = function (o) {
         const h = o.match.hand;
@@ -249,9 +257,17 @@ async function pick(p, kingdom) {
       const fb = document.querySelector('#fortune-ov.show #f-bets button[data-bet="normal"]'); if (fb) fb.click();
       // 手牌監聽換回原本的（後面的測試不要再延遲）
       Net._handRef.off('value', Net._handCb); Net._handCb = window.__hand0; Net._handRef.on('value', Net._handCb);
-      return { handNo: m.hand.handNo, now, deal, all: window.__deal };
+      const meSeat = m.seats.findIndex(s => s.name === '乙');
+      const iDeal = window.__le.findIndex(x => x.deal);
+      const bigBefore = window.__le.slice(0, iDeal < 0 ? window.__le.length : iDeal).filter(x => x.big && x.hand === m.hand.handNo);
+      return { handNo: m.hand.handNo, now, deal, all: window.__deal, lord: { meSeat, dealer: m.hand.dealer, bigBefore: bigBefore.length } };
     }, hn1)]);
     ok(dealB.handNo === hn1 + 1, '進到同一場的第二局', JSON.stringify({ hn1, hn: dealB.handNo }));
+    // v1.90（使用者：「正常發牌動畫是空桌面擲骰子，但有時候會 show 主公動畫」）：
+    // 乙是第二局的莊家、手牌晚到 —— 等手牌的那段時間畫面照新的一局重畫（輪到乙），不能先放大主公
+    if (dealB.lord.meSeat === dealB.lord.dealer)
+      ok(dealB.lord.bigBefore === 0, '自己坐莊、手牌晚到：發牌動畫之前不放大主公', JSON.stringify(dealB.lord));
+    else ok(false, '（測試前提）乙要是第二局的莊家', JSON.stringify(dealB.lord));
     ok(dealB.deal.length === 1, '第二局的發牌動畫只跑一次', JSON.stringify(dealB.all.map(d => d.handNo)));
     ok(dealB.deal.length && dealB.deal[0].uids === dealB.now && dealB.now.length > 0,
        '發牌動畫拿的手牌＝占卜時的手牌（不是上一局的）', JSON.stringify({ deal: dealB.deal.map(d => d.uids.slice(0, 40)), now: dealB.now.slice(0, 40) }));
