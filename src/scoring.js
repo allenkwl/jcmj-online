@@ -48,6 +48,35 @@ const YAKUHAI_PTS  = 4 * POINT_SCALE;   // 每一組役牌刻子，半個基本�
 const DEALER_MULT  = 1.5;               // 莊家胡牌的加成
 const HONBA_PTS    = 2 * POINT_SCALE;   // 每一本場
 const NOTEN_POT    = 8 * POINT_SCALE;   // 流局罰符的總額（一個基本和牌）
+/* 祥瑞（寶牌，docs/dora-and-declare.md 第二節，v1.91）：手上（含副露、和的那張）每有一張祥瑞加 DORA_PTS。
+   ⚠️ 加在**整條乘法鏈之後**：押注倍率、莊家加成、秦楚的技能倍率都不乘；齊「善守」付款時也不打折
+   （祥瑞是「這張牌今天值錢」，跟你押什麼、是哪一國無關 —— 定案 2026-10-24） */
+const DORA_PTS     = 2 * POINT_SCALE;   // 20（基本和牌 80 的四分之一）
+
+/* 指示牌 → 祥瑞：下一張。數牌 9→1；風 東→南→西→北→東；三元 白→發→中→白 */
+const WIND_NEXT = { 東: '南', 南: '西', 西: '北', 北: '東' };
+const DRAGON_NEXT = { 白: '發', 發: '中', 中: '白' };
+function doraOf(indicator) {
+  const d = indicator && (indicator.display || indicator);
+  if (!d) return null;
+  if (WIND_NEXT[d]) return WIND_NEXT[d];
+  if (DRAGON_NEXT[d]) return DRAGON_NEXT[d];
+  const n = parseInt(d, 10), suit = d.slice(String(n).length);
+  if (!(n >= 1 && n <= 9) || !suit) return null;
+  return (n === 9 ? 1 : n + 1) + suit;
+}
+/* 這一家整手牌（手牌＋副露）裡的祥瑞張數。指示牌重複（翻到同一種）就各算一次 */
+function countDora(hand, seat) {
+  const st = hand && hand.seats && hand.seats[seat];
+  const shown = (hand && hand.doraShown) || [];
+  if (!st || !shown.length) return { count: 0, pts: 0, dora: [] };
+  const tiles = (st.hand || []).map(t => t.display)
+    .concat(...(st.melds || []).map(m => (m.tiles || []).map(t => t.display)));
+  const dora = shown.map(doraOf).filter(Boolean);
+  let count = 0;
+  dora.forEach(d => { tiles.forEach(t => { if (t === d) count++; }); });
+  return { count, pts: count * DORA_PTS, dora };
+}
 
 /* ── 押注的押金（v1.61）──────────────────────────────────
    原本押注沒有代價，倍率又乘在**任何**胡牌上 —— 永遠押孤注一擲最划算
@@ -134,8 +163,12 @@ function handValue(hand, seat, opts) {
   const honba = (hand.honba || 0) * HONBA_PTS;
   total += honba;
 
+  const dora = countDora(hand, seat);           // 祥瑞：乘法鏈之後才加（見 DORA_PTS）
+  total += dora.pts;
+
   return {
     seat, total,
+    dora: dora.count, doraPts: dora.pts,
     base, special: special ? { name: special.name, pts: special.pts } : null,
     yakuhai: yaku.pts, yakuhaiHits: yaku.hits,
     isDealer, dealerMult: isDealer ? DEALER_MULT : 1,
@@ -184,8 +217,10 @@ function settleWin(match, hand, result, opts) {
     });
     details.push(v);
 
+    // 祥瑞那一段不受齊「善守」打折（見 DORA_PTS）：善守只打在其餘的部分
+    const dp = v.doraPts || 0;
     if (result.type === 'ron') {
-      const pts = payerAmount(v.total, seatInfo[result.from]);
+      const pts = payerAmount(v.total - dp, seatInfo[result.from]) + dp;
       if (pts > 0) transfers.push({ from: result.from, to: w.seat, pts, reason: 'ron' });
       return;
     }
@@ -197,10 +232,8 @@ function settleWin(match, hand, result, opts) {
 
     others.forEach(s => {
       // 非莊自摸時莊家付一半、另兩家各四分之一；莊家自摸則三家均分
-      const share = winnerIsDealer
-        ? v.total / 3
-        : (s === dealerSeat ? v.total / 2 : v.total / 4);
-      const pts = payerAmount(Math.ceil(share), seatInfo[s]);
+      const frac = winnerIsDealer ? 1 / 3 : (s === dealerSeat ? 1 / 2 : 1 / 4);
+      const pts = payerAmount(Math.ceil((v.total - dp) * frac), seatInfo[s]) + Math.ceil(dp * frac);
       if (pts > 0) transfers.push({ from: s, to: w.seat, pts, reason: 'tsumo' });
     });
   });
@@ -342,6 +375,7 @@ return {
   growthTier, kingdomMods,
   yakuhaiBonus, handValue,
   settleWin, settleDraw, settleStakes, potToLeader, applyTransfers, distribute, payerAmount,
+  DORA_PTS, doraOf, countDora,
   nextDealer, standings,
 };
 });

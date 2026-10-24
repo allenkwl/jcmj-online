@@ -166,6 +166,16 @@ async function pick(p, kingdom) {
     });
     const [ta, tb] = await Promise.all([toTable(A.page), toTable(B.page)]);
     ok(ta && tb, '兩邊都走到占卜（天下形勢都確認了）');
+    // 祥瑞（v1.91）：指示牌在公開狀態裡，兩台畫出來的要一樣；裏指示牌（第 2 期）不能有任何欄位外流
+    const doraOf = p => p.evaluate(async () => {
+      await __until(() => document.querySelector('.ci-dora'), 8000);
+      const h = window.__test.match.hand;
+      return { title: (document.querySelector('.ci-dora') || {}).title || '', shown: (h.doraShown || []).map(t => t.display).join(','),
+               keys: Object.keys(h).filter(k => /ura/i.test(k)) };
+    });
+    const [da, db] = await Promise.all([doraOf(A.page), doraOf(B.page)]);
+    ok(da.shown && da.shown === db.shown && da.title === db.title, '兩台的祥瑞指示牌一樣（公開狀態有帶過去）', JSON.stringify({ da, db }));
+    ok(db.keys.length === 0, '用戶端的牌局裡沒有裏指示牌的欄位', JSON.stringify(db.keys));
 
     // ── 聽牌曲（v1.70）：群主用完整牌局算「有沒有人聽牌」，公開狀態只放有／沒有（bgmTenpai）；名牌只亮自己 ──
     // 把一家電腦換成聽牌的手（1–9 萬＋1–3 筒＋5 筒，單吊 4 筒），驗完換回原本的手，不影響後面的結算

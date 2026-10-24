@@ -70,6 +70,13 @@ function makeDeck() {
 }
 
 const DEAD_WALL = 14;                          // 王牌（嶺上牌來源），標準留 14 張
+/* 祥瑞（寶牌）指示牌（docs/dora-and-declare.md，v1.91 第 1 期）：
+   王牌的前 10 張是 5 組（表, 裏）——表指示牌在 doraBase + 2k、裏指示牌在 doraBase + 2k + 1。
+   開局翻第 1 組的表，每槓一次（補完嶺上牌）再翻一組，最多 5 組（＝開局 1 ＋ 四槓）。
+   嶺上牌從尾端往回取（135→132），碰不到指示牌（122..131）；技能換牌只碰活牌山最末張，也碰不到。
+   ⚠️ 只存**已翻開的表指示牌**（牌物件，公開資訊）。裏指示牌**不存成欄位**——netPublicState 是刪黑名單，
+      新欄位預設會外流；宣戰（第 2 期）結算時由群主從 wall 現算（wall 不進公開狀態） */
+const DORA_SLOTS = 5;
 
 /* ── 建立一場（四局）──────────────────────────────────────── */
 function createMatch(opts) {
@@ -157,6 +164,8 @@ function startHand(match, options) {
     wall,
     drawIdx: idx,                              // 下一張要摸的位置
     deadWallStart: wall.length - DEAD_WALL,    // 這個位置（含）之後是王牌
+    doraBase: wall.length - DEAD_WALL,         // 指示牌那一段的起點（固定，槓了也不動）
+    doraShown: [],                             // 已翻開的表指示牌（牌物件），開局翻一張
     rinshanTaken: 0,                           // 已抽走幾張嶺上牌
     turn: dealer,                              // 莊家先摸
     phase: 'draw',                             // draw | discard | claim | over
@@ -174,7 +183,21 @@ function startHand(match, options) {
     })),
     result: null,                              // {type:'win'|'draw', ...}
   };
+  revealDora(match.hand);                      // 開局翻第一張指示牌
   return match;
+}
+
+/* 翻下一張表指示牌（開局一張、每槓一張）。翻滿 5 張就不翻；回傳翻開的那張或 null */
+function revealDora(hand) {
+  if (!hand || !hand.wall || !hand.wall.length) return null;
+  if (!hand.doraShown) hand.doraShown = [];
+  const k = hand.doraShown.length;
+  if (k >= DORA_SLOTS) return null;
+  const base = hand.doraBase != null ? hand.doraBase : hand.wall.length - DEAD_WALL;
+  const t = hand.wall[base + 2 * k];
+  if (!t) return null;
+  hand.doraShown.push(t);
+  return t;
 }
 
 /* ── Firebase 往返修復 ────────────────────────────────────────
@@ -198,6 +221,8 @@ function normalize(match) {
   if (h) {
     h.wall = h.wall || [];
     h.seats = h.seats || [];
+    h.doraShown = h.doraShown || [];           // 祥瑞指示牌（v1.91）：Firebase 吃掉空陣列；舊存檔沒有這欄
+    if (h.doraBase == null) h.doraBase = (h.wall.length || 136) - DEAD_WALL;
     for (let i = 0; i < SEATS; i++) {
       const s = h.seats[i] || (h.seats[i] = { seat: i });
       s.hand = s.hand || [];
@@ -311,6 +336,7 @@ function drawRinshan(hand, seat) {
   hand.deadWallStart--;                        // 邊界前移，可摸牌少一張
   hand.seats[seat].hand.push(tile);
   hand.seats[seat].furitenTemp = false;
+  revealDora(hand);                            // 槓祥瑞：補完嶺上牌再翻一張指示牌
   return tile;
 }
 
@@ -437,7 +463,7 @@ function isSeatFuriten(hand, seat) {
 }
 
 return {
-  SEATS, WINDS, DEAD_WALL,
+  SEATS, WINDS, DEAD_WALL, DORA_SLOTS, revealDora,
   makeRNG, makeDeck, shuffleWith,
   createMatch, startHand, normalize, stripUndefined,
   seatWind, nextSeat, seatOffset, liveWallCount, isWallEmpty, baseHandSize,
