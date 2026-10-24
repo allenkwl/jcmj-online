@@ -140,11 +140,14 @@ console.log('═══ 計分：裏祥瑞、宣戰加成、押金 ═══');
   const d = SC.settleStakes(t.m, t.h, { type: 'draw', winners: [] }, {});
   eq(d.potAfter, 2 * SC.DECLARE_STAKE, '流局：押金留在彩池');
 }
-console.log('═══ 電腦：初學不宣、普通一律宣、高手自己判斷 ═══');
+console.log('═══ 電腦：初學、普通一律宣（v2.02），高手自己判斷 ═══');
 {
   const { h } = table(TENPAI14);
   const cand = F.declareTiles(h, 0);
-  eq(AI.declareFor(h, 0, 1, cand), null, '初學：不宣戰');
+  ok(cand.includes(AI.declareFor(h, 0, 1, cand)), '初學：一律宣戰（v2.02），打出的是可以宣戰的那張');
+  ok(F.declareTiles(table(TENPAI14, { live: 4 }).h, 0).includes(AI.declareFor(table(TENPAI14, { live: 4 }).h, 0, 1, cand)), '初學：牌山只剩 4 張也宣');
+  { const g = table(TENPAI14).h; g.seats[2].declared = { at: 0, menzen: true };
+    ok(cand.includes(AI.declareFor(g, 0, 1, cand)), '初學：別家宣戰了照樣宣（不像高手轉防守）'); }
   ok(cand.includes(AI.declareFor(h, 0, 2, cand)), '普通：宣戰，打出的是可以宣戰的那張');
   const t4 = table(TENPAI14, { live: 4 }).h;
   ok(F.declareTiles(t4, 0).includes(AI.declareFor(t4, 0, 2, F.declareTiles(t4, 0))), '普通：牌山只剩 4 張也宣（一律宣戰）');

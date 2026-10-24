@@ -304,13 +304,14 @@ function doraSet(hand) {
 
 /* ── 宣戰（v1.92，docs/dora-and-declare.md 6.1、第十一節定案）──────────
    candidates：打掉之後聽牌、可以拿來宣戰的那幾張（flow.declareTiles）。回傳要宣戰打出的那張，或 null（不宣戰）。
-     1 初學　不宣戰
+     1 初學　**一律宣戰**（v2.02 起，同普通）—— 2026-10-24 使用者：「初級和中級電腦聽牌都一律宣戰，只有高手可以自己依狀況決定」：
+             新手看得到「這家快胡了」（宣戰章、聽牌曲），也順便學到宣戰；初學本來就不鳴牌、不防守，鎖手對它影響不大
      2 普通　**一律宣戰**（能宣就宣；條件只有規則本身：聽牌、活牌山 ≥ 4）—— 2026-10-24 使用者：「中級一律宣戰」
      3 高手　有人宣戰了就不宣戰（轉防守）；自己的聽牌要夠好（看得到的剩張 ≥ 4）才宣戰，活牌山 ≥ 6
    打哪一張：剩張最多的那一張（一樣多就照平常的棄牌選擇）。⚠️ 不准用 Math.random（可重放） */
 function declareFor(hand, seat, level, candidates) {
   const lv = level || 2;
-  if (lv <= 1 || !candidates || !candidates.length) return null;
+  if (!candidates || !candidates.length) return null;
   const live = S.liveWallCount(hand);
   if (lv >= 3) {
     if (live < 6) return null;
