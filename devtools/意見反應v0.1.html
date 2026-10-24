@@ -151,8 +151,8 @@ $('b-google').onclick = () => {
   const p = new firebase.auth.GoogleAuthProvider();
   p.setCustomParameters({ prompt: 'select_account' });
   auth.signInWithPopup(p).catch(e => {
-    /* Firebase 只允許 jcmj-4p.firebaseapp.com、jcmj-4p.web.app、allenkwl.github.io 用 Google 登入，
-       從啟動台（localhost:9987）開會被擋（2026-10-25 實際踩到） */
+    /* Google 登入只在 Firebase「允許的網域」能用：jcmj-4p.firebaseapp.com、jcmj-4p.web.app、allenkwl.github.io、localhost
+       （localhost 是 2026-10-25 加的：從啟動台開按 Google 登入失敗）。⚠️ 127.0.0.1 不在裡面 */
     if (/unauthorized-domain/.test(e.code || '')) {
       msg('這個網址（' + esc(location.host) + '）不能用 Google 登入。請改從 GitHub Pages 開這一頁：<br><a style="color:var(--gold)" href="https://allenkwl.github.io/jcmj-online/devtools/'
         + encodeURI('意見反應v0.1.html') + '">allenkwl.github.io/jcmj-online/devtools/意見反應v0.1.html</a><br>（或用 Email 登入，Email 不受網址限制）', true);

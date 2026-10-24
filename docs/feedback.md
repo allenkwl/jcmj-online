@@ -44,6 +44,8 @@ firebase database:set /admins/<uid> --data true --project jcmj-4p -f
 ## 三、管理頁：`devtools/意見反應v0.1.html`
 
 - 用遊戲裡同一個 Google／Email 帳號登入；還不是管理者時顯示 uid 與上面那行指令。
+- Google 登入只在 Firebase 允許的網域能用：`jcmj-4p.firebaseapp.com`、`jcmj-4p.web.app`、`allenkwl.github.io`、`localhost`
+  （localhost 是 2026-10-25 加的 —— 從啟動台開按 Google 登入失敗）。⚠️ `127.0.0.1` 不在裡面，要用 `localhost` 開。
 - 清單即時更新；篩選：未處理（新的＋已讀，預設）／新的／已回覆／已處理／全部、分類、搜尋。
 - 每則：送出回覆（status 自動變「已回覆」）、標為已讀、標為已處理、刪除；附帶資訊可展開。
 - 用**獨立命名的 Firebase app**：在管理頁登入／登出，不會換掉同一個瀏覽器裡遊戲的身分。
