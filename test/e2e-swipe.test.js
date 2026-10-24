@@ -50,8 +50,10 @@ const chromium = E.findChromium();
         /* 宣戰視窗（v1.97 起手牌能宣戰就跳，模態：開著時手牌不能滑、不能點）—— 這裡測的是打牌，按「自己來」 */
         const no = [...document.querySelectorAll('#act-pop.show .auto-offer')].find(b => /自己來/.test(b.textContent)); if (no) no.click();
         const w = __test.waiting;
+        /* ⚠️ 也要等發牌動畫播完：開局就輪到莊家，動畫是同時播的（播放中手牌藏著、按一下＝跳過動畫）。
+           v2.08 擲骰多 0.3 秒之後，整套一起跑、機器忙時偶爾在動畫裡就開始滑 */
         if (w && w.kind === 'turn' && w.seat === 0 && !document.querySelector('#fortune-ov.show')
-            && !document.querySelector('#act-pop.show .auto-offer')) return true;
+            && !document.querySelector('#act-pop.show .auto-offer') && !document.getElementById('deal-anim')) return true;
         await W(100);
       }
       return false;

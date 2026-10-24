@@ -12,7 +12,7 @@
   v0.6（2026-10-25）：加入「立體版＋電鐵式擲骰」devtools/發牌動畫/deal-anim-3d-throw.js（預設選它）——
   使用者：「修改一下發牌程式，擲骰子動畫可以參考一下小球貓電鐵的動畫嗎？」骰子從莊家手邊沿拋物線丟出、
   飛到半路比落地更大、落地壓扁回彈、點數亮成膠囊（照 小球貓電鐵/game-web/擲骰動畫模擬v1.3.html）。
-  原本的立體版（＝線上）留著對照。遊戲本體沒動；定案後再搬進 src/deal-anim-3d.js。v0.5 保留。
+  原本的立體版留著對照。同一天「好，接進遊戲」→ v2.08 起 src/deal-anim-3d.js 就是電鐵式擲骰（跟 deal-anim-3d-throw.js 同一份）。v0.5 保留。
   v0.5（2026-10-24）：v1.95 起立體牌已經在遊戲本體。「牌桌也用立體牌」改切遊戲自己的開關 MJTiles.use3D()，不再注入
   devtools/立體牌/tiles-3d.js；動畫副本 deal-anim-3d.js 跟 src/deal-anim-3d.js 同步（使用者：「測試程式也要更新」）。v0.4 保留。
 
@@ -89,8 +89,8 @@ pre{background:#0e1611;border:1px solid var(--line);border-radius:4px;padding:8p
 
   <label>動畫版本</label>
   <select id="which">
-    <option value="throw" selected>立體版＋電鐵式擲骰（實驗中）</option>
-    <option value="d3">立體版：原地滾骰（＝線上）</option>
+    <option value="throw" selected>立體版＋電鐵式擲骰（＝線上，v2.08 起）</option>
+    <option value="d3">立體版：原地滾骰（v2.07 以前）</option>
     <option value="wall">現行版：牌牆＋擲骰（＝線上）</option>
     <option value="lab">舊版：牌從中央噴出（v1.53 以前）</option>
   </select>

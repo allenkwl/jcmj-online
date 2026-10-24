@@ -10,7 +10,11 @@
        一排緊貼、左右兩道下面那張蓋住上面那張的前緣、兩層疊就是上層墊一個牌的厚度（使用者：「全部應該只畫兩種麻將牌」）
      ‧ 落點：牌桌上每一張的位置與大小（牌桌已經是立體牌、render.js 收緊過）—— 結束時露出來的那一張跟剛落下的完全疊在一起
      ‧ 骰子：小球貓電鐵同一種畫風的六面圖（assets/dice/die1～6，一點、四點紅）
-   流程、節奏（T_）、開門算法照 deal-anim.js。⚠️ 改節奏兩支要同步。
+     ‧ 擲骰（v2.08 起，實驗台 v0.6，原型 devtools/發牌動畫/deal-anim-3d-throw.js）：照小球貓電鐵的擲骰動畫 ——
+       2026-10-25 使用者：「擲骰子動畫可以參考一下小球貓電鐵的動畫嗎？」→ 看過 →「好，接進遊戲」。
+       從莊家手邊沿拋物線丟出、飛到半路比落地更大、影子跟著高度拉開；落地壓扁回彈；點數亮成膠囊「擲出 N 點」。
+       原本是原地抖動換面（v2.07 以前）。
+   流程、開門算法照 deal-anim.js。節奏（T_）的擲骰那三項（diceRoll 飛行、diceLand、diceHold）是這一支自己的；其餘改了兩支要同步。
    ───────────────────────────────────────────────────────────────
    以下是 deal-anim.js 原本的說明：
    deal-anim.js — 發牌動畫（牌牆＋擲骰）
@@ -89,8 +93,9 @@ const T_ = {
   riseStagger: 8,     // 牌牆升起：同一道牆每墩之間的間隔
   riseDur:   340,     // 每墩升起的時間
   riseTail:  120,     // 升完到擲骰之間的停頓
-  diceRoll:  600,     // 骰子滾動
-  diceHold:  280,     // 骰子停住、亮點數
+  diceRoll:  720,     // 骰子飛行（電鐵是 800；這裡飛得比較近）
+  diceLand:  260,     // 落地壓扁回彈
+  diceHold:  380,     // 落地之後、點數膠囊亮著
   markDur:   260,     // 開門處亮一下
   grabGap:   170,     // 每一手（4 張或 1 張）之間的間隔
   flyDur:    300,     // 牌從牌牆飛到手上
@@ -326,7 +331,8 @@ function run(opts) {
     d.draggable = false;
     Object.assign(d.style, {
       position: 'fixed', width: size + 'px', height: 'auto', zIndex: '100000',
-      filter: 'drop-shadow(0 3px 4px rgba(0,0,0,.5))', transition: 'transform 90ms', willChange: 'transform',
+      filter: 'drop-shadow(0 3px 4px rgba(0,0,0,.5))', willChange: 'transform, opacity, filter',
+      transformOrigin: '50% 57%', opacity: '0',
     });
     layer.appendChild(d);
     return d;
@@ -358,43 +364,102 @@ function run(opts) {
     const r0 = (BASE[posOf(wallSeat)] + total) % RING;               // 牆主右手邊數 total 墩，下一墩開始抓
     lastInfo = { dice: [d1, d2], total, dealer, wallSeat, startStack: r0 };
 
-    // 骰子擺在牌牆裡面、靠莊家那一側
+    // 骰子落在牌牆裡面、靠莊家那一側
     const DIR = [[0, 1], [1, 0], [0, -1], [-1, 0]];
     const [dx, dy] = DIR[posOf(dealer)];
     const ds = Math.max(22, Math.round(tw * 2.1));        // 立體版的骰子大一點（圖有透視，同寬看起來比較小）
     const mx = cx + dx * L * 0.22, my = cy + dy * LV * 0.22;
     const ox = dy !== 0 ? ds * 0.7 : 0, oy = dx !== 0 ? ds * 0.7 : 0;   // 兩顆並排，垂直於莊家方向
+    // 起點：莊家手牌的中間（從他手上丟出來）；量不到就用牌牆外面
+    const hs = targets[posOf(dealer)] || [];
+    const hm = hs.length ? hs[Math.floor(hs.length / 2)] : null;
+    const sp = hm ? { x: hm.x + hm.w / 2, y: hm.y + hm.h / 2 } : { x: cx + dx * (L / 2 + wH * 2), y: cy + dy * (LV / 2 + hV * 2) };
+    /* 每顆的手感（同電鐵的 THROW_SHAPES）：延遲、轉向、轉圈數、飛到半路的誇張倍率都錯開一點。
+       ⚠️ 轉**整數圈**再加一點餘角（rest，落地後就停在這個角度）：電鐵是轉 2.2 圈，落地那一下會從 72° 跳回 0° */
+    const SHAPES = [
+      { delay: 0,  spins: 2, rest: 9,   dir: 1,  overshoot: 1.34, jx: -0.12, jy: 0.08 },
+      { delay: 55, spins: 2, rest: -12, dir: -1, overshoot: 1.42, jx: 0.1,  jy: -0.1 },
+    ];
+    const START_SCALE = 0.42;
+    const ends = [{ x: mx - ox, y: my - oy }, { x: mx + ox, y: my + oy }].map((p, i) => ({
+      x: p.x + SHAPES[i].jx * ds, y: p.y + SHAPES[i].jy * ds,
+    }));
     const dice = [makeDie(ds), makeDie(ds)];
-    dice[0].style.left = (mx - ox - ds / 2) + 'px'; dice[0].style.top = (my - oy - ds / 2) + 'px';
-    dice[1].style.left = (mx + ox - ds / 2) + 'px'; dice[1].style.top = (my + oy - ds / 2) + 'px';
+    const anims = [];
+    dice.forEach((d, i) => {
+      const e = ends[i], sh = SHAPES[i];
+      d.style.left = (e.x - ds / 2) + 'px'; d.style.top = (e.y - ds / 2) + 'px';
+      setFace(d, 1 + Math.floor(Math.random() * 6));
+      /* 拋物線：直線內插＋往上拱的弧（4h·t·(1−t)）。大小前 70% 長到「比落地更大」，後 30% 縮回；
+         影子隨高度拉開、變淡 —— 俯視的牌桌上，「高」就靠大小與影子來看 */
+      const ddx = e.x - sp.x, ddy = e.y - sp.y;
+      /* 弧高比電鐵（距離 ×0.32）低：牌桌是斜俯視，「高」往畫面上方偏一點就夠，大小與影子負責其餘的高度感。
+         ×0.32 時對家（在上方）丟的骰子會先飛出牌牆外面 */
+      const arc = Math.max(ds * 0.8, Math.hypot(ddx, ddy) * 0.16);
+      const peak = sh.overshoot;
+      const steps = [0, .1, .22, .36, .5, .6, .66, .7, .74, .8, .9, 1];
+      const frames = steps.map(t => {
+        const lift = 4 * arc * t * (1 - t);
+        const px = sp.x + ddx * t - e.x, py = sp.y + ddy * t - lift - e.y;
+        const sc = t < .7 ? START_SCALE + (peak - START_SCALE) * (t / .7) : peak + (1 - peak) * ((t - .7) / .3);
+        const h = lift / arc;                                 // 0（手上／落地）～1（弧頂）
+        return {
+          offset: t, opacity: t < .1 ? t / .1 : 1,
+          transform: `translate(${px}px,${py}px) scale(${sc}) rotate(${(sh.dir * sh.spins * 360 + sh.rest) * t}deg)`,
+          filter: `drop-shadow(0 ${(3 + h * ds * 0.55).toFixed(1)}px ${(4 + h * ds * 0.3).toFixed(1)}px rgba(0,0,0,${(0.5 - h * 0.25).toFixed(2)}))`,
+        };
+      });
+      anims.push(d.animate(frames, { duration: T_.diceRoll, delay: sh.delay, easing: 'cubic-bezier(.33,.1,.2,1)', fill: 'both' }));
+    });
+    // 飛行中換面（滾動的感覺），最後 30% 定在擲出的點數
     let tick = 0;
+    const t0 = performance.now();
     diceTimer = setInterval(() => {
       if (skipped) return;
-      dice.forEach(d => {
-        setFace(d, 1 + Math.floor(Math.random() * 6), ds);      // 滾動中的點數只是看的，不用種子
-        d.style.transform = `translate(${(Math.random() - .5) * ds * .5}px,${(Math.random() - .5) * ds * .5}px) rotate(${(Math.random() - .5) * 70}deg)`;
-      });
-      if (tick++ % 2 === 0) sfx('click');
-    }, 70);
-    await sleep(T_.diceRoll);
+      const p = (performance.now() - t0) / T_.diceRoll;
+      dice.forEach((d, i) => setFace(d, p < .7 ? 1 + Math.floor(Math.random() * 6) : [d1, d2][i]));
+      if (p < .7 && tick++ % 2 === 0) sfx('click');
+    }, 75);
+    await sleep(T_.diceRoll + Math.max(...SHAPES.map(s => s.delay)));
     clearInterval(diceTimer);
     if (skipped) return;
-    setFace(dice[0], d1, ds); setFace(dice[1], d2, ds);
-    dice.forEach(d => { d.style.transition = 'transform 140ms ease-out'; d.style.transform = 'none'; });
+    setFace(dice[0], d1); setFace(dice[1], d2);
+    // 落地：很短的壓扁再彈回，亮一下
+    anims.forEach(a => a.cancel());
+    dice.forEach((d, i) => {
+      const r = `rotate(${SHAPES[i].rest}deg)`;
+      d.style.opacity = '1';
+      d.animate([
+        { transform: `${r} scale(1.1, .9)`, filter: 'brightness(1.3) drop-shadow(0 2px 3px rgba(0,0,0,.6))' },
+        { transform: `${r} scale(1)`, filter: 'drop-shadow(0 3px 4px rgba(0,0,0,.5))' },
+      ], { duration: T_.diceLand, easing: 'cubic-bezier(.2,1.5,.45,1)', fill: 'both' });
+    });
     sfx('discard');
 
-    // 點數總和亮在骰子旁邊
+    /* 點數：一顆膠囊（同電鐵的「擲出 N 點」）。照兩顆骰子實際的位置擺：貼在最上面那顆的上緣外；莊家在上方時貼在最下面那顆的下緣外。
+       ⚠️ 不能用固定偏移：莊家在左右時兩顆是上下排的，固定偏移會壓到上面那顆 */
+    const below = dy === -1;
+    const lx = (ends[0].x + ends[1].x) / 2;
+    const ly = below ? Math.max(ends[0].y, ends[1].y) + ds * 0.6 : Math.min(ends[0].y, ends[1].y) - ds * 0.6;
+    const tf = below ? 'translate(-50%,0)' : 'translate(-50%,-100%)';
     const lbl = document.createElement('div');
-    lbl.textContent = String(total);
-    lbl.style.zIndex = '100001';
+    lbl.innerHTML = '擲出 <b>' + total + '</b> 點';
+    const fs = Math.max(12, Math.round(ds * 0.5));
     Object.assign(lbl.style, {
-      position: 'fixed', left: (mx - ds) + 'px', top: (my - ds * 2.1) + 'px', width: (ds * 2) + 'px',
-      textAlign: 'center', font: `700 ${Math.round(ds * 0.9)}px/1 'Songti TC',serif`, color: '#ffd766',
-      textShadow: '0 1px 4px rgba(0,0,0,.8)', opacity: '0', transition: 'opacity 160ms',
+      position: 'fixed', left: lx + 'px', top: ly + 'px',
+      transform: tf, zIndex: '100001', whiteSpace: 'nowrap',
+      padding: `${Math.round(fs * 0.25)}px ${Math.round(fs * 0.9)}px`, borderRadius: '999px',
+      background: 'rgba(16,30,22,.92)', border: '2px solid #e8cf86', boxShadow: '0 4px 12px rgba(0,0,0,.55)',
+      font: `700 ${fs}px/1.2 'Songti TC',serif`, color: '#f2e2b0', letterSpacing: '.08em',
     });
-    if (dy === -1) lbl.style.top = (my + ds * 1.2) + 'px';        // 莊家在上方時，數字放骰子下面
     layer.appendChild(lbl);
-    void lbl.offsetWidth; lbl.style.opacity = '1';
+    const b = lbl.querySelector('b');
+    Object.assign(b.style, { color: '#ffd766', fontSize: '1.3em', margin: '0 .15em' });
+    lbl.animate([
+      { opacity: 0, transform: tf + ' scale(.6)' },
+      { opacity: 1, transform: tf + ' scale(1.08)', offset: .7 },
+      { opacity: 1, transform: tf + ' scale(1)' },
+    ], { duration: 240, easing: 'ease-out', fill: 'backwards' });   // 不能 both：之後要靠 style.opacity 淡出
     await sleep(T_.diceHold);
     if (skipped) return;
 
