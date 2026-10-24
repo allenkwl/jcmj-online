@@ -458,7 +458,10 @@ function settleClaim(match, events, ctx) {
 function aiTakeTurn(match, events, ctx, seat) {
   markSubbed(match, seat);
   const h = match.hand;
-  const opt = turnOptions(h, seat, { noDeclare: !ctx.declareFor });
+  /* 代打的武將（斷線、久久不動）不宣戰 —— 宣戰要付本人的押金、又不能撤回，留給本人決定
+     （2026-10-24 使用者：「好，代打不宣戰」）。已經宣戰的人被代打，照下面的摸切 */
+  const sub = !!(match.seats[seat] && match.seats[seat].sub);
+  const opt = turnOptions(h, seat, { noDeclare: !ctx.declareFor || sub });
   if (opt.canTsumo) return doTsumo(match, events, ctx, seat);
 
   // 宣戰了（含真人宣戰後斷線、武將代打）：摸切

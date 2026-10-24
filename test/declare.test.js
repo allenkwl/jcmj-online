@@ -172,6 +172,26 @@ console.log('═══ 電腦：初學不宣、普通一律宣、高手自己判
   ok(h.seats[0].hand[i].display !== '西', '北、西一樣沒用：留下祥瑞西、打北', h.seats[0].hand[i].display);
 }
 
+console.log('═══ 代打的武將不宣戰 ═══');
+{
+  // 座位 0 是真人，被武將代打（普通難度＝聽牌就宣戰）：不能替本人宣戰
+  const { m, h } = table(TENPAI14);
+  F.startSub(m, 0, { general: '王翦', now: 1, idle: true });
+  const hooks = AI.flowHooks();
+  const c2 = Object.assign({}, ctx, hooks, { seatInfo: { 0: {}, 1: { isAI: true, aiLevel: 2 }, 2: { isAI: true, aiLevel: 2 }, 3: { isAI: true, aiLevel: 2 } },
+                                             pauseAfter: ['discard'] });
+  h.phase = 'discard'; h.turn = 0;
+  F.run(m, c2);
+  ok(!h.seats[0].declared, '代打中：聽牌也不替本人宣戰（押金、不能撤回留給本人）', JSON.stringify(h.seats[0].declared));
+  ok(h.seats[0].discards.length === 1, '（前提）武將照常替他打了一張', String(h.seats[0].discards.length));
+  // 對照：同一副牌，電腦守將（普通）會宣戰
+  const t2 = table(TENPAI14);
+  t2.m.seats[0].isAI = true;
+  const c3 = Object.assign({}, c2, { seatInfo: Object.assign({}, c2.seatInfo, { 0: { isAI: true, aiLevel: 2 } }) });
+  F.run(t2.m, c3);
+  ok(!!t2.h.seats[0].declared, '對照：電腦守將（普通）同一副牌會宣戰', JSON.stringify(t2.h.seats[0].declared));
+}
+
 console.log('\n─────────────────────────');
 console.log(`通過 ${pass}　失敗 ${fail}`);
 if (fail) { fails.forEach(f => console.log('  ✗ ' + f)); process.exit(1); }
