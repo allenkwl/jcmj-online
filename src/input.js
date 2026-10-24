@@ -38,7 +38,9 @@ const STICK_DEAD = 0.55;     // 搖桿死區
    2026-10-14 使用者：「用手把無法捲動遊戲說明」「鍵盤也是」——
    說明面板裡能選的只有「關閉」一顆，上下鍵沒有別的可以移，就什麼都不做；
    而且一打開焦點落在最底下的「關閉」，scrollIntoView 直接把說明捲到最後，前面的字看不到。 */
-let cfg = { getItems: () => [], onConfirm: null, onCancel: null, onFocus: null, getScroller: null };
+let cfg = { getItems: () => [], onConfirm: null, onCancel: null, onFocus: null, getScroller: null, beforeMove: null };
+/* beforeMove(vertical, dir)（v2.04，選用）：移焦點之前先問呼叫端，回 true＝它自己處理了（鍵盤、手把都會經過這裡）。
+   用在宣戰的比較表：表可以捲動，捲到外面的列還疊在手牌上方，照「最近的元素」移會跳到看不見的那一列 */
 let items = [];
 let idx = -1;
 let padOn = false;           // 有沒有偵測到手把
@@ -84,6 +86,7 @@ function refresh(keepIdx) {
 function groupOf(el) { return (el && el.dataset && el.dataset.fgroup) || ''; }
 
 function move(delta) {
+  if (cfg.beforeMove && cfg.beforeMove(false, delta) === true) return;
   if (!items.length) { refresh(); if (!items.length) return; }
   const g = groupOf(items[idx]);
   const same = [];
@@ -118,6 +121,7 @@ function scrollStep(dir, frac) {
 
 function moveVertical(dir) {
   if (scrollStep(dir)) return;                  // 有可捲動的內容就先捲，捲到底才移焦點
+  if (cfg.beforeMove && cfg.beforeMove(true, dir) === true) return;
   if (items.length < 2) return;
   const cur = items[idx] || items[0];
   const a = cur.getBoundingClientRect();

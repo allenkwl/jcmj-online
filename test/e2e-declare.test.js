@@ -201,19 +201,37 @@ const chromium = E.findChromium();
       MJDev.setAuto(false); MJDev.offerReset();
       const m = D.match, h = m.hand;
       const SAFE = ['1筒', '3筒', '5筒', '7筒', '9筒', '1條', '3條', '5條', '7條', '9條', '北', '白', '中'];
-      h.seats[0].hand = '1萬 2萬 3萬 4萬 5萬 6萬 7萬 8萬 9萬 東 東 東 南'.split(' ').map(T);
+      // 五種打法（打 1萬／2萬／4萬／5萬／8萬 都聽）：測比較表的捲動與上下鍵（v2.04）
+      h.seats[0].hand = '1萬 1萬 2萬 2萬 3萬 4萬 5萬 5萬 6萬 7萬 7萬 8萬 8萬'.split(' ').map(T);
       h.seats[0].melds = []; h.seats[0].discards = [];
-      [1, 2, 3].forEach(k => { h.seats[k].hand = SAFE.map(T); h.seats[k].melds = []; });
+      [1, 2, 3].forEach(k => { h.seats[k].hand = SAFE.map(T); h.seats[k].melds = []; h.seats[k].discards = []; });
       window.__force.on = true;
-      ['中', '西'].forEach((d, k) => { h.wall[h.drawIdx + k] = T(d); });
+      ['中', '9萬'].forEach((d, k) => { h.wall[h.drawIdx + k] = T(d); });
+      MJDev.redraw();
+      if (!await until(() => D.waiting && D.waiting.kind === 'turn' && D.waiting.seat === 0, 15000)) return { error: '第二局等不到輪到我' };
+      const out = {};
+      const key = k => document.dispatchEvent(new KeyboardEvent('keydown', { key: k, bubbles: true, cancelable: true }));
+      await until(() => document.querySelector('#act-pop.show .auto-offer'), 5000);
+      key('Enter'); await wait(200);                  // 宣戰 → 挑牌、比較表
+      const list = document.querySelector('#decl-panel .dp-list');
+      const rows = [...document.querySelectorAll('#decl-panel .decl-row')];
+      const inView = r => { const a = r.getBoundingClientRect(), b = list.getBoundingClientRect(); return a.top >= b.top - 1 && a.bottom <= b.bottom + 1; };
+      out.scroll = { rows: rows.length, scrollable: !!list && list.scrollHeight > list.clientHeight + 2, visible: rows.filter(inView).length };
+      key('ArrowUp'); await wait(60);
+      out.upToRow = MJInput.current() === rows[0];       // 焦點在★那張 → 上 → ★那一列
+      for (let i = 0; i < 4; i++) { key('ArrowDown'); await wait(60); }
+      out.down4 = { onLast: MJInput.current() === rows[4], lastVisible: inView(rows[4]), scrolled: list.scrollTop > 0 };
+      key('ArrowDown'); await wait(60);
+      const cur = MJInput.current(), tiles = [...document.querySelectorAll('#hand-bottom canvas')];
+      out.backToTile = tiles.indexOf(cur) === Number(rows[4].dataset.idx);
+      key('A'); await wait(150);                       // 取消挑牌
       // 國庫只剩 20 兩：這一場先輸到快見底
       const g0 = (document.querySelector('.ci-gold') || {}).textContent || '';
       const gold = Number((g0.match(/([\d,]+)/) || [0, '0'])[1].replace(/,/g, ''));
+      out.gold = gold;
       m.seats[0].matchScore = (m.seats[0].matchScore || 0) - (gold - 20);
       MJDev.redraw();
-      if (!await until(() => D.waiting && D.waiting.kind === 'turn' && D.waiting.seat === 0, 15000)) return { error: '第二局等不到輪到我' };
-      await wait(700);
-      const out = { gold };
+      await wait(300);
       const b = document.getElementById('si-declare');
       out.poor = { popup: !!document.querySelector('#act-pop.show .auto-offer'), btn: b ? b.textContent : null,
                    disabled: !!(b && b.disabled), auto: !!document.getElementById('si-auto') };
@@ -233,6 +251,10 @@ const chromium = E.findChromium();
     });
     ok(!fb.error, '第二局走得到「不能宣戰」的場面', fb.error);
     if (!fb.error) {
+      ok(fb.scroll.rows === 5 && fb.scroll.scrollable && fb.scroll.visible === 3, '五種打法：全部列出、一次看得到 3 列、可以捲', JSON.stringify(fb.scroll));
+      ok(fb.upToRow === true, '手牌按上：跳到這張牌對應的那一列（★）', JSON.stringify(fb.upToRow));
+      ok(fb.down4.onLast && fb.down4.lastVisible && fb.down4.scrolled, '表裡一路往下到第 5 列：自動捲上來、看得到', JSON.stringify(fb.down4));
+      ok(fb.backToTile === true, '最後一列再按下：回到那一列的牌', JSON.stringify(fb.backToTile));
       ok(!fb.poor.popup && fb.poor.btn === '宣戰（國庫不足）' && fb.poor.disabled && !fb.poor.auto,
          '國庫不夠：不跳視窗，宣戰鈕灰的寫「國庫不足」，沒有免費代打', JSON.stringify(fb));
       ok(fb.dKey === false, 'D 鍵沒有作用（只留 A 鍵）', JSON.stringify(fb.dKey));
