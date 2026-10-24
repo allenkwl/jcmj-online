@@ -379,14 +379,14 @@ function renderCenterInfo(node, match, hand, ui) {
   }
   const c = el('div', 'ci-wall', node);
   c.textContent = '餘 ' + S.liveWallCount(hand);
-  /* 祥瑞（v1.91，docs/dora-and-declare.md）：直接畫出「今天值錢的那幾張」，不是指示牌 ——
-     「指示牌的下一張才是祥瑞」那層轉換對不熟日麻的人太難懂；指示牌寫在 title 裡 */
+  /* 寶牌（v1.91，docs/dora-and-declare.md）：直接畫出「今天值錢的那幾張」，不是指示牌 ——
+     「指示牌的下一張才是寶牌」那層轉換對不熟日麻的人太難懂；指示牌寫在 title 裡 */
   const SCm = (typeof require === 'function') ? require('./scoring.js')
     : (typeof globalThis !== 'undefined' ? globalThis.MJScore : null);
   const shown = hand.doraShown || [];
   if (SCm && SCm.doraOf && shown.length) {
     const d = el('div', 'ci-dora', node);
-    el('span', 'ci-dora-lb', d).textContent = '祥瑞';
+    el('span', 'ci-dora-lb', d).textContent = '寶牌';
     shown.forEach(ind => {
       const disp = SCm.doraOf(ind);
       if (!disp) return;
@@ -396,8 +396,8 @@ function renderCenterInfo(node, match, hand, ui) {
       const c2 = T.makeTile(tile, { w: 16, h: 22, thin: true, className: 'ci-dora-t' });
       d.appendChild(c2);
     });
-    d.title = '祥瑞：手上（含吃碰槓）每有一張加 ' + SCm.DORA_PTS + ' 分\n指示牌：' + shown.map(t => t.display).join('、')
-      + '（指示牌的下一張就是祥瑞；每槓一次再翻一張）';
+    d.title = '寶牌：手上（含吃碰槓）每有一張加 ' + SCm.DORA_PTS + ' 分\n指示牌：' + shown.map(t => t.display).join('、')
+      + '（指示牌的下一張就是寶牌；每槓一次再翻一張）';
   }
   const u = ui || {};
   if (u.pot > 0) {

@@ -107,24 +107,24 @@ console.log('═══ 宣告視窗：鎖手、振聽升級 ═══');
   C.applyDeclinedRonFuriten(t2, { declinedRon: [2] });
   ok(!t2.seats[2].furitenLocked, '沒宣戰的人放過榮和：不會永久振聽');
 }
-console.log('═══ 計分：裏祥瑞、宣戰加成、押金 ═══');
+console.log('═══ 計分：裏寶牌、宣戰加成、押金 ═══');
 {
   const WIN = '1萬 2萬 3萬 4萬 5萬 6萬 7萬 8萬 9萬 東 東 東 南 南';
   const mk = (declared, menzen) => {
     const { m, h } = table(WIN);
-    h.doraShown = T('1筒');                             // 表祥瑞 2筒：手上沒有
-    h.wall[h.doraBase + 1] = T('8萬')[0];                // 裏指示牌 8萬 → 裏祥瑞 9萬：手上一張
+    h.doraShown = T('1筒');                             // 表寶牌 2筒：手上沒有
+    h.wall[h.doraBase + 1] = T('8萬')[0];                // 裏指示牌 8萬 → 裏寶牌 9萬：手上一張
     if (declared) h.seats[0].declared = { at: 0, menzen };
     return { m, h };
   };
   const a = SC.handValue(mk(false).h, 0, {});
   const b = SC.handValue(mk(true, true).h, 0, {});
   const c = SC.handValue(mk(true, false).h, 0, {});
-  eq(a.ura, 0, '沒宣戰：不翻裏祥瑞');
-  eq(b.ura, 1, '宣戰胡：裏祥瑞 1（裏指示牌 8萬 → 9萬）');
+  eq(a.ura, 0, '沒宣戰：不翻裏寶牌');
+  eq(b.ura, 1, '宣戰胡：裏寶牌 1（裏指示牌 8萬 → 9萬）');
   eq(b.uraIndicators.join(','), '8萬', '結果帶著裏指示牌（給結算畫面翻開）');
-  eq(b.total - a.total, SC.DORA_PTS + SC.DECLARE_PTS + SC.DECLARE_MENZEN_PTS, '門清宣戰：多 裏祥瑞 20＋宣戰 30＋門清 20');
-  eq(c.total - a.total, SC.DORA_PTS + SC.DECLARE_PTS, '非門清宣戰：多 裏祥瑞 20＋宣戰 30');
+  eq(b.total - a.total, SC.DORA_PTS + SC.DECLARE_PTS + SC.DECLARE_MENZEN_PTS, '門清宣戰：多 裏寶牌 20＋宣戰 30＋門清 20');
+  eq(c.total - a.total, SC.DORA_PTS + SC.DECLARE_PTS, '非門清宣戰：多 裏寶牌 20＋宣戰 30');
   // 善守不打折宣戰那一段
   const pay = (decl, payer) => { const t = mk(decl, true);
     const r = SC.settleWin(t.m, t.h, { type: 'ron', from: 2, winners: [{ seat: 0 }] }, { seatInfo: { 2: { kingdom: payer } } });
@@ -168,11 +168,11 @@ console.log('═══ 電腦：初學、普通一律宣（v2.02），高手自�
   eq(AI.declareFor(table(RYANMEN, { live: 5 }).h, 0, 3, gc), null, '高手：牌山剩 5 張（< 6）→ 不宣');
 }
 {
-  // 留祥瑞：牌效一樣時不打祥瑞
+  // 留寶牌：牌效一樣時不打寶牌
   const { h } = table('1萬 2萬 3萬 4萬 5萬 6萬 7萬 8萬 9萬 東 東 東 北 西');
-  h.doraShown = T('南');                                 // 祥瑞 西
+  h.doraShown = T('南');                                 // 寶牌 西
   const i = AI.chooseDiscard(h, 0, { level: 2 });
-  ok(h.seats[0].hand[i].display !== '西', '北、西一樣沒用：留下祥瑞西、打北', h.seats[0].hand[i].display);
+  ok(h.seats[0].hand[i].display !== '西', '北、西一樣沒用：留下寶牌西、打北', h.seats[0].hand[i].display);
 }
 
 console.log('═══ 代打的武將不宣戰 ═══');

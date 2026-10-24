@@ -1,7 +1,7 @@
 /* 端對端：單機在真的遊戲裡宣戰（v1.92）
    ───────────────────────────────────────────────────────────────
    規則、計分、電腦在 test/declare.test.js；這一支驗畫面那一層 ——
-   宣戰按鈕出不出來、挑牌模式擋不擋得住不聽的牌、宣戰後是不是強制代打摸切、結算有沒有翻裏祥瑞。
+   宣戰按鈕出不出來、挑牌模式擋不擋得住不聽的牌、宣戰後是不是強制代打摸切、結算有沒有翻裏寶牌。
 
    安排：輪到上家摸牌時把四家的牌換掉 →
      我：1–9 萬＋東東東＋南（13 張），下一張摸西 → 打南或打西都聽（可以宣戰的就這兩張）
@@ -82,6 +82,14 @@ const chromium = E.findChromium();
       out.offerTitle = pop ? pop.textContent : '';
       key('Enter'); await wait(150);
       out.popPick = !!document.querySelector('#si-declare.picking') && focusIsBest();
+      /* v2.06：挑牌時只有能宣戰的牌選得到 —— 左右鍵只在南、西之間移 */
+      const seenLR = new Set();
+      for (let i = 0; i < 5; i++) {
+        key('ArrowRight'); await wait(40);
+        const c = MJInput.current(), k2 = [...document.querySelectorAll('#hand-bottom canvas')].indexOf(c);
+        seenLR.add(k2 >= 0 ? h.seats[0].hand[k2].display : '(不是手牌)');
+      }
+      out.lr = [...seenLR].sort().join(',');
       /* v2.03 宣戰的比較表：每一種打法一列（打哪張 → 聽哪些、剩幾張），最好的打★；上鍵移到表上，那一列亮 */
       const rows = [...document.querySelectorAll('#decl-panel .decl-row')];
       out.panel = rows.map(r => ({ disp: r.dataset.disp, star: r.querySelector('.dp-star').textContent,
@@ -114,7 +122,9 @@ const chromium = E.findChromium();
       // 點不聽的牌（1 萬）兩下：不能打出去
       const tileEl = i => document.querySelector('#hand-bottom [data-idx="' + i + '"]:not(.ph-wrap)');
       const i1 = h.seats[0].hand.findIndex(t => t.display === '1萬');
-      tileEl(i1).click(); await wait(80); { const e2 = tileEl(i1); if (e2) e2.click(); } await wait(150);
+      tileEl(i1).click(); await wait(80);
+      out.badSel = !!(tileEl(i1) && tileEl(i1).classList.contains('sel'));      // v2.06：點了也不會被選起來
+      { const e2 = tileEl(i1); if (e2) e2.click(); } await wait(150);
       out.afterBad = { len: h.seats[0].hand.length, declared: !!h.seats[0].declared, picking: !!document.querySelector('#si-declare.picking') };
       // 點南兩下：宣戰
       const iS = h.seats[0].hand.findIndex(t => t.display === '南');
@@ -149,6 +159,8 @@ const chromium = E.findChromium();
     ok(r.offer === '宣戰/自己來' && /可以宣戰/.test(r.offerTitle), '聽牌視窗問的是宣戰（不是交給系統打）', JSON.stringify(r.offer));
     ok(r.popPick === true, '視窗按宣戰（Enter）：進入挑牌、焦點停在可以宣戰的牌', JSON.stringify(r.popPick));
     ok(r.popCancel === true, '再按一次 A：取消挑牌', JSON.stringify(r.popCancel));
+    ok(r.lr === '南,西', '挑牌時左右鍵只在能宣戰的牌（南、西）之間移動', JSON.stringify(r.lr));
+    ok(r.badSel === false, '點不能聽牌的牌：不會被選起來', JSON.stringify(r.badSel));
     ok(r.panel && r.panel.length === 2 && r.panel.map(x => x.disp).sort().join(',') === '南,西', '宣戰比較表：兩種打法（打南、打西）各一列', JSON.stringify(r.panel));
     ok(r.panel && r.panel[0].star === '★' && r.panel[1].star === '', '最好的那個打★、排第一', JSON.stringify(r.panel));
     // 剩幾張只算看得到的（別家前幾巡的牌河還在，南、西可能被打過）—— 格式對、★那一列剩最多
@@ -173,7 +185,7 @@ const chromium = E.findChromium();
     ok(r.result.type === 'tsumo' && r.result.seat === 0 && r.result.declared, '下一巡摸到西：系統替我自摸，算宣戰胡', JSON.stringify(r.result));
     ok(Array.isArray(r.result.ura) && r.result.ura.length >= 1, '結果帶著裏指示牌', JSON.stringify(r.result.ura));
     ok(/宣戰/.test(r.title), '結算標題寫宣戰', r.title);
-    ok(/裏祥瑞/.test(r.uraRow) && r.uraTiles >= 1 && /宣戰 \+50/.test(r.uraRow), '結算翻開裏祥瑞、寫宣戰 +50（門清）', r.uraRow + ' ' + r.uraTiles);
+    ok(/裏寶牌/.test(r.uraRow) && r.uraTiles >= 1 && /宣戰 \+50/.test(r.uraRow), '結算翻開裏寶牌、寫宣戰 +50（門清）', r.uraRow + ' ' + r.uraTiles);
     ok(r.result.stakes.join(',') === '0' && /宣戰，押金 50 兩進彩池/.test(r.money), '宣戰押金 50 兩寫在結算裡', r.money);
     /* ── 第二局：不能宣戰（v1.97：沒有免費代打，「就留宣戰就好」）──
          國庫不夠付押金 → 不跳視窗、宣戰鈕灰的寫「國庫不足」；牌山剩不到 4 張 → 什麼都不出現；D 鍵沒有作用（「只留 A 鍵」） */

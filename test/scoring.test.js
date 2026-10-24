@@ -420,9 +420,9 @@ console.log('═══ 押注與彩池（v1.61）═══');
   ok(!worst, '押注的整場：零和、彩池最後清空', worst);
 }
 
-console.log('\n═══ 祥瑞（寶牌，v1.91）═══');
+console.log('\n═══ 寶牌（寶牌，v1.91）═══');
 {
-  // 指示牌 → 祥瑞：下一張，三個繞回
+  // 指示牌 → 寶牌：下一張，三個繞回
   const D = x => SC.doraOf({ display: x });
   eq(D('3萬'), '4萬', '3萬 → 4萬');
   eq(D('9萬'), '1萬', '9萬 → 1萬（繞回）');
@@ -434,42 +434,42 @@ console.log('\n═══ 祥瑞（寶牌，v1.91）═══');
   eq(D('中'), '白', '中 → 白（繞回）');
 }
 {
-  // 數整手：手牌＋副露（和的那張已經在手牌裡）；指示牌 3萬 → 祥瑞 4萬
+  // 數整手：手牌＋副露（和的那張已經在手牌裡）；指示牌 3萬 → 寶牌 4萬
   const { h } = table(1, ['1萬 2萬 3萬 4萬 5萬 6萬 7萬 8萬 9萬 東 東 東 南 南', null, null, null]);
   h.doraShown = T('3萬');
-  eq(SC.countDora(h, 0).count, 1, '手牌裡一張 4萬 → 祥瑞 1');
+  eq(SC.countDora(h, 0).count, 1, '手牌裡一張 4萬 → 寶牌 1');
   h.seats[0].hand = T('1萬 2萬 3萬 5萬 6萬 7萬 8萬 9萬 9萬 9萬 南');
   h.seats[0].melds = [{ type: 'pong', tiles: T('4萬 4萬 4萬') }];
-  eq(SC.countDora(h, 0).count, 3, '副露的 4萬 刻子也算：祥瑞 3');
+  eq(SC.countDora(h, 0).count, 3, '副露的 4萬 刻子也算：寶牌 3');
   h.doraShown = T('3萬 3萬');
-  eq(SC.countDora(h, 0).count, 6, '翻到兩張一樣的指示牌：每張祥瑞算兩次');
+  eq(SC.countDora(h, 0).count, 6, '翻到兩張一樣的指示牌：每張寶牌算兩次');
   h.doraShown = [];
   eq(SC.countDora(h, 0).count, 0, '沒有指示牌：0');
   delete h.doraShown;
   eq(SC.countDora(h, 0).count, 0, '舊存檔沒有 doraShown 欄位也不會出錯');
 }
 {
-  // 加在乘法鏈之後：秦（虎狼）、莊家、押注都不乘祥瑞；齊（善守）付款時不打折祥瑞
+  // 加在乘法鏈之後：秦（虎狼）、莊家、押注都不乘寶牌；齊（善守）付款時不打折寶牌
   const HAND = '1萬 2萬 3萬 4萬 5萬 6萬 7萬 8萬 9萬 東 東 東 南 南';
   const mk = dora => { const t = table(0, [HAND, null, null, null]); t.h.doraShown = dora ? T('3萬') : []; return t; };
   const base = SC.handValue(mk(false).h, 0, { kingdom: 'qin', conquered: 3 });
   const withD = SC.handValue(mk(true).h, 0, { kingdom: 'qin', conquered: 3 });
-  eq(withD.dora, 1, '（前提）有一張祥瑞');
-  eq(withD.total - base.total, SC.DORA_PTS, '秦＋莊家：祥瑞一張剛好多 ' + SC.DORA_PTS + '，沒有被倍率放大');
+  eq(withD.dora, 1, '（前提）有一張寶牌');
+  eq(withD.total - base.total, SC.DORA_PTS, '秦＋莊家：寶牌一張剛好多 ' + SC.DORA_PTS + '，沒有被倍率放大');
   const pay = (dora, payerKingdom) => {
     const t = mk(dora);
     const res = { type: 'ron', from: 2, winners: [{ seat: 0 }] };
     const r = SC.settleWin(t.m, t.h, res, { seatInfo: { 0: { kingdom: 'han' }, 2: { kingdom: payerKingdom, conquered: 0 } } });
     return r.transfers.reduce((n, x) => n + x.pts, 0);
   };
-  eq(pay(true, 'qi') - pay(false, 'qi'), SC.DORA_PTS, '齊放槍：善守打七折，但祥瑞那 20 不打折');
-  eq(pay(true, 'han') - pay(false, 'han'), SC.DORA_PTS, '一般國放槍：多付的剛好是祥瑞 20');
-  // 自摸：祥瑞照比例分攤（莊家自摸三家均分，四捨不會憑空多出太多）
+  eq(pay(true, 'qi') - pay(false, 'qi'), SC.DORA_PTS, '齊放槍：善守打七折，但寶牌那 20 不打折');
+  eq(pay(true, 'han') - pay(false, 'han'), SC.DORA_PTS, '一般國放槍：多付的剛好是寶牌 20');
+  // 自摸：寶牌照比例分攤（莊家自摸三家均分，四捨不會憑空多出太多）
   const ts = dora => { const t = mk(dora); const r = SC.settleWin(t.m, t.h, { type: 'tsumo', winners: [{ seat: 0 }] },
     { seatInfo: { 1: { kingdom: 'qi' }, 2: { kingdom: 'han' }, 3: { kingdom: 'zhao' } } });
     return r.transfers.reduce((n, x) => n + x.pts, 0); };
   const diff = ts(true) - ts(false);
-  ok(diff >= SC.DORA_PTS && diff <= SC.DORA_PTS + 2, '莊家自摸：三家分攤祥瑞，總共多 20（進位最多多 2）', diff);
+  ok(diff >= SC.DORA_PTS && diff <= SC.DORA_PTS + 2, '莊家自摸：三家分攤寶牌，總共多 20（進位最多多 2）', diff);
 }
 {
   // 開局翻一張、每槓一張、最多五張；指示牌在王牌區、不影響活牌山
