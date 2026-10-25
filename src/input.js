@@ -208,9 +208,27 @@ function pollPads() {
   // 右搖桿：只捲動、不移焦點（有可捲動的內容時才有作用）
   repeat('rsUp', ax[3] < -STICK_DEAD, () => scrollStep(-1, 0.2));
   repeat('rsDown', ax[3] > STICK_DEAD, () => scrollStep(1, 0.2));
-  // A／Start 確定，B 取消。不連發 —— 確定鍵連發會連按兩次。
-  repeat('a', down(0) || down(9), () => { held.a.n = 99; confirm(); });
-  repeat('b', down(1), () => { held.b.n = 99; cancel(); });
+  // A／Start 確定，B 取消。不連發 —— 只在按下去的那一瞬間算一次（edge）。
+  edge('a', down(0) || down(9), confirm);
+  edge('b', down(1), cancel);
+}
+
+/* 按鈕只在「按下去的那一瞬間」觸發一次，按住不連發（v2.10）。
+   2026-10-25 使用者：「用手把試玩，很容易會發生按一下就一連串動作」——
+   v1.00 起 A／B 是 repeat() 再把 n 設成 99 想關掉連發，但 repeat() 只要 n 不是 1 就用 REPEAT_NEXT（110ms）連發：
+   按住超過 0.11 秒就再確定一次，之後每 0.11 秒一次。一般按一下就有 0.1～0.2 秒，第一下換了畫面，後面幾下落在新畫面的鈕上。
+   EDGE_GAP：放開後很快又「按下」（藍牙手把偶爾回報的抖動）不算新的一下 —— 人連按兩下不會快過 80ms */
+const EDGE_GAP = 80;
+const edgeState = {};
+function edge(name, active, fn) {
+  const st = edgeState[name] || (edgeState[name] = { on: false, at: -1e9 });
+  const now = performance.now();
+  if (active && !st.on) {
+    st.on = true;
+    if (now - st.at >= EDGE_GAP) { st.at = now; fn(); }
+  } else if (!active && st.on) {
+    st.on = false;
+  }
 }
 
 /* ── 進入點 ──────────────────────────────────────────────── */
