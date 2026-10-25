@@ -144,12 +144,15 @@ const chromium = E.findChromium();
       out.badSel = !!(tileEl(i1) && tileEl(i1).classList.contains('sel'));      // v2.06：點了也不會被選起來
       { const e2 = tileEl(i1); if (e2) e2.click(); } await wait(150);
       out.afterBad = { len: h.seats[0].hand.length, declared: !!h.seats[0].declared, picking: !!document.querySelector('#si-declare.picking') };
-      // 點南兩下：宣戰
+      // 點南兩下：宣戰。音效（v2.14）：播 SFX.declare（拔劍出鞘），不是槓 —— 包住兩支數呼叫次數（#mute 下函式照樣被叫，只是不出聲）
+      const sfxN = { declare: 0, kong: 0 };
+      ['declare', 'kong'].forEach(k => { const f = MJAudio.SFX[k]; if (f) MJAudio.SFX[k] = function () { sfxN[k]++; return f.apply(this, arguments); }; });
       const iS = h.seats[0].hand.findIndex(t => t.display === '南');
       tileEl(iS).click(); await wait(80); tileEl(iS).click();
       await until(() => h.seats[0].declared, 3000);
       await wait(150);
       out.declared = h.seats[0].declared;
+      out.sfx = sfxN;
       out.river = h.seats[0].discards.map(t => t.display).join(',');
       out.auto = D.auto;
       out.badge = [...document.querySelectorAll('.np-declare')].length;
@@ -200,6 +203,7 @@ const chromium = E.findChromium();
     ok(r.cancelFocusable && r.btnCancel, '「取消」手把／方向鍵選得到，按下去取消挑牌', JSON.stringify({ f: r.cancelFocusable, c: r.btnCancel }));
     ok(r.afterBad.len === 14 && !r.afterBad.declared && r.afterBad.picking, '點不聽的牌：沒打出去，還在挑牌模式', JSON.stringify(r.afterBad));
     ok(r.declared && r.declared.menzen === true, '點南：宣戰成功（門清）', JSON.stringify(r.declared));
+    ok(r.sfx && r.sfx.declare >= 1 && r.sfx.kong === 0, '宣戰的音效是「拔劍出鞘」（SFX.declare），不是槓', JSON.stringify(r.sfx));
     ok(/南$/.test(r.river), '南打進河裡', r.river);
     ok(r.auto === true, '宣戰後自動交給系統打', JSON.stringify(r.auto));
     ok(r.badge === 1, '我的名牌掛「⚔ 宣戰」', JSON.stringify(r.badge));

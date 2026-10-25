@@ -1,0 +1,208 @@
+<!doctype html>
+<html lang="zh-Hant">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>宣戰音效試聽</title>
+<meta name="description" content="宣戰的音效候選（現在借用槓的聲音）：戰鼓、銅鑼、號角、出鞘⋯⋯試聽挑一個，選定再接進遊戲">
+<meta name="launcher-icon" content="🥁">
+<meta name="launcher-cat" content="其他">
+<!--
+  2026-10-25 使用者：「宣戰的音效和槓相同，另外設計一個音效，先讓我試聽一下」。
+  遊戲的音效全是 Web Audio 即時合成（src/audio.js 的 SFX），沒有音檔 —— 候選也照這個做法，選定後搬進 SFX.declare。
+  音量：SFX 總音量 0.7；各候選的響度（RMS）用 vol 對齊到約 0.035，比槓（0.021）略大一點，切換比較時不會忽大忽小（離線渲染量的）。
+  雙擊就能開，不需要伺服器。
+-->
+<style>
+:root{--bg:#0b120e;--panel:#141d17;--line:#2a3a2f;--ink:#e9e3cf;--quiet:#9fb3a6;--gold:#e8c46a;--red:#e7704f;}
+*{box-sizing:border-box;}
+html,body{margin:0;background:var(--bg);color:var(--ink);font:14px/1.6 -apple-system,'PingFang TC','Noto Sans TC',sans-serif;}
+main{max-width:760px;margin:0 auto;padding:22px 16px 60px;}
+h1{font-size:20px;color:var(--gold);margin:0 0 4px;}
+.sub{color:var(--quiet);margin:0 0 16px;font-size:13px;}
+.row{display:grid;grid-template-columns:44px 1fr auto;gap:12px;align-items:center;
+  border:1px solid var(--line);border-radius:10px;padding:10px 12px;margin-bottom:8px;background:var(--panel);}
+.row.ref{opacity:.85;border-style:dashed;}
+.row .k{font:700 18px/1 ui-monospace,Menlo,monospace;color:var(--gold);text-align:center;}
+.row b{font-size:15px;}
+.row p{margin:2px 0 0;color:var(--quiet);font-size:12.5px;}
+button{font:inherit;color:#20160a;background:var(--gold);border:0;border-radius:8px;padding:8px 16px;cursor:pointer;font-weight:700;}
+button:active{transform:scale(.96);}
+.row.playing{border-color:var(--gold);box-shadow:0 0 0 1px var(--gold) inset;}
+.vol{display:flex;align-items:center;gap:10px;margin:14px 0 18px;color:var(--quiet);font-size:13px;}
+.note{color:var(--quiet);font-size:12.5px;border-top:1px solid var(--line);margin-top:18px;padding-top:12px;}
+</style>
+</head>
+<body>
+<main>
+  <h1>🥁 宣戰音效試聽</h1>
+  <p class="sub">現在宣戰借用的是槓的聲音。下面六個是新設計的候選，按「▶」或鍵盤數字鍵試聽，挑一個（或說哪裡要調）再接進遊戲。</p>
+  <div class="vol">音量 <input type="range" id="vol" min="0" max="1" step="0.05" value="0.7"> <span id="volv">0.70</span>（遊戲預設 0.70）</div>
+  <div id="list"></div>
+  <p class="note">每個候選都是程式合成的，數字可以再調：例如鼓要更低沉、銅鑼餘音短一點、號角換音高。
+  選定後會變成 <code>SFX.declare</code>，任何一家宣戰時播（現在是 <code>SFX.kong</code>）。</p>
+</main>
+<script>
+'use strict';
+let ctx = null, master = null;
+/* 每個候選各自的音量（vol）：先接到 OUT，OUT 再接 master。響度對齊到比槓略大一點（宣戰比槓重要，但不能嚇人一跳） */
+let OUT = null;
+function play(cd, c, t) {
+  OUT = c.createGain(); OUT.gain.value = cd.vol || 1; OUT.connect(master);
+  cd.play(c, t);
+}
+function C() {
+  if (!ctx) {
+    ctx = new (window.AudioContext || window.webkitAudioContext)();
+    master = ctx.createGain();
+    master.gain.value = +document.getElementById('vol').value;
+    master.connect(ctx.destination);
+  }
+  if (ctx.state === 'suspended') ctx.resume();
+  return ctx;
+}
+document.getElementById('vol').addEventListener('input', e => {
+  document.getElementById('volv').textContent = (+e.target.value).toFixed(2);
+  if (master) master.gain.value = +e.target.value;
+});
+
+/* ── 小零件 ── */
+function env(g, t, a, peak, d) {           // 快速起音、指數衰減
+  g.gain.setValueAtTime(0.0001, t);
+  g.gain.exponentialRampToValueAtTime(peak, t + a);
+  g.gain.exponentialRampToValueAtTime(0.0001, t + a + d);
+}
+function noiseBuf(c, sec) {
+  const b = c.createBuffer(1, Math.ceil(c.sampleRate * sec), c.sampleRate), d = b.getChannelData(0);
+  for (let i = 0; i < d.length; i++) d[i] = Math.random() * 2 - 1;
+  return b;
+}
+function noiseHit(c, t, { type = 'lowpass', f = 800, q = 1, peak = 0.3, d = 0.1, fTo = null }) {
+  const s = c.createBufferSource(); s.buffer = noiseBuf(c, d + 0.05);
+  const fl = c.createBiquadFilter(); fl.type = type; fl.frequency.setValueAtTime(f, t); fl.Q.value = q;
+  if (fTo) fl.frequency.exponentialRampToValueAtTime(fTo, t + d);
+  const g = c.createGain(); env(g, t, 0.003, peak, d);
+  s.connect(fl); fl.connect(g); g.connect(OUT);
+  s.start(t); s.stop(t + d + 0.05);
+}
+/* 鼓：正弦波音高往下掉（咚）＋一點低通的雜訊（皮面） */
+function drum(c, t, { f0 = 150, f1 = 48, peak = 0.9, d = 0.55, skin = 0.25 } = {}) {
+  const o = c.createOscillator(), g = c.createGain();
+  o.type = 'sine';
+  o.frequency.setValueAtTime(f0, t);
+  o.frequency.exponentialRampToValueAtTime(f1, t + d * 0.6);
+  env(g, t, 0.004, peak, d);
+  o.connect(g); g.connect(OUT);
+  o.start(t); o.stop(t + d + 0.05);
+  noiseHit(c, t, { type: 'lowpass', f: 700, peak: skin, d: 0.09 });
+}
+/* 銅鑼：不成倍數的泛音（金屬感）＋一開始一點「哇」往上飄，餘音長 */
+function gong(c, t, { base = 110, peak = 0.32, d = 2.6, bend = 1.03 } = {}) {
+  const parts = [[1, 1], [1.47, 0.7], [2.09, 0.55], [2.56, 0.4], [3.18, 0.3], [4.1, 0.2], [5.4, 0.12]];
+  const lp = c.createBiquadFilter(); lp.type = 'lowpass';
+  lp.frequency.setValueAtTime(900, t); lp.frequency.exponentialRampToValueAtTime(4200, t + 0.25);
+  lp.frequency.exponentialRampToValueAtTime(1200, t + d);
+  lp.connect(OUT);
+  parts.forEach(([r, a], i) => {
+    const o = c.createOscillator(), g = c.createGain();
+    o.type = 'sine';
+    const f = base * r * (1 + (i % 2 ? 0.004 : -0.003));
+    o.frequency.setValueAtTime(f, t);
+    o.frequency.linearRampToValueAtTime(f * bend, t + 0.9);
+    env(g, t, 0.01, peak * a, d * (1 - i * 0.08));
+    o.connect(g); g.connect(lp);
+    o.start(t); o.stop(t + d + 0.1);
+  });
+  noiseHit(c, t, { type: 'bandpass', f: 1800, q: 0.8, peak: 0.22, d: 0.12 });
+}
+/* 號角：鋸齒波過低通、慢慢吹開（濾波器打開）、帶一點顫音 */
+function horn(c, t, freq, dur, { peak = 0.22, brightTo = 1600 } = {}) {
+  const lp = c.createBiquadFilter(); lp.type = 'lowpass'; lp.Q.value = 2;
+  lp.frequency.setValueAtTime(350, t); lp.frequency.linearRampToValueAtTime(brightTo, t + 0.18);
+  const g = c.createGain();
+  g.gain.setValueAtTime(0.0001, t);
+  g.gain.linearRampToValueAtTime(peak, t + 0.09);
+  g.gain.setValueAtTime(peak, t + dur - 0.12);
+  g.gain.exponentialRampToValueAtTime(0.0001, t + dur + 0.25);
+  lp.connect(g); g.connect(OUT);
+  const lfo = c.createOscillator(), lg = c.createGain();
+  lfo.frequency.value = 5.2; lg.gain.value = freq * 0.012;
+  lfo.connect(lg);
+  [[1, 0], [0.5, 0], [1, 7]].forEach(([r, det]) => {          // 主音＋低八度＋稍微走音的第二支號
+    const o = c.createOscillator(); o.type = 'sawtooth';
+    o.frequency.value = freq * r; o.detune.value = det;
+    lg.connect(o.frequency);
+    o.connect(lp); o.start(t); o.stop(t + dur + 0.3);
+  });
+  lfo.start(t); lfo.stop(t + dur + 0.3);
+}
+
+/* ── 候選 ── */
+const CANDS = [
+  { id: 'ref', vol: 1, ref: true, name: '槓（現在的宣戰）', desc: '低沉一聲＋高音餘韻（src/audio.js 的 SFX.kong），對照用', play(c, t) {
+      const tone = (freq, type, a, d, sus, rel, dur, gv) => {
+        const o = c.createOscillator(), g = c.createGain(); o.type = type; o.frequency.value = freq;
+        g.gain.setValueAtTime(0, t); g.gain.linearRampToValueAtTime(gv, t + a);
+        g.gain.linearRampToValueAtTime(gv * sus, t + a + d); g.gain.linearRampToValueAtTime(0, t + dur + rel);
+        o.connect(g); g.connect(OUT); o.start(t); o.stop(t + dur + rel + 0.05);
+      };
+      tone(180, 'sawtooth', 0.005, 0.06, 0.2, 0.25, 0.3, 0.5);
+      tone(880, 'sine', 0.01, 0.05, 0.15, 0.4, 0.5, 0.25);
+      noiseHit(c, t, { type: 'bandpass', f: 400, q: 6, peak: 0.3, d: 0.15 });
+    } },
+  { id: 'drums', vol: 0.5, name: '戰鼓三響', desc: '咚 —— 咚咚！低沉的大鼓，最後一下最重。最直接的「開戰」', play(c, t) {
+      drum(c, t, { peak: 0.75 });
+      drum(c, t + 0.34, { peak: 0.7, f0: 160 });
+      drum(c, t + 0.5, { peak: 1, f0: 140, f1: 42, d: 0.8, skin: 0.32 });
+    } },
+  { id: 'gong', vol: 0.7, name: '銅鑼一擊', desc: '「鏘——」一聲，餘音拉長往上飄。莊重、像宣告', play(c, t) {
+      gong(c, t);
+    } },
+  { id: 'drumgong', vol: 0.55, name: '大鼓＋銅鑼', desc: '先一記大鼓，緊接銅鑼。份量最重，跟槓差最多', play(c, t) {
+      drum(c, t, { peak: 0.95, d: 0.7 });
+      gong(c, t + 0.12, { peak: 0.26, d: 2.2 });
+    } },
+  { id: 'horn', vol: 0.6, name: '號角', desc: '「嗚——嗚——」兩聲號角，低音往上。像出兵的軍號', play(c, t) {
+      horn(c, t, 196, 0.36);
+      horn(c, t + 0.42, 294, 0.75, { brightTo: 2000 });
+    } },
+  { id: 'sword', vol: 1.3, name: '拔劍出鞘', desc: '「唰——鏗」金屬摩擦後一聲清響。短、俐落', play(c, t) {
+      noiseHit(c, t, { type: 'highpass', f: 1800, fTo: 7000, q: 0.7, peak: 0.28, d: 0.26 });
+      [[2637, 0.16], [3951, 0.09], [5274, 0.05]].forEach(([f, a]) => {
+        const o = c.createOscillator(), g = c.createGain(); o.type = 'sine';
+        o.frequency.setValueAtTime(f, t + 0.22);
+        env(g, t + 0.22, 0.003, a, 0.9);
+        o.connect(g); g.connect(OUT); o.start(t + 0.22); o.stop(t + 1.2);
+      });
+      drum(c, t + 0.22, { f0: 220, f1: 90, peak: 0.35, d: 0.25, skin: 0.1 });
+    } },
+  { id: 'roll', vol: 0.5, name: '擂鼓', desc: '鼓點越打越快，收在一記重擊。比戰鼓三響更有「衝」的感覺', play(c, t) {
+      const gaps = [0, 0.2, 0.36, 0.48, 0.57, 0.64];
+      gaps.forEach((g, i) => drum(c, t + g, { peak: 0.35 + i * 0.07, f0: 170, f1: 70, d: 0.25, skin: 0.18 }));
+      drum(c, t + 0.74, { peak: 1, f0: 140, f1: 40, d: 0.85, skin: 0.35 });
+    } },
+];
+
+const list = document.getElementById('list');
+CANDS.forEach((cd, i) => {
+  const key = cd.ref ? '0' : String(i);
+  const row = document.createElement('div');
+  row.className = 'row' + (cd.ref ? ' ref' : '');
+  row.innerHTML = `<div class="k">${key}</div><div><b>${cd.name}</b><p>${cd.desc}</p></div><button type="button">▶ 播</button>`;
+  const go = () => {
+    const c = C();
+    play(cd, c, c.currentTime + 0.03);
+    document.querySelectorAll('.row').forEach(r => r.classList.remove('playing'));
+    row.classList.add('playing');
+  };
+  row.querySelector('button').addEventListener('click', go);
+  cd.go = go; cd.key = key;
+  list.appendChild(row);
+});
+document.addEventListener('keydown', e => {
+  const cd = CANDS.find(x => x.key === e.key);
+  if (cd) { e.preventDefault(); cd.go(); }
+});
+</script>
+</body>
+</html>

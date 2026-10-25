@@ -120,6 +120,51 @@ const SFX = (() => {
     noise(0.15, 400, 6, 0.3);
   }
 
+  // 宣戰 - 拔劍出鞘：「唰——鏗」（v2.14）
+  /* 2026-10-25 使用者：「宣戰的音效和槓相同，另外設計一個音效，先讓我試聽一下」→ devtools/宣戰音效試聽v0.1 →「用 5 號吧」。
+     金屬摩擦（雜訊過高通、頻率往上掃）0.26 秒，接一聲清響（三個高音正弦、0.9 秒衰減）墊一下短鼓。
+     數字照試聽頁（那頁的 vol 1.3 已經乘進每個音量）；響度略大於槓，切換不會嚇一跳 */
+  function declare() {
+    if (!enabled) return;
+    try {
+      const c = getCtx(), t = c.currentTime + 0.01, V = 1.3;
+      const env = (g, at, a, peak, d) => {
+        g.gain.setValueAtTime(0.0001, at);
+        g.gain.exponentialRampToValueAtTime(peak, at + a);
+        g.gain.exponentialRampToValueAtTime(0.0001, at + a + d);
+      };
+      // 唰：雜訊 → 高通（1.8k → 7k）
+      const len = 0.31, buf = c.createBuffer(1, Math.ceil(c.sampleRate * len), c.sampleRate), dt = buf.getChannelData(0);
+      for (let i = 0; i < dt.length; i++) dt[i] = Math.random() * 2 - 1;
+      const src = c.createBufferSource(); src.buffer = buf;
+      const hp = c.createBiquadFilter(); hp.type = 'highpass'; hp.Q.value = 0.7;
+      hp.frequency.setValueAtTime(1800, t); hp.frequency.exponentialRampToValueAtTime(7000, t + 0.26);
+      const ng = c.createGain(); env(ng, t, 0.003, 0.28 * V, 0.26);
+      src.connect(hp); hp.connect(ng); ng.connect(masterGain);
+      src.start(t); src.stop(t + len);
+      // 鏗：三個高音
+      const t2 = t + 0.22;
+      [[2637, 0.16], [3951, 0.09], [5274, 0.05]].forEach(([f, a]) => {
+        const o = c.createOscillator(), g = c.createGain();
+        o.type = 'sine'; o.frequency.value = f;
+        env(g, t2, 0.003, a * V, 0.9);
+        o.connect(g); g.connect(masterGain); o.start(t2); o.stop(t2 + 1);
+      });
+      // 墊一下短鼓（220 → 90 Hz）＋皮面
+      const o = c.createOscillator(), g = c.createGain();
+      o.type = 'sine';
+      o.frequency.setValueAtTime(220, t2); o.frequency.exponentialRampToValueAtTime(90, t2 + 0.15);
+      env(g, t2, 0.004, 0.35 * V, 0.25);
+      o.connect(g); g.connect(masterGain); o.start(t2); o.stop(t2 + 0.3);
+      const nb = c.createBuffer(1, Math.ceil(c.sampleRate * 0.14), c.sampleRate), nd = nb.getChannelData(0);
+      for (let i = 0; i < nd.length; i++) nd[i] = Math.random() * 2 - 1;
+      const ns = c.createBufferSource(); ns.buffer = nb;
+      const lp = c.createBiquadFilter(); lp.type = 'lowpass'; lp.frequency.value = 700; lp.Q.value = 1;
+      const sg = c.createGain(); env(sg, t2, 0.003, 0.1 * V, 0.09);
+      ns.connect(lp); lp.connect(sg); sg.connect(masterGain); ns.start(t2); ns.stop(t2 + 0.14);
+    } catch (e) {}
+  }
+
   // 胡牌 - triumphant fanfare
   function win() {
     const fanfare = [
@@ -199,7 +244,7 @@ const SFX = (() => {
     }, 320);
   }
 
-  return { unlock, draw, discard, select, pong, chi, kong, win, specialWin, lose, draw_game, victory, click, newRound, tenpai, save,
+  return { unlock, draw, discard, select, pong, chi, kong, declare, win, specialWin, lose, draw_game, victory, click, newRound, tenpai, save,
     setEnabled(v) { enabled = v; },
     setVolume(v) { volume = v; if (masterGain) masterGain.gain.value = v; },
     isEnabled() { return enabled; },
