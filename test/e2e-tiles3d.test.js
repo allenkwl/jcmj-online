@@ -83,7 +83,8 @@ const chromium = E.findChromium();
     ok(r.total != null && r.pill.replace(/\s/g, '') === '擲出' + r.total + '點', '落地亮「擲出 N 點」，N＝這一局的骰子', JSON.stringify({ pill: r.pill, total: r.total }));
     ok(r.own.length >= 13 && r.own.every(x => !x), '自己的手牌維持平面', JSON.stringify(r.own));
     ok(r.opp.length >= 30 && r.opp.every(Boolean), '別家的手牌是立體牌', JSON.stringify(r.opp.length));
-    ok(r.river.length >= 2 && r.river.every(Boolean), '牌河是立體牌', JSON.stringify(r.river));
+    // ≥1 就夠驗「都是立體牌」：停下來的瞬間可能剛好有人碰走一張（2026-10-25 整套跑時量到 [true] 一張）
+    ok(r.river.length >= 1 && r.river.every(Boolean), '牌河是立體牌', JSON.stringify(r.river));
     ok(r.colStep != null && r.colStep < r.colH - 2, '左右兩家一列互相疊著（下面那張蓋住上面那張的前緣）', JSON.stringify(r));
     ok(r.colH / r.colW > 0.76, '左右兩家的橫牌照真實比例（不壓扁）', JSON.stringify({ h: r.colH, w: r.colW }));
     ok(errors.length === 0, '頁面沒有 JavaScript 錯誤', errors.slice(0, 3).join(' | '));
