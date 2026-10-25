@@ -119,6 +119,24 @@ const chromium = E.findChromium();
       out.btnFocusBest = focusIsBest();
       out.okTiles = [...document.querySelectorAll('#hand-bottom .decl-ok')].length;
       out.noTiles = [...document.querySelectorAll('#hand-bottom .decl-no')].length;
+      /* v2.11：誤按宣戰可以取消 —— 旁邊有「取消（B）」、按 B 也是取消（以前 B 一路掉到「要不要離開牌桌」）。
+         2026-10-25 使用者：「誤按到宣戰應該按 B 還可以取消……加一個取消鈕和按 B 的功能」 */
+      const cb = document.getElementById('si-pick-cancel');
+      const crc = cb && cb.getBoundingClientRect();
+      out.cancelBtn = { text: cb && cb.textContent, hit: !!cb && document.elementFromPoint(crc.left + crc.width / 2, crc.top + crc.height / 2) === cb };
+      key('b'); await wait(150);
+      out.bCancel = { picking: !!document.querySelector('#si-declare.picking'), leave: document.getElementById('leave-ov').classList.contains('show'),
+                      cancelGone: !document.getElementById('si-pick-cancel'), len: h.seats[0].hand.length, declared: !!h.seats[0].declared };
+      document.getElementById('si-declare').click(); await wait(150);
+      out.reenter = !!document.querySelector('#si-declare.picking');
+      // 手把／方向鍵也選得到「取消」：一直按上（手牌 → 比較表 → 表的最上面一列再上 → 取消），Enter
+      const cb2 = document.getElementById('si-pick-cancel');
+      for (let i = 0; i < 10 && MJInput.current() !== cb2; i++) { key('ArrowUp'); await wait(30); }
+      out.cancelFocusable = !!cb2 && MJInput.current() === cb2;
+      if (out.cancelFocusable) key('Enter'); else if (cb2) cb2.click();
+      await wait(150);
+      out.btnCancel = !document.querySelector('#si-declare.picking') && !h.seats[0].declared;
+      document.getElementById('si-declare').click(); await wait(150);     // 再進挑牌模式，接著測下面的
       // 點不聽的牌（1 萬）兩下：不能打出去
       const tileEl = i => document.querySelector('#hand-bottom [data-idx="' + i + '"]:not(.ph-wrap)');
       const i1 = h.seats[0].hand.findIndex(t => t.display === '1萬');
@@ -175,6 +193,11 @@ const chromium = E.findChromium();
     ok(r.hit === true, '宣戰鈕滑鼠、手指點得到（不被上層蓋掉）', JSON.stringify(r.hit));
     ok(r.focusable === true, '宣戰鈕手把／方向鍵選得到，Enter 按得下去', JSON.stringify(r.focusable));
     ok(r.picking && r.okTiles === 2 && r.noTiles === 12, '挑牌模式：兩張亮紅框、其餘變暗', JSON.stringify(r));
+    ok(r.cancelBtn && r.cancelBtn.text === '取消（B）' && r.cancelBtn.hit, '挑牌時宣戰鈕旁邊有「取消（B）」，點得到', JSON.stringify(r.cancelBtn));
+    ok(r.bCancel && !r.bCancel.picking && !r.bCancel.leave && r.bCancel.cancelGone && r.bCancel.len === 14 && !r.bCancel.declared,
+       '挑牌時按 B：取消挑牌、沒宣戰、不會問要不要離開牌桌', JSON.stringify(r.bCancel));
+    ok(r.reenter, '取消之後還能再按宣戰');
+    ok(r.cancelFocusable && r.btnCancel, '「取消」手把／方向鍵選得到，按下去取消挑牌', JSON.stringify({ f: r.cancelFocusable, c: r.btnCancel }));
     ok(r.afterBad.len === 14 && !r.afterBad.declared && r.afterBad.picking, '點不聽的牌：沒打出去，還在挑牌模式', JSON.stringify(r.afterBad));
     ok(r.declared && r.declared.menzen === true, '點南：宣戰成功（門清）', JSON.stringify(r.declared));
     ok(/南$/.test(r.river), '南打進河裡', r.river);
