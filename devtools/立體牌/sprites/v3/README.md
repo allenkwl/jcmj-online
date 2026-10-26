@@ -47,3 +47,14 @@
 做法同金黃：`原圖/v3/maroon-sheet.png` 送 Codex「只把豬肝紅那一層換成 X 色亮面漆」→ `原圖/v3/<國>-sheet.png` →
 `python3 tools/build-tile-sets-v3.py kingdoms`。切的時候只算夠不透明、夠密的欄列（齊那張的側立牌旁邊有一塊半透明殘影）。
 預覽：`devtools/立體牌v0.4.html`（G 換下一套）、`devtools/發牌動畫v0.8.html`。
+
+## 七國改用壓克力（`<國>-acrylic/`，2026-10-26）
+
+使用者：「顏色可以做成壓克力透明的材質嗎？」→ 試做齊、楚 →「七國都做壓克力版，做得更透亮一些」→「秦國的黑色做成淺灰色」。
+- **看起來像壓克力、但不透出背景**：真的半透明的話，左右兩家疊著的牌會互相透、顏色疊在綠桌上會混濁
+- 描述的重點：*CLEAR TRANSLUCENT ACRYLIC, very luminous, like backlit colored resin… the CENTER of every colored face is clearly BRIGHT and glowing… deep only near the edges… NOT like opaque paint, while still being a solid block*
+  （第一次只寫 translucent acrylic，藍色幾乎跟亮面漆一樣；加強成「中間發光、邊緣才深」才明顯）
+- 秦：淺銀灰（`原圖/v3/qin-acrylic-sheet.png`；第一版暗灰留在 `qin-acrylic-black-sheet.png`）。
+  要寫明 *LIGHT GREY (not black, not white) and clearly distinguishable from the IVORY layer*
+- 金黃維持金屬（七國是壓克力，金屬只給征服四國起的那幾場）
+- 亮面漆那一組（`<國>/`）留著對照
