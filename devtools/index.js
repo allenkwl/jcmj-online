@@ -88,6 +88,24 @@ window.MJDevtools = [
   "cat": "動畫"
  },
  {
+  "family": "宣戰音效試聽",
+  "all": [
+   {
+    "ver": "0.1",
+    "rel": "devtools/宣戰音效試聽v0.1.html"
+   }
+  ],
+  "newest": {
+   "ver": "0.1",
+   "rel": "devtools/宣戰音效試聽v0.1.html"
+  },
+  "count": 1,
+  "title": "宣戰音效試聽",
+  "sub": "宣戰的音效候選（現在借用槓的聲音）：戰鼓、銅鑼、號角、出鞘⋯⋯試聽挑一個，選定再接進遊戲",
+  "ico": "🥁",
+  "cat": "其他"
+ },
+ {
   "family": "對戰畫面編輯器",
   "all": [
    {
@@ -147,6 +165,10 @@ window.MJDevtools = [
   "family": "發牌動畫",
   "all": [
    {
+    "ver": "0.7",
+    "rel": "devtools/發牌動畫v0.7.html"
+   },
+   {
     "ver": "0.6",
     "rel": "devtools/發牌動畫v0.6.html"
    },
@@ -172,10 +194,10 @@ window.MJDevtools = [
    }
   ],
   "newest": {
-   "ver": "0.6",
-   "rel": "devtools/發牌動畫v0.6.html"
+   "ver": "0.7",
+   "rel": "devtools/發牌動畫v0.7.html"
   },
-  "count": 6,
+  "count": 7,
   "needsServer": true,
   "title": "發牌動畫",
   "sub": "發牌動畫實驗台：立體版（寫實的牌與骰子）、現行版、舊版對照，改的是副本，不會動到線上玩家",
@@ -186,6 +208,10 @@ window.MJDevtools = [
   "family": "立體牌",
   "all": [
    {
+    "ver": "0.3",
+    "rel": "devtools/立體牌v0.3.html"
+   },
+   {
     "ver": "0.2",
     "rel": "devtools/立體牌v0.2.html"
    },
@@ -195,13 +221,13 @@ window.MJDevtools = [
    }
   ],
   "newest": {
-   "ver": "0.2",
-   "rel": "devtools/立體牌v0.2.html"
+   "ver": "0.3",
+   "rel": "devtools/立體牌v0.3.html"
   },
-  "count": 2,
+  "count": 3,
   "needsServer": true,
   "title": "立體牌",
-  "sub": "遊戲本體的立體麻將牌（v1.95 起）：對著真的牌桌看，跟平面牌一鍵切換對照（切的是遊戲自己的開關）",
+  "sub": "兩套立體牌（豬肝紅／金黃金屬）＋別家的手牌立起來：對著真的牌桌看，一鍵切換對照（還沒進遊戲）",
   "ico": "🀄",
   "cat": "畫面"
  },
