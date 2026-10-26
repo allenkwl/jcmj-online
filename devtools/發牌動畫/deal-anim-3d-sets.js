@@ -136,7 +136,7 @@ for (let n = 1; n <= 6; n++) IMG['die' + n] = SPR + 'die' + n + '.webp';
    牌的大小統一（橫的牌寬＝直的牌寬 × 4/3），所以左右兩道牆會比上下兩道短 —— 就是斜著看桌面的透視 */
 const ASPECT = { tileV: 340 / 240, tileH: 207 / 240 };   // 立體牌的 backV、backH（devtools/立體牌/sprites/README.md）
 const TOP = { tileV: 0.735, tileH: 0.676 };
-Object.assign(ASPECT, { standV: 352 / 240, standH: 353 / 240, standHR: 353 / 240 });   // 立著的（sprites/v2，build-tile-sets.py）
+Object.assign(ASPECT, { standV: 302 / 240, standH: 256 / 137, standHR: 256 / 137 });   // 立著的（sprites/v3，build-tile-sets-v3.py）
 const LONG = 4 / 3;                      // 長邊÷短邊
 function preload() {
   return Promise.all(Object.values(IMG).map(src => new Promise(ok => {

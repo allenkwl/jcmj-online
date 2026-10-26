@@ -12,7 +12,7 @@
   v0.3（2026-10-26）：兩套牌（豬肝紅／金黃金屬）＋別家的手牌立起來 —— 注入 devtools/立體牌/tiles-sets.js（遊戲本體沒動）。
   使用者：「另外三家的手牌……應該是立起來的才對」「整套牌一起畫，除了現在的豬肝紅，再另外畫一組金黃色」
   「直立的牌寬度太窄（左右兩家用的牌）」「金黃色的顏色不行，直接要求畫金屬材質」「我看過再進遊戲」。
-  牌身 devtools/立體牌/sprites/v2/{maroon,gold}/（tools/build-tile-sets.py）。v0.2 保留。
+  牌身 devtools/立體牌/sprites/v3/{maroon,gold}/（tools/build-tile-sets.py）。v0.2 保留。
   v0.2（2026-10-24）：v1.95 起立體牌已經在遊戲本體（src/tiles.js 的 setBodies／use3D、src/render.js 的 pack3D）。
   這一版不再注入 devtools/立體牌/tiles-3d.js，改切遊戲自己的開關 MJTiles.use3D() —— 看到的就是線上玩家看到的
   （使用者：「測試程式也要更新」）。v0.1（注入預覽版）保留不刪。
@@ -50,7 +50,7 @@ button.on{background:var(--gold);color:#20160a;border-color:var(--gold);font-wei
 <div id="panel">
   <h1>立體牌</h1>
   <p class="sub" id="ver">載入中⋯</p>
-  <div class="note"><b>還沒進遊戲</b>：兩套牌身（<code>sprites/v2/</code>）與立著的別家手牌，是注入
+  <div class="note"><b>還沒進遊戲</b>：兩套牌身（<code>sprites/v3/</code>）與立著的別家手牌，是注入
   <code>tiles-sets.js</code> 換上去的，遊戲本體沒動。金黃預定用在「征服五國、打最後一國」那一場。
   暗槓、副露、牌河照舊躺著；自己的手牌維持平面。按 <b>T</b> 切平面／立體。</div>
 
