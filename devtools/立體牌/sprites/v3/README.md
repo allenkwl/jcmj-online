@@ -57,6 +57,8 @@
 - 秦：淺銀灰（`原圖/v3/qin-acrylic-sheet.png`；第一版暗灰 `qin-acrylic-black-sheet.png`、沒發光的淺灰 `qin-acrylic-flat-sheet.png`）。
   使用者：「秦國也要壓克力的發亮感」→ 附楚國壓克力當**材質參考圖**（`-i maroon-sheet.png chu-acrylic-sheet.png`，
   描述寫明第二張只看材質）＋ *JUST AS LUMINOUS as the green acrylic… like backlit pale grey crystal* 才有發光感；
-  兩張裡挑灰色較明顯、跟象牙白分得開的那張（3a）。要寫明 *LIGHT GREY (not black, not white, not ivory)*
+  兩張裡挑灰色較明顯、跟象牙白分得開的那張（3a，留在 `qin-acrylic-light-sheet.png`）。
+  之後使用者：「秦國改深灰色好了，淺灰沒有穩重感」→ *DARK CHARCOAL-GREY CLEAR ACRYLIC… like backlit SMOKY QUARTZ…
+  CENTER still GLOWS with soft silver light… not pure black, not light grey*，挑較深、較穩重的那張（4a）＝現在的 `qin-acrylic-sheet.png`
 - 金黃維持金屬（七國是壓克力，金屬只給征服四國起的那幾場）
 - 亮面漆那一組（`<國>/`）留著對照
