@@ -165,6 +165,10 @@ window.MJDevtools = [
   "family": "發牌動畫",
   "all": [
    {
+    "ver": "0.8",
+    "rel": "devtools/發牌動畫v0.8.html"
+   },
+   {
     "ver": "0.7",
     "rel": "devtools/發牌動畫v0.7.html"
    },
@@ -194,10 +198,10 @@ window.MJDevtools = [
    }
   ],
   "newest": {
-   "ver": "0.7",
-   "rel": "devtools/發牌動畫v0.7.html"
+   "ver": "0.8",
+   "rel": "devtools/發牌動畫v0.8.html"
   },
-  "count": 7,
+  "count": 8,
   "needsServer": true,
   "title": "發牌動畫",
   "sub": "發牌動畫實驗台：立體版（寫實的牌與骰子）、現行版、舊版對照，改的是副本，不會動到線上玩家",
@@ -207,6 +211,10 @@ window.MJDevtools = [
  {
   "family": "立體牌",
   "all": [
+   {
+    "ver": "0.4",
+    "rel": "devtools/立體牌v0.4.html"
+   },
    {
     "ver": "0.3",
     "rel": "devtools/立體牌v0.3.html"
@@ -221,13 +229,13 @@ window.MJDevtools = [
    }
   ],
   "newest": {
-   "ver": "0.3",
-   "rel": "devtools/立體牌v0.3.html"
+   "ver": "0.4",
+   "rel": "devtools/立體牌v0.4.html"
   },
-  "count": 3,
+  "count": 4,
   "needsServer": true,
   "title": "立體牌",
-  "sub": "兩套立體牌（豬肝紅／金黃金屬）＋別家的手牌立起來：對著真的牌桌看，一鍵切換對照（還沒進遊戲）",
+  "sub": "九套立體牌（豬肝紅、金黃、七國旗幟顏色）＋別家的手牌立起來：對著真的牌桌看，一鍵切換對照",
   "ico": "🀄",
   "cat": "畫面"
  },

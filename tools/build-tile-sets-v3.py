@@ -8,7 +8,8 @@
   3. 金黃：6 張排成一張送 Codex 一次改成金屬金（同一次，金色調才一致），再切回來縮成跟豬肝紅一樣大
 輸出 devtools/立體牌/sprites/v3/{maroon,gold}/{faceV,faceH,backV,backH,standV,standH,standHR}.{png,webp}
   standV 立著、牌背朝我們（對家）　standH 立著、側面朝我們（左家）　standHR 左右翻過來（右家）
-執行： python3 tools/build-tile-sets-v3.py [maroon|gold|all]
+執行： python3 tools/build-tile-sets-v3.py [maroon|gold|kingdoms|<國>|all]
+  七國（v3 之後加）：<國>-sheet.png 也是 Codex 從 maroon-sheet.png 換材質（各國旗幟顏色的亮面漆）→ sprites/v3/<國>/
 """
 import os, sys
 import numpy as np
@@ -49,10 +50,14 @@ def blobs(path):
     out = {}
     for ri, (r0, r1) in enumerate(runs(op.any(1))):
         for ci, (c0, c1) in enumerate(runs(op[r0:r1 + 1].any(0))):
-            sub = a[r0:r1 + 1, c0:c1 + 1]
-            m = sub[..., 3] > 128
-            rr = np.where(m.sum(1) > 5)[0]; cc = np.where(m.sum(0) > 5)[0]
-            out[NAMES[ri][ci]] = sub[rr[0]:rr[-1] + 1, cc[0]:cc[-1] + 1].copy()
+            sub = a[r0:r1 + 1, c0:c1 + 1].copy()
+            # 只算夠不透明（>200）、夠密（該方向最密的 25% 以上）的欄與列 —— Codex 偶爾在牌旁邊留一塊半透明的殘影
+            #（2026-10-26 齊國那張的側立牌左邊一塊灰影），用寬鬆的門檻會連殘影一起切進來
+            m = sub[..., 3] > 200
+            rs, cs = m.sum(1), m.sum(0)
+            rr = np.where(rs > rs.max() * 0.25)[0]; cc = np.where(cs > cs.max() * 0.25)[0]
+            sub = sub[rr[0]:rr[-1] + 1, cc[0]:cc[-1] + 1]
+            out[NAMES[ri][ci]] = sub
     return out
 
 
@@ -180,14 +185,21 @@ def maroon():
     sheet.save(os.path.join(RAW, 'maroon-sheet.png'))
 
 
-def gold():
-    src = os.path.join(RAW, 'gold-sheet.png')
+def recolor(name):
+    """豬肝紅那一張（maroon-sheet.png）請 Codex 換材質的結果 <name>-sheet.png → 切回 6 張、縮成跟豬肝紅一樣大。
+       金黃（金屬）、七國（各國旗幟顏色的亮面漆）都走這裡"""
+    src = os.path.join(RAW, name + '-sheet.png')
     subs = blobs(src)
     ref = {n: Image.open(os.path.join(OUT, 'maroon', n + '.png')) for r in NAMES for n in r}
-    save('gold', {n: Image.fromarray(sub).resize(ref[n].size, Image.LANCZOS) for n, sub in subs.items()})
+    save(name, {n: Image.fromarray(sub).resize(ref[n].size, Image.LANCZOS) for n, sub in subs.items()})
 
+
+# 七國（2026-10-26 使用者：「七國是不是該有七種顏色的麻將牌來代表？」→「A＋旗幟顏色＋保留豬肝紅」：各看各的本國顏色）
+KINGDOMS = ['qi', 'chu', 'yan', 'han', 'wei', 'zhao', 'qin']
 
 if __name__ == '__main__':
     which = sys.argv[1] if len(sys.argv) > 1 else 'all'
     if which in ('maroon', 'all'): maroon()
-    if which in ('gold', 'all') and os.path.exists(os.path.join(RAW, 'gold-sheet.png')): gold()
+    for name in ['gold'] + KINGDOMS:
+        if which in (name, 'all', 'kingdoms' if name in KINGDOMS else '') and os.path.exists(os.path.join(RAW, name + '-sheet.png')):
+            recolor(name)
