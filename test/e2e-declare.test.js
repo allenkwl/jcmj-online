@@ -129,12 +129,22 @@ const chromium = E.findChromium();
                       cancelGone: !document.getElementById('si-pick-cancel'), len: h.seats[0].hand.length, declared: !!h.seats[0].declared };
       document.getElementById('si-declare').click(); await wait(150);
       out.reenter = !!document.querySelector('#si-declare.picking');
-      // 手把／方向鍵也選得到「取消」：一直按上（手牌 → 比較表 → 表的最上面一列再上 → 取消），Enter
-      const cb2 = document.getElementById('si-pick-cancel');
-      for (let i = 0; i < 10 && MJInput.current() !== cb2; i++) { key('ArrowUp'); await wait(30); }
-      out.cancelFocusable = !!cb2 && MJInput.current() === cb2;
-      if (out.cancelFocusable) key('Enter'); else if (cb2) cb2.click();
-      await wait(150);
+      /* v2.17：挑牌時方向鍵只在能宣戰的打法之間循環，不會跑到下面的功能鈕（2026-10-26 使用者：「按上下會跑去下面功能鈕」）；
+         開著中文輸入法也能按 B 取消、按 A 宣戰（使用者：「會不會我在中文輸入法，才會按 B 無效？」—— e.key 是注音或 'Process'） */
+      const inCombos = () => { const c = MJInput.current(); return !!c && (c.classList.contains('decl-row') || c.classList.contains('decl-ok')); };
+      const nav = [];
+      for (const k of ['ArrowDown', 'ArrowDown', 'ArrowDown', 'ArrowUp', 'ArrowUp', 'ArrowUp', 'ArrowLeft', 'ArrowLeft', 'ArrowRight', 'ArrowRight']) {
+        key(k); await wait(40); nav.push(inCombos());
+      }
+      out.navStays = nav;
+      // 挑牌時功能鈕根本不在清單裡（只剩能宣戰的牌與比較表）—— 焦點移不過去
+      out.locked = ['hud-back', 'hud-set', 'si-pick-cancel', 'si-declare'].filter(id => document.getElementById(id) && MJInput.setIndexOf(document.getElementById(id)));
+      out.stillIn = inCombos();
+      document.dispatchEvent(new KeyboardEvent('keydown', { key: 'ㄖ', code: 'KeyB', bubbles: true, cancelable: true })); await wait(150);
+      out.imeB = !document.querySelector('#si-declare.picking') && !h.seats[0].declared && !document.getElementById('leave-ov').classList.contains('show');
+      document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Process', code: 'KeyA', bubbles: true, cancelable: true })); await wait(150);
+      out.imeA = !!document.querySelector('#si-declare.picking');
+      const cb2 = document.getElementById('si-pick-cancel'); if (cb2) cb2.click(); await wait(150);
       out.btnCancel = !document.querySelector('#si-declare.picking') && !h.seats[0].declared;
       document.getElementById('si-declare').click(); await wait(150);     // 再進挑牌模式，接著測下面的
       // 點不聽的牌（1 萬）兩下：不能打出去
@@ -200,7 +210,11 @@ const chromium = E.findChromium();
     ok(r.bCancel && !r.bCancel.picking && !r.bCancel.leave && r.bCancel.cancelGone && r.bCancel.len === 14 && !r.bCancel.declared,
        '挑牌時按 B：取消挑牌、沒宣戰、不會問要不要離開牌桌', JSON.stringify(r.bCancel));
     ok(r.reenter, '取消之後還能再按宣戰');
-    ok(r.cancelFocusable && r.btnCancel, '「取消」手把／方向鍵選得到，按下去取消挑牌', JSON.stringify({ f: r.cancelFocusable, c: r.btnCancel }));
+    ok(r.navStays && r.navStays.every(Boolean), '挑牌時上下左右都只在能宣戰的打法之間（不會跑到下面的功能鈕）', JSON.stringify(r.navStays));
+    ok(r.locked && r.locked.length === 0 && r.stillIn, '挑牌時功能鈕（退回、設定、取消、宣戰鈕）都不在可選清單裡', JSON.stringify(r.locked));
+    ok(r.imeB, '中文輸入法（b 鍵送來「ㄖ」）按 B 也能取消挑牌', JSON.stringify(r.imeB));
+    ok(r.imeA, '中文輸入法（輸入法處理中 Process）按 A 也能進宣戰挑牌', JSON.stringify(r.imeA));
+    ok(r.btnCancel, '點「取消」鈕取消挑牌', JSON.stringify(r.btnCancel));
     ok(r.afterBad.len === 14 && !r.afterBad.declared && r.afterBad.picking, '點不聽的牌：沒打出去，還在挑牌模式', JSON.stringify(r.afterBad));
     ok(r.declared && r.declared.menzen === true, '點南：宣戰成功（門清）', JSON.stringify(r.declared));
     ok(r.sfx && r.sfx.declare >= 1 && r.sfx.kong === 0, '宣戰的音效是「拔劍出鞘」（SFX.declare），不是槓', JSON.stringify(r.sfx));

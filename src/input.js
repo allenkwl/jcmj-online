@@ -161,8 +161,24 @@ const KEY_ACTION = {
   Backspace: cancel,
 };
 
+/* 按鍵是哪一顆（v2.17）：開著中文輸入法（注音、倉頡…）時，e.key 不是「b」而是注音符號（b 鍵＝ㄖ）或 'Process'，
+   B 取消、A 宣戰、S 技能、數字鍵打牌全部失靈。2026-10-26 使用者：「會不會我在中文輸入法，才會按 B 無效？」——
+   e.key 不是一般的英數字時，改看實體按鍵的位置（e.code：KeyB、Digit1…）。結果也掛在 e.mjKey 給呼叫端（主程式的 beforeKey）用 */
+const CODE_KEY = { Backquote: '`', Minus: '-', Equal: '=', Space: ' ' };
+function keyOf(e) {
+  const k = e.key;
+  if (k && k.length === 1 && k.charCodeAt(0) < 128) return k;            // 一般的英數字、符號：照用
+  if (k && k.length > 1 && k !== 'Process' && k !== 'Unidentified') return k;   // Enter、ArrowLeft、Backspace…
+  const c = e.code || '';
+  if (/^Key[A-Z]$/.test(c)) return e.shiftKey ? c.slice(3) : c.slice(3).toLowerCase();
+  if (/^Digit[0-9]$/.test(c)) return c.slice(5);
+  return CODE_KEY[c] || k;
+}
+
 function onKey(e) {
   if (e.target && (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA')) return;
+  const key = keyOf(e);
+  try { e.mjKey = key; } catch (_) {}
   // Esc 不綁 —— 瀏覽器保留給「離開全螢幕」，preventDefault 擋不住，
   // 綁上去會讓人以為是遊戲把全螢幕關掉的。
   /* ⚠️ 呼叫端要**先**攔，順序不能反。
@@ -172,7 +188,7 @@ function onKey(e) {
      等於呼叫端永遠攔不到別的鍵。結果是**牌底下標的數字鍵從來沒作用過**
      （那是原版的主要打牌方式），A 鍵之類的自訂鍵也一樣進不來。 */
   if (cfg.beforeKey && cfg.beforeKey(e) === true) return;
-  const fn = KEY_ACTION[e.key];
+  const fn = KEY_ACTION[key];
   if (!fn) return;
   e.preventDefault();
   fn();
@@ -260,5 +276,5 @@ function setIndexOf(el) {
 function current() { return items[idx] || null; }
 function hasPad() { return padOn; }
 
-return { init, refresh, move, moveVertical, scrollStep, confirm, cancel, current, setIndexOf, hasPad, FOCUS_CLASS };
+return { init, refresh, move, moveVertical, scrollStep, confirm, cancel, current, setIndexOf, hasPad, keyOf, FOCUS_CLASS };
 });
