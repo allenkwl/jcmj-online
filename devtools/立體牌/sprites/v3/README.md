@@ -54,7 +54,9 @@
 - **看起來像壓克力、但不透出背景**：真的半透明的話，左右兩家疊著的牌會互相透、顏色疊在綠桌上會混濁
 - 描述的重點：*CLEAR TRANSLUCENT ACRYLIC, very luminous, like backlit colored resin… the CENTER of every colored face is clearly BRIGHT and glowing… deep only near the edges… NOT like opaque paint, while still being a solid block*
   （第一次只寫 translucent acrylic，藍色幾乎跟亮面漆一樣；加強成「中間發光、邊緣才深」才明顯）
-- 秦：淺銀灰（`原圖/v3/qin-acrylic-sheet.png`；第一版暗灰留在 `qin-acrylic-black-sheet.png`）。
-  要寫明 *LIGHT GREY (not black, not white) and clearly distinguishable from the IVORY layer*
+- 秦：淺銀灰（`原圖/v3/qin-acrylic-sheet.png`；第一版暗灰 `qin-acrylic-black-sheet.png`、沒發光的淺灰 `qin-acrylic-flat-sheet.png`）。
+  使用者：「秦國也要壓克力的發亮感」→ 附楚國壓克力當**材質參考圖**（`-i maroon-sheet.png chu-acrylic-sheet.png`，
+  描述寫明第二張只看材質）＋ *JUST AS LUMINOUS as the green acrylic… like backlit pale grey crystal* 才有發光感；
+  兩張裡挑灰色較明顯、跟象牙白分得開的那張（3a）。要寫明 *LIGHT GREY (not black, not white, not ivory)*
 - 金黃維持金屬（七國是壓克力，金屬只給征服四國起的那幾場）
 - 亮面漆那一組（`<國>/`）留著對照
