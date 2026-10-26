@@ -309,7 +309,10 @@ function drawFaceInner(ctx, tile, x, y, w, h) {
 function makeTile(tile, opts) {
   const o = opts || {};
   // 立體牌（v1.95）：主程式開了（setBodies）、圖都載完，而且不是自己的手牌 → 用立體的牌身
-  if (BODIES && bodiesReady() && !isOwnStanding(tile, o)) return make3D(tile, o);
+  if (BODIES && bodiesReady() && !isOwnStanding(tile, o)) {
+    if (STAND_ON && !tile && o.faceDown) { const st = makeStand(o); if (st) return st; }
+    return make3D(tile, o);
+  }
   const w = o.w || 40, h = o.h || 56;
   const rot = ((o.rotate || 0) % 360 + 360) % 360;
   const thin = !!o.thin;
@@ -366,27 +369,103 @@ function makeTile(tile, opts) {
    ‧ 只有主程式呼叫 setBodies() 才開：共用模組沒有版號，還開著舊版頁面的人照舊是平面
    ‧ 元素外框照原本 makeTile 算（版面不動），牌身拉到外框大小；data-edge＝前緣（牌的厚度）的高，
      render.js 用它把上下排的一列牌收緊（下面那張蓋住上面那張的前緣）
-   ‧ face：牌面在圖裡的範圍 [x0,y0,x1,y1]；top：頂面佔圖高（其餘是前緣）—— 照圖量的，換圖要重量 */
+   ‧ face：牌面在圖裡的範圍 [x0,y0,x1,y1]；top：頂面佔圖高（其餘是前緣）—— 照圖量的，換圖要重量
+   ‧ v2.15 起牌身是 v3（devtools/立體牌/sprites/v3/README.md：整套同一個鏡頭重畫）：faceV 240×342（頂面 252）、faceH 240×206（頂面 139） */
 const BODY = {
-  faceV: { file: 'faceV', face: [0.02, 0.01, 0.98, 0.735], top: 0.735 },
-  faceH: { file: 'faceH', face: [0.015, 0.02, 0.985, 0.676], top: 0.676 },
-  backV: { file: 'backV', top: 0.735 },
-  backH: { file: 'backH', top: 0.676 },
+  faceV: { file: 'faceV', face: [0.02, 0.01, 0.98, 0.737], top: 0.737 },
+  faceH: { file: 'faceH', face: [0.015, 0.02, 0.985, 0.675], top: 0.675 },
+  backV: { file: 'backV', top: 0.737 },
+  backH: { file: 'backH', top: 0.675 },
 };
+/* ── 兩套牌＋別家的手牌立起來（v2.15，devtools/立體牌/sprites/v3/README.md）──
+   2026-10-26 使用者：「另外三家的手牌……應該是立起來的才對」「整套牌一起畫……再另外畫一組金黃色，
+   可以在統一五國後，在最後要打最後一國改用金黃色牌」「只有打最後一國的玩家會看到黃金牌，連線模式也一樣」。
+   ‧ setBodySets({ maroon: 'assets/tiles3d/', gold: 'assets/tiles3d-gold/' }, { stand: true })：兩套一起預先載好，
+     useBodySet('gold') 即時切換（不會有「圖還沒載完、先畫平面」的空檔）
+   ‧ stand：別家的手牌（沒有牌、牌背朝上＝只有張數的那一排）畫成立著的：
+       對家（轉 180°）standV  立著、牌背朝我們（頂端＝厚度、牌背＝牌高）
+       左家（轉 90°） standH  立著、側面朝我們：寬＝厚度、頂端＝牌寬（跟躺著的頂面一樣高）、側面＝牌高
+       右家（轉 270°）standHR 同上左右翻過來
+     暗槓（有牌、牌背朝上）照舊躺著。左右兩家一列每往下一張前進一個頂端（＝躺著時的頂面高），下面那張蓋住上面那張的側面
+   ‧ 舊版頁面只呼叫 setBodies() —— 一套、四種躺著的，跟以前一樣（共用模組沒有版號） */
+const STAND = {
+  standV:  { file: 'standV' },
+  standH:  { file: 'standH' },
+  standHR: { file: 'standHR' },
+};
+const SIDE_W = 137 / 240;     // 側立牌的寬（厚度）÷ 躺著的橫牌的寬（牌長）
+const TOP_H = 139 / 240;      // 頂面／頂端的高 ÷ 躺著的橫牌的寬（躺著、立著一樣：都是牌寬 26 mm）
 let BODIES = null;
+let BODY_SETS = null;         // { 名字: { base, imgs } }（setBodySets 才有）
+let BODY_SET = null;          // 現在用哪一套
+let STAND_ON = false;
 let BODIES_ON = true;          // 開發工具（devtools/立體牌、發牌實驗台）切平面／立體對照用
 function use3D(on) { BODIES_ON = on !== false; }
-function setBodies(base) {
-  BODIES = {};
-  return Promise.all(Object.keys(BODY).map(k => new Promise(ok => {
+function loadSet(base, kinds) {
+  const imgs = {};
+  const p = Promise.all(Object.keys(kinds).map(k => new Promise(ok => {
     const im = new Image();
     im.onload = im.onerror = () => ok();
-    im.src = base + BODY[k].file + '.webp';
-    BODIES[k] = im;
+    im.src = base + kinds[k].file + '.webp';
+    imgs[k] = im;
   })));
+  return { imgs, ready: p };
 }
+function setBodies(base) {
+  const s = loadSet(base, BODY);
+  BODIES = s.imgs;
+  return s.ready;
+}
+function setBodySets(sets, opts) {
+  STAND_ON = !!(opts && opts.stand);
+  const kinds = Object.assign({}, BODY, STAND_ON ? STAND : {});
+  BODY_SETS = {};
+  const ps = Object.keys(sets).map(name => {
+    const s = loadSet(sets[name], kinds);
+    BODY_SETS[name] = { base: sets[name], imgs: s.imgs };
+    return s.ready;
+  });
+  useBodySet(Object.keys(sets)[0]);
+  return Promise.all(ps);
+}
+/* 換一套（回傳有沒有換：一樣就 false，呼叫端不用重畫） */
+function useBodySet(name) {
+  if (!BODY_SETS || !BODY_SETS[name] || BODY_SET === name) return false;
+  BODY_SET = name;
+  BODIES = BODY_SETS[name].imgs;
+  return true;
+}
+function bodySet() { return BODY_SET; }
+/* 現在這一套的圖在哪（發牌動畫的牌牆跟牌桌用同一套）；沒有 setBodySets 就是 null */
+function bodyBase() { return BODY_SET && BODY_SETS ? BODY_SETS[BODY_SET].base : null; }
+function standOn() { return STAND_ON && BODIES_ON; }
 function bodiesReady() {
   return BODIES_ON && !!BODIES && Object.keys(BODY).every(k => BODIES[k] && BODIES[k].complete && BODIES[k].naturalWidth > 0);
+}
+/* 別家立著的手牌（v2.15）：沒有牌、牌背朝上、setBodySets 開了 stand。圖還沒載完就回 null（照舊躺著） */
+function makeStand(o) {
+  const rot = ((o.rotate || 0) % 360 + 360) % 360;
+  const kind = rot === 90 ? 'standH' : rot === 270 ? 'standHR' : 'standV';
+  const im = BODIES && BODIES[kind];
+  if (!im || !im.complete || !im.naturalWidth) return null;
+  const w = o.w || 40, h = o.h || 56;
+  const sd = o.thin ? 0 : SIDE;
+  const fullW = w + sd + 2, fullH = h + sd + 2;
+  const side = kind !== 'standV';
+  // 對家：寬＝牌寬（同躺著的直牌）；左右：寬＝厚度（躺著的橫牌寬 × 137/240）。高照圖的比例
+  const cssW = side ? Math.round(fullH * SIDE_W) : fullW;
+  const cssH = Math.round(cssW * im.naturalHeight / im.naturalWidth);
+  const c = document.createElement('canvas');
+  const dpr = Math.min(3, (window.devicePixelRatio || 1));
+  c.width = Math.round(cssW * dpr); c.height = Math.round(cssH * dpr);
+  c.style.width = cssW + 'px'; c.style.height = cssH + 'px';
+  c.className = 'tile tile3d back stand' + (o.className ? ' ' + o.className : '');
+  const ctx = c.getContext('2d');
+  ctx.scale(dpr, dpr);
+  ctx.drawImage(im, 0, 0, cssW, cssH);
+  // 左右兩家一列：每往下一張前進一個頂端，下面那張蓋住上面那張的側面（render.js 的 pack3D 用 data-edge）
+  if (side) c.dataset.edge = String(Math.max(0, cssH - Math.round(fullH * TOP_H)));
+  return c;
 }
 function isOwnStanding(tile, o) {
   const rot = ((o.rotate || 0) % 360 + 360) % 360;
@@ -444,6 +523,7 @@ function make3D(tile, o) {
 
 return {
   SIDE, NUM_CH, setFaceImages, setBodies, bodiesReady, use3D,
+  setBodySets, useBodySet, bodySet, bodyBase, standOn,
   rrect, draw3DSides, drawShell, drawBack,
   drawWan, drawTong, drawTiao, drawHonor, drawFaceInner,
   makeTile,

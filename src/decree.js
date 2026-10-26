@@ -75,7 +75,23 @@ const DECREES = [
     body:
       '臣等賀曰：陛下自{本國}興兵，席捲諸侯，今已得{征服數}國之地，'
       + '天下大勢已定其半。所餘者惟{三國}，皆殘兵敗將，不足為患。'
+      + '臣等已命匠人以黃金鑄牌，願陛下執金牌臨陣，以壯軍威。'
       + '六合歸一之期在即，願陛下親頒征令，掃平餘燼，成萬世不易之業！',
+  },
+  /* 打最後一國（v2.15）：文武百官的賀表。2026-10-26 使用者：「在最後要打最後一國改用金黃色牌，
+     也可以特別在開打前秀出文武百官奏章，寫個類似恭喜主公，千秋大業勢在必得之類的文字」。
+     head／button 蓋過預設的「臣等謹奏」「准奏，出兵」（舊版頁面不認這兩個欄位，照舊顯示預設的） */
+  {
+    id: 'final',
+    when: '已征服五國（打最後一國）',
+    head: '文武百官　謹奏',
+    title: '千秋大業疏',
+    button: '⚔ 准奏，決戰！',
+    body:
+      '臣等文武百官，頓首再拜，恭賀陛下：自{本國}興兵以來，南征北討，今已盡得{征服數}國之地，七國已有其六。'
+      + '所餘者惟此一戰。{三國}雖合兵一處，不過困獸之鬥。'
+      + '伏請陛下親執金牌，御駕臨陣 —— 此戰一勝，四海歸一，千秋大業，勢在必得！'
+      + '臣等願為陛下前驅，萬死不辭。',
   },
 ];
 
@@ -106,6 +122,7 @@ function choose(player) {
   const p = player || {};
   const conquered = (p.conquered || []).length;
   const streak = p.lastStreak || 0;
+  if (conquered >= 5) return DECREES.find(d => d.id === 'final');     // 打最後一國（v2.15）
   if (conquered >= 4) return DECREES.find(d => d.id === 'closing');
   if (streak >= 2) return DECREES.find(d => d.id === 'desperate');
   if (streak >= 1) return DECREES.find(d => d.id === 'again');
@@ -136,9 +153,10 @@ function forMatch(player, foes) {
   const ctx = Object.assign({}, player, { foes: foes || [] });
   return {
     id: d.id,
+    head: d.head || null,                 // 上款（v2.15：決戰奏章是「文武百官　謹奏」；null＝照舊「臣等謹奏」）
     title: fill(d.title, ctx),
     body: fill(d.body, ctx),
-    button: BUTTON,
+    button: d.button || BUTTON,
   };
 }
 

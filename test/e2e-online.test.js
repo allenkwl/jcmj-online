@@ -176,6 +176,8 @@ async function pick(p, kingdom) {
     // 兩邊：天下形勢確認、占卜押普通
     const toTable = p => p.evaluate(async () => {
       for (let i = 0; i < 400; i++) {
+        /* v2.15：征服四國以上的人在天下形勢之前有奏章（甲打到後面會征服四國）—— 准奏才開地圖 */
+        const dc = document.querySelector('#decree-ov.show #dc-ok'); if (dc) dc.click();
         const m = document.getElementById('map-ok'); if (__vis(m) && !m.disabled) m.click();
         const fb = document.querySelector('#fortune-ov.show #f-bets button[data-bet="normal"]'); if (fb) { fb.click(); return true; }
         await new Promise(r => setTimeout(r, 100));

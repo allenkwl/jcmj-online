@@ -33,10 +33,25 @@ console.log('═══ 選哪一篇（語氣要配得上處境）═══');
 {
   /* ⚠️ 這一項是刻意的優先序。手上五國的人連輸一場，
      不該收到「前役失利，非將士不用命」那種奏章 —— 他明明快統一了。 */
-  eq(D.choose(player('qi', ['chu', 'yan', 'han', 'wei', 'zhao'], 1)).id, 'closing',
+  eq(D.choose(player('qi', ['chu', 'yan', 'han', 'wei'], 1)).id, 'closing',
      '快統一的人連敗也走掃平六合疏，不走再請出師疏');
-  eq(D.choose(player('qi', ['chu', 'yan', 'han', 'wei', 'zhao'], 3)).id, 'closing',
+  eq(D.choose(player('qi', ['chu', 'yan', 'han', 'wei'], 3)).id, 'closing',
      '快統一的人連敗三場也一樣');
+}
+
+{
+  /* v2.15：征服五國＝打最後一國 → 文武百官的決戰奏章（千秋大業疏），連敗也一樣。
+     2026-10-26 使用者：「在最後要打最後一國……秀出文武百官奏章，寫個類似恭喜主公，千秋大業勢在必得」 */
+  eq(D.choose(player('qi', ['chu', 'yan', 'han', 'wei', 'zhao'], 0)).id, 'final', '征服五國 → 千秋大業疏');
+  eq(D.choose(player('qi', ['chu', 'yan', 'han', 'wei', 'zhao'], 2)).id, 'final', '征服五國連敗兩場 → 還是千秋大業疏');
+  const d = D.forMatch(player('qi', ['chu', 'yan', 'han', 'wei', 'zhao'], 0), ['qin']);
+  eq(d.head, '文武百官　謹奏', '上款是文武百官');
+  ok(/千秋大業/.test(d.body) && /勢在必得/.test(d.body), '內文有「千秋大業，勢在必得」', d.body);
+  ok(/5 ?國/.test(d.body) && /秦國/.test(d.body), '征服數、最後一國都有填進去', d.body);
+  ok(d.button !== D.BUTTON && /決戰/.test(d.button), '按鈕是決戰', d.button);
+  const c = D.forMatch(player('qi', ['chu', 'yan', 'han', 'wei'], 0), ['zhao', 'qin', 'chu']);
+  eq(c.head, null, '其他篇的上款照舊（null＝臣等謹奏）');
+  eq(c.button, D.BUTTON, '其他篇的按鈕照舊');
 }
 
 console.log('═══ 替換記號一定要填滿 ═══');
@@ -121,9 +136,9 @@ console.log('═══ 文案本身的體例 ═══');
     ok(d.body.indexOf('臣等') >= 0, `${d.id} 是臣下上奏的口吻`, d.body.slice(0, 20));
     ok(!!d.when, `${d.id} 有註明什麼時候用`);
   });
-  eq(D.DECREES.length, 4, '四篇（不是舊版那 28 篇）');
-  ok(new Set(D.DECREES.map(d => d.id)).size === 4, 'id 不重複');
-  ok(new Set(D.DECREES.map(d => d.title)).size === 4, '標題不重複');
+  eq(D.DECREES.length, 5, '五篇（四篇＋v2.15 打最後一國的決戰奏章；不是舊版那 28 篇）');
+  ok(new Set(D.DECREES.map(d => d.id)).size === D.DECREES.length, 'id 不重複');
+  ok(new Set(D.DECREES.map(d => d.title)).size === D.DECREES.length, '標題不重複');
 }
 
 console.log('\n─────────────────────────');

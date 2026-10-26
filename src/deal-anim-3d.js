@@ -124,8 +124,10 @@ for (let n = 1; n <= 6; n++) IMG['die' + n] = SPR + 'die' + n + '.webp';
        只有最靠近自己的那張露出側面
      ‧ 疊兩層：上層往上墊一個牌的厚度（前緣高），同一張圖
    牌的大小統一（橫的牌寬＝直的牌寬 × 4/3），所以左右兩道牆會比上下兩道短 —— 就是斜著看桌面的透視 */
-const ASPECT = { tileV: 340 / 240, tileH: 207 / 240 };   // 立體牌的 backV、backH（devtools/立體牌/sprites/README.md）
-const TOP = { tileV: 0.735, tileH: 0.676 };
+const ASPECT = { tileV: 342 / 240, tileH: 206 / 240 };   // 立體牌的 backV、backH（v2.15 起 v3：devtools/立體牌/sprites/v3/README.md）
+const TOP = { tileV: 0.737, tileH: 0.675 };
+/* 立著的（v2.15）：別家的手牌立起來時，飛到手上的牌也是立著的 —— 落點就是牌桌上那一張，落地不會變形 */
+Object.assign(ASPECT, { standV: 302 / 240, standH: 256 / 137, standHR: 256 / 137 });
 const LONG = 4 / 3;                      // 長邊÷短邊
 function preload() {
   return Promise.all(Object.values(IMG).map(src => new Promise(ok => {
@@ -201,8 +203,17 @@ let lastInfo = null;
      seed      骰子的種子（不給就用 Math.random；連線版要給，四台才看到同一組骰子）
      preview   #preview 模式 → 直接不跑
    回傳 Promise，動畫結束（或被跳過）才 resolve。                 */
+/* 這一場用哪一套牌（v2.15，tiles.js 的 setBodySets／useBodySet：征服四國起是金黃那一套）——
+   牌牆、飛出去的牌跟牌桌同一套。舊版頁面沒有 bodyBase，照舊 assets/tiles3d/ */
+function useSet() {
+  const T = window.MJTiles;
+  const base = (T && T.bodyBase && T.bodyBase()) || BODY;
+  IMG.tileV = base + 'backV.webp'; IMG.tileH = base + 'backH.webp';
+  ['standV', 'standH', 'standHR'].forEach(k => { IMG[k] = base + k + '.webp'; });
+}
 function run(opts) {
   const o = opts || {};
+  useSet();
   if (o.preview) return Promise.resolve('skip:preview');
   if (reduced()) return Promise.resolve('skip:reduced-motion');
 
@@ -538,7 +549,9 @@ function run(opts) {
       const rot = ROT[pos];
       /* 立體版：飛出去的牌也是那兩種牌，落點照「緊貼」重排（landing）。
          自己的牌落手後照舊翻成遊戲的牌（正面，位置照遊戲的手牌） */
-      const kind = (rot === 90 || rot === 270) ? 'tileH' : 'tileV';
+      const stand = pos !== 0 && T.standOn && T.standOn();            // 別家的手牌立著（v2.15）
+      const kind = stand ? (rot === 180 ? 'standV' : rot === 90 ? 'standH' : 'standHR')
+                         : (rot === 90 || rot === 270) ? 'tileH' : 'tileV';
       const ld = landing[pos][k];
       const el = sprite(kind, ld.w);
       const ew = ld.w, eh = ld.h || Math.round(ld.w * ASPECT[kind]), ex = ld.x, ey = ld.y;
