@@ -54,7 +54,7 @@ function mount() {
   if (location.protocol === 'file:') { msg('⚠ 要經開發伺服器開（http://）'); }
   $('wrap').innerHTML = '';
   frame = document.createElement('iframe');
-  frame.src = '../' + encodeURI(file) + '#enfeoff&mute';
+  frame.src = '../' + encodeURI(file) + '#enfeoff';      // ⚠️ 不要帶 &mute：這一頁是要看、也要聽的（v0.3 第一版帶了，整段沒聲音）
   frame.allow = 'autoplay; fullscreen';
   frame.addEventListener('load', () => { if (wantFix) inject(); else msg('現行版'); });
   $('wrap').appendChild(frame);
@@ -88,6 +88,10 @@ function size() {
 $('north').onclick = () => {
   const w = frame && frame.contentWindow;
   if (!w || !w.MJEnfeoff) { msg('遊戲還沒載好'); return; }
+  /* 聲音：按鈕在這一頁、不在遊戲那一頁，瀏覽器只准「被點過的那一頁」出聲 ——
+     趁這次點擊叫醒遊戲的聲音（MJAudio.resume），再在遊戲那一頁送一次點擊（分封動畫自己的音效是點擊時才叫醒，src/enfeoff.js 的 wake） */
+  try { if (w.MJAudio && w.MJAudio.resume) w.MJAudio.resume(); } catch (_) {}
+  try { w.document.dispatchEvent(new w.MouseEvent('click', { bubbles: true })); } catch (_) {}
   // 遊戲的情境選單（#ip-gate）蓋在動畫上面：播的時候收起來、播完放回來（同遊戲自己的「▶ 播放」）
   const gate = w.document.getElementById('ip-gate');
   if (gate) gate.style.display = 'none';
