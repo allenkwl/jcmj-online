@@ -396,7 +396,9 @@ const STAND = {
 const SIDE_W = 137 / 240;     // 側立牌的寬（厚度）÷ 躺著的橫牌的寬（牌長）
 const TOP_H = 139 / 240;      // 頂面／頂端的高 ÷ 躺著的橫牌的寬（躺著、立著一樣：都是牌寬 26 mm）
 let BODIES = null;
-let BODY_SETS = null;         // { 名字: { base, imgs } }（setBodySets 才有）
+let BODY_SETS = null;         // { 名字: { base, imgs（還沒載就是 null） } }（setBodySets 才有）
+let BODY_KINDS = null;        // 每一套要載哪幾種牌身
+let ON_SET_LOAD = null;       // 晚載的那一套載完時叫一下（主程式重畫）
 let BODY_SET = null;          // 現在用哪一套
 let STAND_ON = false;
 let BODIES_ON = true;          // 開發工具（devtools/立體牌、發牌實驗台）切平面／立體對照用
@@ -416,21 +418,40 @@ function setBodies(base) {
   BODIES = s.imgs;
   return s.ready;
 }
+/* opts.eager：一開始就載的那幾套（預設全部）；其餘第一次 useBodySet 才載（v2.16：七國各一套，每人只用得到自己那一國）。
+   opts.onLoad(name)：晚載的那一套載完時叫 —— 主程式重畫，syncTileSet 就換得過去 */
 function setBodySets(sets, opts) {
-  STAND_ON = !!(opts && opts.stand);
-  const kinds = Object.assign({}, BODY, STAND_ON ? STAND : {});
+  const o = opts || {};
+  STAND_ON = !!o.stand;
+  BODY_KINDS = Object.assign({}, BODY, STAND_ON ? STAND : {});
+  ON_SET_LOAD = o.onLoad || null;
   BODY_SETS = {};
-  const ps = Object.keys(sets).map(name => {
-    const s = loadSet(sets[name], kinds);
-    BODY_SETS[name] = { base: sets[name], imgs: s.imgs };
-    return s.ready;
-  });
-  useBodySet(Object.keys(sets)[0]);
+  Object.keys(sets).forEach(name => { BODY_SETS[name] = { base: sets[name], imgs: null, ready: null }; });
+  const eager = o.eager || Object.keys(sets);
+  const ps = eager.map(ensureSet);
+  BODY_SET = null;
+  useBodySet(eager[0]);
   return Promise.all(ps);
 }
-/* 換一套（回傳有沒有換：一樣就 false，呼叫端不用重畫） */
+function ensureSet(name) {
+  const st = BODY_SETS && BODY_SETS[name];
+  if (!st) return Promise.resolve();
+  if (!st.imgs) {
+    const s = loadSet(st.base, BODY_KINDS);
+    st.imgs = s.imgs;
+    st.ready = s.ready.then(() => { if (ON_SET_LOAD) try { ON_SET_LOAD(name); } catch (_) {} });
+  }
+  return st.ready;
+}
+function setLoaded(name) {
+  const st = BODY_SETS && BODY_SETS[name];
+  return !!(st && st.imgs && Object.keys(BODY).every(k => st.imgs[k] && st.imgs[k].complete && st.imgs[k].naturalWidth > 0));
+}
+/* 換一套（回傳有沒有換：一樣就 false，呼叫端不用重畫）。那一套還沒載完：先開始載、這次不換（照舊用現在這套） */
 function useBodySet(name) {
   if (!BODY_SETS || !BODY_SETS[name] || BODY_SET === name) return false;
+  ensureSet(name);
+  if (BODY_SET && !setLoaded(name)) return false;
   BODY_SET = name;
   BODIES = BODY_SETS[name].imgs;
   return true;
@@ -523,7 +544,7 @@ function make3D(tile, o) {
 
 return {
   SIDE, NUM_CH, setFaceImages, setBodies, bodiesReady, use3D,
-  setBodySets, useBodySet, bodySet, bodyBase, standOn,
+  setBodySets, useBodySet, bodySet, bodyBase, standOn, ensureSet, setLoaded,
   rrect, draw3DSides, drawShell, drawBack,
   drawWan, drawTong, drawTiao, drawHonor, drawFaceInner,
   makeTile,

@@ -3,13 +3,13 @@
    也可以特別在開打前秀出文武百官奏章」「只有打最後一國的玩家會看到黃金牌，連線模式也一樣」
    「連線也出奏章，從 4 國起……征服 4 國出〈掃平六合疏〉，征服 5 國（打最後一國）出文武百官的決戰奏章。金黃牌在 4 國時出現」。
    單機（testCampaign：只在記憶體裡的戰役，不碰存檔）：
-     ‧ 征服 3 國：〈請伐三國疏〉、豬肝紅
+     ‧ 征服 3 國：〈請伐三國疏〉、本國（秦）的壓克力牌（v2.16；v2.15 是豬肝紅）
      ‧ 征服 4 國：〈掃平六合疏〉、金黃（發牌動畫的牌牆也是金的）
      ‧ 征服 5 國：文武百官〈千秋大業疏〉（上款、按鈕都換）、金黃
      ‧ 三家的手牌是立著的（對家 standV、左右 standH）；自己的手牌維持平面
    連線（本機模擬器）：甲征服 4 國、乙從頭開始 ——
      ‧ 甲在天下形勢之前看到奏章，乙直接看到地圖（奏章只給自己征服四國以上的人）
-     ‧ 甲的牌是金黃、乙的是豬肝紅（同一桌各看各的）
+     ‧ 甲的牌是金黃、乙的是自己趙國的壓克力牌（同一桌各看各的；v2.15 乙是豬肝紅）
    拿舊版跑要失敗： E2E_FILE=戰國麻將線上v2.14.html node test/e2e-goldtiles.test.js
    執行： node test/e2e-goldtiles.test.js                                                    */
 'use strict';
@@ -37,7 +37,7 @@ const HELPERS = () => {
   window.__dealSeen = new Set();
   // ⚠️ addInitScript 跑的時候還沒有 documentElement —— 等頁面建好再掛
   const watch = () => new MutationObserver(() => document.querySelectorAll('#deal-anim img').forEach(im => {
-    const m = (im.getAttribute('src') || '').match(/(tiles3d(?:-gold)?)\/(\w+)\.webp/); if (m) __dealSeen.add(m[1] + '/' + m[2]);
+    const m = (im.getAttribute('src') || '').match(/(tiles3d(?:-\w+)?)\/(\w+)\.webp/); if (m) __dealSeen.add(m[1] + '/' + m[2]);
   })).observe(document.documentElement, { childList: true, subtree: true });
   if (document.documentElement) watch(); else document.addEventListener('DOMContentLoaded', watch, { once: true });
 };
@@ -88,11 +88,11 @@ const HELPERS = () => {
     };
     const c3 = await soloCase(['han', 'wei', 'zhao']);
     ok(c3.d.title === '請伐三國疏' && c3.d.head === '臣等謹奏', '單機征服 3 國：請伐三國疏（臣等謹奏）', JSON.stringify(c3.d.title + '／' + c3.d.head));
-    ok(c3.t.set === 'maroon', '單機征服 3 國：豬肝紅', JSON.stringify(c3.t));
+    ok(c3.t.set === 'qin', '單機征服 3 國：本國（秦）的壓克力牌', JSON.stringify(c3.t));
     ok(c3.t.stand.every(n => n >= 13), '三家的手牌都是立著的（對家、左右）', JSON.stringify(c3.t.stand));
     ok(c3.t.own3d === 0, '自己的手牌維持平面', JSON.stringify(c3.t));
-    ok(c3.deal.includes('tiles3d/backV') && c3.deal.some(x => /tiles3d\/stand/.test(x)) && !c3.deal.some(x => /gold/.test(x)),
-       '發牌動畫：豬肝紅的牌牆，飛到別家的是立著的牌', JSON.stringify(c3.deal));
+    ok(c3.deal.includes('tiles3d-qin/backV') && c3.deal.some(x => /tiles3d-qin\/stand/.test(x)) && !c3.deal.some(x => /gold/.test(x)),
+       '發牌動畫：秦國的牌牆，飛到別家的是立著的牌', JSON.stringify(c3.deal));
 
     const c4 = await soloCase(['han', 'wei', 'zhao', 'yan']);
     ok(c4.d.title === '掃平六合疏' && /金牌/.test(c4.d.body), '單機征服 4 國：掃平六合疏（提到金牌）', c4.d.title);
@@ -167,7 +167,7 @@ const HELPERS = () => {
     });
     const [aT, bT] = await Promise.all([toTable(A.pg), toTable(B.pg)]);
     ok(aT.set === 'gold' && aT.deal.some(x => /tiles3d-gold\/back/.test(x)), '連線：甲（征服 4 國）的牌是金黃、發牌也是金的', JSON.stringify(aT));
-    ok(bT.set === 'maroon' && !bT.deal.some(x => /gold/.test(x)), '連線：同一桌的乙看到的是豬肝紅', JSON.stringify(bT));
+    ok(bT.set === 'zhao' && bT.deal.some(x => /tiles3d-zhao\//.test(x)) && !bT.deal.some(x => /gold/.test(x)), '連線：同一桌的乙看到的是自己趙國的牌', JSON.stringify(bT));
     ok(aT.stand.every(n => n >= 13) && bT.stand.every(n => n >= 13), '連線：兩邊的三家手牌都是立著的', JSON.stringify({ a: aT.stand, b: bT.stand }));
     ok(A.er.length === 0 && B.er.length === 0, '連線頁面沒有 JavaScript 錯誤', A.er.concat(B.er).slice(0, 3).join(' | '));
   } catch (e) {
