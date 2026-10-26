@@ -7,12 +7,13 @@
      ‧ 牌組：MJTiles.setBodies() 換成 devtools/立體牌/sprites/v2/<組>/（躺著的四種）
      ‧ 別家的手牌（沒有牌、牌背朝上＝只有張數的那一排）換成立著的：
          對家（轉 180°）standV  立著、牌背朝我們
-         左家（轉 90°） standH  standV 轉 90°（看到整面牌背，牌的頂端朝左家自己）
-         右家（轉 270°）standHR standV 轉 −90°
-         （第一版是側面朝我們、只看得到厚度 —— 使用者：「直立的牌寬度太窄（左右兩家用的牌）」）
+         左家（轉 90°） standH  立著、側面朝我們（象牙白那一半朝左家自己），跟躺著的橫牌一樣寬
+         右家（轉 270°）standHR 同上左右翻過來
+         （使用者：「codex 畫的直立牌寬度太窄小，這樣的視角不對，不論蓋牌或是直立都該一樣寬」——
+           Codex 畫的側面只有 185 寬，tools/build-tile-sets.py 整塊拉到 240；中間試過「背對直立轉 90°」，會錯意，撤掉）
        暗槓（有牌、牌背朝上）照舊躺著
-     ‧ 左右兩家一列的長度跟躺著的時候一樣（使用者：「左右兩家的牌寬不管是直立還是躺下都是一樣寬」）：
-       每張沿著那一列的高度＝躺著那張每往下前進的距離（頂面高），一張貼一張、不疊
+     ‧ 左右兩家：寬＝躺著的橫牌（fullH）；每往下一張前進的距離跟躺著時一樣（頂面高），
+       立著的牌比較高，下面那張蓋住上面那張的下半截（render.js 的 pack3D 用 data-edge）
    window.MJTileSetBase 給發牌動畫的副本（devtools/發牌動畫/deal-anim-3d-sets.js）用：牌牆跟牌桌同一組
    牌身的圖由 tools/build-tile-sets.py 產生（sprites/v2/README 見那支的說明）
    ═══════════════════════════════════════════════════════════════ */
@@ -52,10 +53,9 @@
     const sd = o.thin ? 0 : T.SIDE;
     const fullW = w + sd + 2, fullH = h + sd + 2;
     const side = kind !== 'standV';
-    // 對家：寬＝牌寬（同躺著的直牌）；左右：高＝躺著那張一列裡每張的間距，寬照圖的比例
-    const step = Math.round(fullH * BACKH.h / BACKH.w * BACKH.top);
-    const cssH = side ? step : Math.round(fullW * im.naturalHeight / im.naturalWidth);
-    const cssW = side ? Math.round(step * im.naturalWidth / im.naturalHeight) : fullW;
+    // 對家：寬＝牌寬（同躺著的直牌）；左右：寬＝躺著的橫牌（fullH）。高都照圖的比例
+    const cssW = side ? fullH : fullW;
+    const cssH = Math.round(cssW * im.naturalHeight / im.naturalWidth);
     const c = document.createElement('canvas');
     const dpr = Math.min(3, (window.devicePixelRatio || 1));
     c.width = Math.round(cssW * dpr); c.height = Math.round(cssH * dpr);
@@ -64,6 +64,11 @@
     const ctx = c.getContext('2d');
     ctx.scale(dpr, dpr);
     ctx.drawImage(im, 0, 0, cssW, cssH);
+    if (side) {
+      // 一列的間距跟躺著的橫牌一樣（躺著那張：寬＝fullH、頂面高＝0.676 × 圖高）
+      const step = Math.round(fullH * BACKH.h / BACKH.w * BACKH.top);
+      c.dataset.edge = String(Math.max(0, cssH - step));
+    }
     return c;
   }
 

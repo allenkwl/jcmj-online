@@ -8,7 +8,7 @@
 
 輸出 devtools/立體牌/sprites/v2/{maroon,gold}/{faceV,faceH,backV,backH,standV,standH,standHR}.{png,webp}
   standV  立著、牌背朝我們（對家的手牌）
-  standH  立著、側面朝我們（左家的手牌）　standHR  同上左右翻過來（右家）
+  standH  立著、側面朝我們、跟躺著的橫牌一樣寬（左家的手牌）　standHR  同上左右翻過來（右家）
 執行： python3 tools/build-tile-sets.py
 """
 import os
@@ -47,14 +47,19 @@ def standing():
     back = clean(im.crop((c0, r0, c1 + 1, r1 + 1)))
     k = W / back.width
     out['standV'] = back.resize((W, round(back.height * k)), Image.LANCZOS)
+    (r0, r1, c0, c1) = crop_blob(a, *blobs[1])
+    side = clean(im.crop((c0, r0, c1 + 1, r1 + 1)))
+    # 左右兩家：側立（看到側面，象牙白、豬肝紅各半）。高度跟背對那張同一個比例；
+    # 橫向整塊拉到跟躺著的橫牌一樣寬（240）—— 2026-10-26 使用者：「codex 畫的直立牌寬度太窄小，這樣的視角不對，
+    # 不論蓋牌或是直立都該一樣寬」（Codex 畫的只有 185）。整塊平順拉伸，不逐行
+    out['standH'] = side.resize((W, round(side.height * k)), Image.LANCZOS)
     return out
 
 
-def sides(sv):
-    """左右兩家：背對直立那張轉 90°（2026-10-26 使用者：「直立的牌寬度太窄（左右兩家用的牌）」——
-       側面朝我們只看得到厚度，太窄。改成像對家那樣看到整面牌背，牌的頂端朝向那一家自己）"""
-    return {'standH': sv.rotate(90, expand=True),      # 左家：頂端朝左
-            'standHR': sv.rotate(-90, expand=True)}    # 右家：頂端朝右
+def sides(sh):
+    """右家：左家那張左右翻過來（象牙白＝牌面那一層朝右家自己）。
+       （中間試過「背對直立轉 90°」—— 使用者：「你誤會我的意思，要直立牌，只是 codex 畫的直立牌寬度太窄小」，撤掉）"""
+    return {'standHR': sh.transpose(Image.FLIP_LEFT_RIGHT)}
 
 
 def fit_to(im, ref):
@@ -97,14 +102,14 @@ def main():
     maroon = {n: Image.open(os.path.join(ROOT, 'assets/tiles3d/%s.webp' % n)).convert('RGBA')
               for n in ['faceV', 'faceH', 'backV', 'backH']}
     maroon.update(standing())
-    maroon.update(sides(maroon['standV']))
+    maroon.update(sides(maroon['standH']))
     sets['maroon'] = maroon
     # 金黃：Codex 照豬肝紅那張改畫成金屬金（原圖/v2/gold-<種>.png），裁成跟豬肝紅一樣大；沒有的才退回轉色
     gold = {}
-    for n in ['faceV', 'faceH', 'backV', 'backH', 'standV']:
+    for n in ['faceV', 'faceH', 'backV', 'backH', 'standV', 'standH']:
         g = os.path.join(ROOT, 'devtools/立體牌/sprites/原圖/v2/gold-%s.png' % n)
         gold[n] = fit_to(Image.open(g).convert('RGBA'), maroon[n]) if os.path.exists(g) else to_gold(maroon[n])
-    gold.update(sides(gold['standV']))
+    gold.update(sides(gold['standH']))
     sets['gold'] = gold
     for name, imgs in sets.items():
         d = os.path.join(OUT, name)
