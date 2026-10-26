@@ -1,5 +1,11 @@
 /* ═══════════════════════════════════════════════════════════════
    enfeoff.js — 分封領地（一場打完的動畫）
+   v2.18：主公不再被地圖框切掉 —— 2026-10-26 使用者：「我一直覺得分封領地的動畫主公被截到不太好，能改嗎？
+   先做測試程式，ok 再接進遊戲」「不能讓主公貼在標題上嗎？」→ 分封動畫 v0.3 看過 →「好，接進遊戲吧」。
+     ‧ 主公改畫在地圖上面另一層（.enf-fx，跟地圖一樣大、不裁切）：超出地圖就蓋在標題上、原尺寸
+       （以前畫在 .enf-map 裡，地圖 overflow:hidden —— 打趙、燕（y＝17%）頭被切掉，行軍弧線中途也會擦到）
+     ‧ 只有頭會超出整個畫面上緣（很矮的螢幕）才縮，以腳為中心、最小 55%
+     ‧ 大印、閃光照舊蓋在主公上面，旗、頭像在下面（.enf-fx 的 z-index＝原本主公那一層）
    ───────────────────────────────────────────────────────────────
    一場打完，前三名各征服一國（docs/campaign.md 第二節）。在天下形勢地圖上演出：
 
@@ -63,7 +69,11 @@ const CSS = `
 #enf-ov .glow.on{animation:enfGlow 1.1s ease-in-out infinite alternate;}
 #enf-ov .glow.won{animation:none;opacity:.55;transition:opacity .6s;}
 @keyframes enfGlow{from{opacity:.15}to{opacity:.55}}
-#enf-ov .lord{position:absolute;width:30%;aspect-ratio:1;transform:translate(-50%,-78%);z-index:5;pointer-events:none;
+#enf-ov .enf-stage{position:relative;}
+/* z-index 5＝原本主公在地圖裡的那一層：大印（7）、閃光（6）照舊蓋在主公上面，旗（4）、頭像在下面；
+   .enf-map 本身不是疊放層（沒有 z-index），所以兩邊比的是同一套順序。標題沒有定位，主公照樣蓋在它上面 */
+#enf-ov .enf-fx{position:absolute;inset:0;pointer-events:none;z-index:5;}
+#enf-ov .lord{position:absolute;width:30%;aspect-ratio:1;transform:translate(-50%,-78%);transform-origin:50% 78%;z-index:5;pointer-events:none;
   filter:drop-shadow(0 8px 14px rgba(0,0,0,.8));}
 #enf-ov .lord img{width:100%;height:100%;object-fit:contain;display:block;}
 #enf-ov .lord.flip img{transform:scaleX(-1);}
@@ -233,6 +243,7 @@ let ov = null, mapEl = null, capEl = null;
 let timers = [];
 let finishing = null;           // 目前這一段的「跳到結果」
 
+let fxEl = null;
 function ensureDom() {
   if (ov) return;
   const st = document.createElement('style');
@@ -242,15 +253,25 @@ function ensureDom() {
   ov.id = 'enf-ov';
   // 標題是魏碑做成的圖（assets/titles/，tools/build-titles.py）—— 魏碑是 macOS 字型，不能當網頁字型
   ov.innerHTML = '<div class="enf-title"><img class="ttl" src="assets/titles/enfeoff.webp" alt="分封領地" style="height:1.25em;width:auto;vertical-align:middle"></div><div class="enf-sub">— 打敗誰，就拿誰的地 —</div>'
-    + '<div class="enf-map"><img class="bg" src="' + MAP_URL + '" alt=""></div>'
+    + '<div class="enf-stage"><div class="enf-map"><img class="bg" src="' + MAP_URL + '" alt=""></div><div class="enf-fx"></div></div>'
     + '<div class="enf-cap"></div><div class="enf-hint">點一下跳到結果</div>'
     + '<button type="button" class="enf-ok">確認　▶</button>';
   document.body.appendChild(ov);
   mapEl = ov.querySelector('.enf-map');
+  fxEl = ov.querySelector('.enf-fx');
   capEl = ov.querySelector('.enf-cap');
   ov.addEventListener('click', () => { if (finishing) finishing(); });
 }
 
+/* 主公在 (x, y)（佔地圖寬高的 %）時要縮多少：圖高＝地圖高的 45%（寬 30%、地圖 3:2），腳在 78% 的地方 ——
+   頭頂在 y − 35.1。可以超出地圖（蓋在標題上），只要不超出整個畫面的上緣（留 4px）；超出才縮（最小 0.55） */
+function lordScale(y) {
+  const r = mapEl ? mapEl.getBoundingClientRect() : null;
+  if (!r || !r.height) return 1;
+  const topMin = (4 - r.top) / r.height * 100;          // 畫面上緣，換成「地圖高的 %」（在地圖上面是負的）
+  return Math.max(0.55, Math.min(1, (y - topMin) / 35.1));
+}
+const lordTf = s => `translate(-50%,-78%) scale(${s.toFixed(3)})`;
 const later = (fn, ms) => { const t = setTimeout(fn, ms); timers.push(t); return t; };
 const pos = id => MAP_POS[id] || [50, 50];
 const kc = id => (K.get(id) || {}).color || '#c9a44c';
@@ -259,6 +280,11 @@ const esc = t => String(t).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;',
 function stop() {
   timers.forEach(clearTimeout); timers = [];
   if (mapEl && mapEl.getAnimations) mapEl.getAnimations({ subtree: true }).forEach(a => { try { a.cancel(); } catch (_) {} });
+  /* 主公在 .enf-fx（v2.18）—— paintMap 只清地圖，「點一下跳到結果」時主公會留在畫面上，這裡一起收掉 */
+  if (fxEl) {
+    if (fxEl.getAnimations) fxEl.getAnimations({ subtree: true }).forEach(a => { try { a.cancel(); } catch (_) {} });
+    fxEl.innerHTML = '';
+  }
 }
 
 /* 地圖：各國的印＋擁有者的頭像 */
@@ -329,7 +355,8 @@ function playOne(lords, a, done) {
   const frames = K.warFrames(home.id, false);
   img.src = frames[0];
   sp.style.left = hx + '%'; sp.style.top = hy + '%';
-  mapEl.appendChild(sp);
+  sp.style.transform = lordTf(lordScale(hy));
+  fxEl.appendChild(sp);
 
   const MARCH = 1300, START = 550;
   const mx = (hx + tx) / 2, my = Math.min(hy, ty) - 8;   // 弧線行軍：中途抬高一點，像翻山越嶺
@@ -337,9 +364,9 @@ function playOne(lords, a, done) {
     img.src = frames[1];
     SND.march(MARCH);
     sp.animate([
-      { left: hx + '%', top: hy + '%' },
-      { left: mx + '%', top: my + '%', offset: .5 },
-      { left: tx + '%', top: ty + '%' },
+      { left: hx + '%', top: hy + '%', transform: lordTf(lordScale(hy)) },
+      { left: mx + '%', top: my + '%', transform: lordTf(lordScale(my)), offset: .5 },
+      { left: tx + '%', top: ty + '%', transform: lordTf(lordScale(ty)) },
     ], { duration: MARCH, easing: 'ease-in', fill: 'forwards' });
     for (let i = 1; i <= 6; i++) later(() => {
       const t = i / 7;
@@ -380,8 +407,9 @@ function playOne(lords, a, done) {
   }, ARRIVE);
   later(() => { img.src = K.calmUrl(home.id, false); }, ARRIVE + 350);
   later(() => {
-    sp.animate([{ opacity: 1, transform: 'translate(-50%,-78%) scale(1)' },
-                { opacity: 0, transform: 'translate(-50%,-40%) scale(.25)' }],
+    const se = lordScale(ty);
+    sp.animate([{ opacity: 1, transform: lordTf(se) },
+                { opacity: 0, transform: `translate(-50%,-40%) scale(${(0.25 * se).toFixed(3)})` }],
                { duration: 450, easing: 'ease-in', fill: 'forwards' });
     const s = mapEl.querySelector('.stamp'); if (s) s.classList.add('fade');
   }, ARRIVE + 1500);

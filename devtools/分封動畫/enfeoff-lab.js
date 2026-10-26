@@ -287,6 +287,11 @@ const esc = t => String(t).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;',
 function stop() {
   timers.forEach(clearTimeout); timers = [];
   if (mapEl && mapEl.getAnimations) mapEl.getAnimations({ subtree: true }).forEach(a => { try { a.cancel(); } catch (_) {} });
+  /* 主公在 .enf-fx（v2.18）—— paintMap 只清地圖，「點一下跳到結果」時主公會留在畫面上，這裡一起收掉 */
+  if (fxEl) {
+    if (fxEl.getAnimations) fxEl.getAnimations({ subtree: true }).forEach(a => { try { a.cancel(); } catch (_) {} });
+    fxEl.innerHTML = '';
+  }
 }
 
 /* 地圖：各國的印＋擁有者的頭像 */
