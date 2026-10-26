@@ -69,6 +69,10 @@ window.MJDevtools = [
   "family": "分封動畫",
   "all": [
    {
+    "ver": "0.3",
+    "rel": "devtools/分封動畫v0.3.html"
+   },
+   {
     "ver": "0.2",
     "rel": "devtools/分封動畫v0.2.html"
    },
@@ -78,12 +82,13 @@ window.MJDevtools = [
    }
   ],
   "newest": {
-   "ver": "0.2",
-   "rel": "devtools/分封動畫v0.2.html"
+   "ver": "0.3",
+   "rel": "devtools/分封動畫v0.3.html"
   },
-  "count": 2,
+  "count": 3,
+  "needsServer": true,
   "title": "分封動畫",
-  "sub": "一場打完的分封領地動畫（直接在遊戲本體裡播，可選情境）",
+  "sub": "分封領地動畫：主公不再被地圖框切掉（修正版、現行版對照；含「打北邊」情境與手機尺寸）",
   "ico": "🏯",
   "cat": "動畫"
  },
