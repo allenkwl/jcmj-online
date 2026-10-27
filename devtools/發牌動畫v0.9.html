@@ -10,7 +10,8 @@
 <meta name="launcher-needs-server" content="1">
 <!--
   v0.9（2026-10-27）：方城放大 —— devtools/發牌動畫/deal-anim-3d-big.js（預設選它），「方城大小」選單：現在／大／特大。
-  使用者：「我覺得發牌動畫中的方城有點小，中間的牌能再加大些嗎？會比較有氣勢，一樣先改測試程式」。
+  使用者：「我覺得發牌動畫中的方城有點小，中間的牌能再加大些嗎？會比較有氣勢，一樣先改測試程式」
+  →（看過）「放大就好，不要和手牌重疊，視覺上不正常！」→ 定案「大」；「牌又畫得太厚」→ 加「側立牌厚度」滑桿。
   這一版用遊戲自己的牌組（v2.16 起本國的壓克力牌），不注入 tiles-sets.js。遊戲本體沒動。v0.8 保留。
   v0.8（2026-10-26）：牌組改成九套（豬肝紅、金黃、七國旗幟顏色）。使用者：「七國是不是該有七種顏色的麻將牌來代表？」
   →「A＋旗幟顏色＋保留豬肝紅」。v0.7 保留。
@@ -98,7 +99,6 @@ pre{background:#0e1611;border:1px solid var(--line);border-radius:4px;padding:8p
   <label>動畫版本</label>
   <select id="which">
     <option value="big" selected>方城放大（實驗中）</option>
-    <option value="sets">兩套牌＋別家手牌立著（實驗中）</option>
     <option value="throw">立體版＋電鐵式擲骰（＝線上，v2.08 起）</option>
     <option value="d3">立體版：原地滾骰（v2.07 以前）</option>
     <option value="wall">現行版：牌牆＋擲骰（＝線上）</option>
@@ -108,30 +108,22 @@ pre{background:#0e1611;border:1px solid var(--line);border-radius:4px;padding:8p
   <label>方城大小（只有「方城放大」那一版）</label>
   <select id="wsize">
     <option value="now">現在（中央區、牌寬最大 26）</option>
-    <option value="big" selected>大（四家手牌圍起來的整塊空間）</option>
-    <option value="huge">特大（整個牌桌，發牌時蓋過手牌的位置）</option>
+    <option value="big" selected>大（四家手牌圍起來的整塊空間）← 定案</option>
+    <option value="huge">特大（整個牌桌，會跟手牌重疊）</option>
   </select>
 
-  <label>牌組（只有「兩套牌」那一版）</label>
+  <label>牌組（選了牌桌馬上換；發牌也用這一套）</label>
   <select id="tset">
-    <option value="maroon" selected>豬肝紅（預設）</option>
+    <option value="maroon" selected>豬肝紅（預設：觀戰、還沒開局）</option>
     <option value="gold">金黃（征服四國起）</option>
-    <option value="qi-acrylic">齊・藍（壓克力）</option>
-    <option value="chu-acrylic">楚・綠（壓克力）</option>
-    <option value="yan-acrylic">燕・紫（壓克力）</option>
-    <option value="han-acrylic">韓・橙（壓克力）</option>
-    <option value="wei-acrylic">魏・朱紅（壓克力）</option>
-    <option value="zhao-acrylic">趙・青（壓克力）</option>
-    <option value="qin-acrylic">秦・深灰（壓克力）</option>
-    <option value="qi">齊・藍（亮面漆，對照）</option>
-    <option value="chu">楚・綠（亮面漆，對照）</option>
-    <option value="yan">燕・紫（亮面漆，對照）</option>
-    <option value="han">韓・橙（亮面漆，對照）</option>
-    <option value="wei">魏・朱紅（亮面漆，對照）</option>
-    <option value="zhao">趙・青（亮面漆，對照）</option>
-    <option value="qin">秦・黑（亮面漆，對照）</option>
+    <option value="qi">齊・藍（壓克力）</option>
+    <option value="chu">楚・綠（壓克力）</option>
+    <option value="yan">燕・紫（壓克力）</option>
+    <option value="han">韓・橙（壓克力）</option>
+    <option value="wei">魏・朱紅（壓克力）</option>
+    <option value="zhao">趙・青（壓克力）</option>
+    <option value="qin">秦・深灰（壓克力）</option>
   </select>
-  <label class="row"><input type="checkbox" id="stand" checked> 別家的手牌立著</label>
 
   <label>莊家</label>
   <select id="dealer">
@@ -226,7 +218,7 @@ function waitReady() {
   const t0 = Date.now();
   const tick = () => {
     const w = frame.contentWindow;
-    if (w && w.MJDev && w.MJTiles) { $('play').disabled = false; status('就緒。按「播放」或 R。'); return; }
+    if (w && w.MJDev && w.MJTiles) { $('play').disabled = false; status('就緒。按「播放」或 R。'); forceSet(); return; }
     if (Date.now() - t0 > 15000) { status('15 秒內等不到遊戲的 MJDev（預覽模式沒啟動？）', true); return; }
     setTimeout(tick, 150);
   };
@@ -265,23 +257,27 @@ function injectLab() {
 
 /* ── 牌桌的立體牌（devtools/立體牌/tiles-3d.js）：注入一次，之後照勾選開關 ── */
 /* 牌組＋別家手牌立著（devtools/立體牌/tiles-sets.js，注入一次）。不是「兩套牌」那一版就關掉立著、換回豬肝紅 */
+/* 牌組（v0.9）：選了牌桌馬上換 —— 用遊戲自己的九套牌（MJTiles.setBodySets 的 maroon／gold／七國，v2.16 起）。
+   遊戲每次重畫前 syncTileSet() 會照「自己本國、征服幾國」換回去 —— 它包在主程式的函式範圍裡、從外面換不掉，
+   但它是透過 window.MJTiles.useBodySet 換的：實驗台把這一支包起來，不管遊戲要哪一套都用選單選的這一套。
+   2026-10-27 使用者：「可以讓我選擇牌組就可以直接顯示如附圖各個位置牌的樣子嗎？」 */
+function forceSet() {
+  const w = frame && frame.contentWindow;
+  if (!w || !w.MJTiles || !w.MJTiles.useBodySet) return Promise.resolve();
+  const T = w.MJTiles;
+  if (!T.__useBodySet0) T.__useBodySet0 = T.useBodySet;
+  const name = $('tset').value;
+  T.useBodySet = () => T.__useBodySet0(name);
+  return Promise.resolve(T.ensureSet ? T.ensureSet(name) : null).then(() => {
+    T.useBodySet(name);
+    try { w.MJDev.redraw(); } catch (_) {}
+    status('牌組：' + $('tset').selectedOptions[0].textContent);
+  });
+}
 function applySets() {
   const w = frame.contentWindow, d = w.document;
   w.MJDealWallSize = $('wsize').value;               // 方城大小（deal-anim-3d-big.js 讀）
-  // 不是「兩套牌」那一版：用遊戲自己的牌組（v2.16 起本國的壓克力），不注入 tiles-sets.js
-  if (which() !== 'sets') { if (w.MJTileSets) w.MJTileSets.standing = false; return Promise.resolve(); }
-  const go = () => {
-    const on = which() === 'sets';
-    w.MJTileSets.standing = on && $('stand').checked;
-    return w.MJTileSets.load(on ? $('tset').value : 'maroon');
-  };
-  if (w.MJTileSets) return go();
-  return new Promise((ok, bad) => {
-    const s = d.createElement('script');
-    s.src = 'devtools/立體牌/tiles-sets.js?t=' + Date.now();
-    s.onload = () => ok(go()); s.onerror = () => bad(new Error('載不到 tiles-sets.js'));
-    d.head.appendChild(s);
-  });
+  return forceSet();                                 // v0.9：牌組一律用遊戲自己的（選單選的那一套）
 }
 function setTable3d() {
   const w = frame.contentWindow;
@@ -396,6 +392,7 @@ $('table3d').addEventListener('change', () => { if (frame) setTable3d(); });
 $('which').addEventListener('change', () => { useStore(); $('tune').innerHTML = ''; $('tune').dataset.which = '';
   $('out').hidden = true; status('已切換版本，按「播放」載入。'); });
 $('vp').addEventListener('change', applyViewport);
+$('tset').addEventListener('change', forceSet);
 $('speed').addEventListener('input', () => { $('speedVal').textContent = Number($('speed').value).toFixed(2) + '×'; });
 $('copy').addEventListener('click', copyOut);
 $('reset').addEventListener('click', () => {
