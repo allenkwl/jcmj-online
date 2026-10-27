@@ -236,9 +236,22 @@ function run(opts) {
   const probe = T.makeTile(null, { w: 40, h: 56, faceDown: true });
   const pad = parseFloat(probe.style.width) - 40;
 
-  /* ── 牌牆的位置：擺在中央區（四家牌河的那一塊），照那塊的大小決定牌多大 ── */
-  const area = (document.getElementById('center') || document.getElementById('mid') || document.body)
-    .getBoundingClientRect();
+  /* ── 牌牆的位置：擺在四家手牌圍起來的那一塊（v2.19），照那塊的大小決定牌多大 ──
+     2026-10-27 使用者：「發牌動畫中的方城有點小，中間的牌能再加大些嗎？會比較有氣勢」→ 發牌實驗台 v0.9 →
+     「放大就好，不要和手牌重疊，視覺上不正常！」→「好，接進遊戲」。
+     以前只用中央區（四家牌河那一塊）的 86%、牌寬最大 26 px —— 桌機上方城很小（中央其實還很空）。
+     現在：左家手牌的右緣～右家手牌的左緣、對家手牌的下緣～自己手牌的上緣，佔 94%、牌寬最大 60 px（桌機約 45、筆電 29）。
+     量不到手牌（版面還沒排好）就退回中央區 */
+  const rectOf = id => { const e = document.getElementById(id); return e ? e.getBoundingClientRect() : null; };
+  let area = (document.getElementById('center') || document.getElementById('mid') || document.body).getBoundingClientRect();
+  let FILL = 0.86, CAP = 26;
+  {
+    const hl = rectOf('hand-left'), hr = rectOf('hand-right'), ht = rectOf('hand-top'), hb = rectOf('hand-bottom');
+    if (hl && hr && ht && hb && hr.left - hl.right > 100 && hb.top - ht.bottom > 100) {
+      area = { left: hl.right, top: ht.bottom, width: hr.left - hl.right, height: hb.top - ht.bottom };
+      FILL = 0.94; CAP = 60;
+    }
+  }
   const cx = area.left + area.width / 2;
   const cy = area.top + area.height / 2;
   /* 立體版的尺寸（見檔頭「只有兩種牌」）：
@@ -249,8 +262,8 @@ function run(opts) {
     const wH = t * LONG, hV = t * ASPECT.tileV, hH = wH * ASPECT.tileH;
     return { W: STACKS * t + 2 * wH + 6, H: STACKS * hH * TOP.tileH + 2 * (hV + hV * (1 - TOP.tileV)) + 6 };
   };
-  let tw = 26;
-  while (tw > 6 && (fit(tw).W > area.width * 0.86 || fit(tw).H > area.height * 0.86)) tw--;
+  let tw = CAP;
+  while (tw > 6 && (fit(tw).W > area.width * FILL || fit(tw).H > area.height * FILL)) tw--;
   const wH = Math.round(tw * LONG);
   const hV = Math.round(tw * ASPECT.tileV), hH = Math.round(wH * ASPECT.tileH);
   const fV = Math.round(hV * TOP.tileV), eV = hV - fV;

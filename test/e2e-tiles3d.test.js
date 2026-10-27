@@ -38,12 +38,22 @@ const chromium = E.findChromium();
         A.run = function () { used.push(k); return r0.apply(this, arguments); };
       });
       MJDev.quickStart('qin', 2, 0);
-      let wallImgs = 0, pill = '', flying = 0, scales = new Set();
+      let wallImgs = 0, pill = '', flying = 0, scales = new Set(), wall = null;
+      /* v2.19 方城放大：量牌牆每張的寬、整座方城的外框，以及四家手牌圍起來的那一塊（動畫開始前量，那時手牌還在） */
+      const R = id => document.getElementById(id).getBoundingClientRect();
+      const free = { l: R('hand-left').right, r: R('hand-right').left, t: R('hand-top').bottom, b: R('hand-bottom').top };
       const t0 = Date.now();
       while (Date.now() - t0 < 20000) {
         ['dc-ok', 'map-ok'].forEach(id => { const b = document.getElementById(id); if (vis(b)) b.click(); });
         const n = document.querySelectorAll('#deal-anim img').length;
         if (n > wallImgs) wallImgs = n;
+        if (!wall && n >= 136) {
+          const ims = [...document.querySelectorAll('#deal-anim img')].filter(i => /back[VH]\.webp/.test(i.src));
+          const rs = ims.map(i => i.getBoundingClientRect());
+          const v = ims.find(i => /backV/.test(i.src));
+          if (rs.length >= 136) wall = { tw: v ? Math.round(v.getBoundingClientRect().width) : 0,
+            l: Math.min(...rs.map(r => r.left)), r: Math.max(...rs.map(r => r.right)), t: Math.min(...rs.map(r => r.top)), b: Math.max(...rs.map(r => r.bottom)) };
+        }
         // 擲骰：飛行中的骰子（有動畫在跑）、大小有沒有變；膠囊的字
         document.querySelectorAll('#deal-anim img[src*="dice/die"]').forEach(d => {
           if (d.getAnimations().some(a => a.playState === 'running')) {
@@ -57,7 +67,7 @@ const chromium = E.findChromium();
         if (fb) { fb.click(); break; }
         await wait(40);
       }
-      out.used = used; out.wallImgs = wallImgs;
+      out.used = used; out.wallImgs = wallImgs; out.wall = wall; out.free = free;
       out.pill = pill; out.flying = flying; out.sizes = scales.size;
       out.total = window.MJDealAnim3D && MJDealAnim3D.lastInfo ? MJDealAnim3D.lastInfo.total : null;
       await wait(400);
@@ -79,6 +89,9 @@ const chromium = E.findChromium();
     ok(r.ready, '牌身的圖都載完（MJTiles.bodiesReady）', JSON.stringify(r));
     ok(r.used.length && r.used.every(k => k === '3d'), '發牌動畫用立體版（MJDealAnim3D）', JSON.stringify(r.used));
     ok(r.wallImgs >= 136, '發牌動畫的牌牆是立體牌的圖（136 張）', String(r.wallImgs));
+    ok(r.wall && r.wall.tw >= 28, '方城放大：筆電畫面的牌寬 ≥ 28（以前 26，v2.19）', JSON.stringify(r.wall));
+    ok(r.wall && r.wall.l >= r.free.l - 1 && r.wall.r <= r.free.r + 1 && r.wall.t >= r.free.t - 1 && r.wall.b <= r.free.b + 1,
+       '方城整座在四家手牌圍起來的那一塊裡（不跟手牌重疊）', JSON.stringify({ wall: r.wall, free: r.free }));
     ok(r.flying > 0 && r.sizes >= 3, '骰子是丟過來的：飛行中有動畫、大小一路在變（電鐵式擲骰）', JSON.stringify({ flying: r.flying, sizes: r.sizes }));
     ok(r.total != null && r.pill.replace(/\s/g, '') === '擲出' + r.total + '點', '落地亮「擲出 N 點」，N＝這一局的骰子', JSON.stringify({ pill: r.pill, total: r.total }));
     ok(r.own.length >= 13 && r.own.every(x => !x), '自己的手牌維持平面', JSON.stringify(r.own));
