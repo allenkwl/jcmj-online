@@ -1,0 +1,414 @@
+<!doctype html>
+<html lang="zh-Hant">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>發牌動畫</title>
+<meta name="description" content="發牌動畫實驗台：立體版（寫實的牌與骰子）、現行版、舊版對照，改的是副本，不會動到線上玩家">
+<meta name="launcher-icon" content="🀄">
+<meta name="launcher-cat" content="動畫">
+<meta name="launcher-needs-server" content="1">
+<!--
+  v0.9（2026-10-27）：方城放大 —— devtools/發牌動畫/deal-anim-3d-big.js（預設選它），「方城大小」選單：現在／大／特大。
+  使用者：「我覺得發牌動畫中的方城有點小，中間的牌能再加大些嗎？會比較有氣勢，一樣先改測試程式」。
+  這一版用遊戲自己的牌組（v2.16 起本國的壓克力牌），不注入 tiles-sets.js。遊戲本體沒動。v0.8 保留。
+  v0.8（2026-10-26）：牌組改成九套（豬肝紅、金黃、七國旗幟顏色）。使用者：「七國是不是該有七種顏色的麻將牌來代表？」
+  →「A＋旗幟顏色＋保留豬肝紅」。v0.7 保留。
+  v0.7（2026-10-26）：加「兩套牌（豬肝紅／金黃金屬）＋別家的手牌立起來」—— devtools/發牌動畫/deal-anim-3d-sets.js（預設選它），
+  牌桌注入 devtools/立體牌/tiles-sets.js（跟立體牌預覽 v0.3 同一支）。使用者：「整套牌一起畫……再另外畫一組金黃色……
+  兩套牌都一樣要放發牌測試程式」「我看過再進遊戲」。遊戲本體沒動。v0.6 保留。
+  v0.6（2026-10-25）：加入「立體版＋電鐵式擲骰」devtools/發牌動畫/deal-anim-3d-throw.js（預設選它）——
+  使用者：「修改一下發牌程式，擲骰子動畫可以參考一下小球貓電鐵的動畫嗎？」骰子從莊家手邊沿拋物線丟出、
+  飛到半路比落地更大、落地壓扁回彈、點數亮成膠囊（照 小球貓電鐵/game-web/擲骰動畫模擬v1.3.html）。
+  原本的立體版留著對照。同一天「好，接進遊戲」→ v2.08 起 src/deal-anim-3d.js 就是電鐵式擲骰（跟 deal-anim-3d-throw.js 同一份）。v0.5 保留。
+  v0.5（2026-10-24）：v1.95 起立體牌已經在遊戲本體。「牌桌也用立體牌」改切遊戲自己的開關 MJTiles.use3D()，不再注入
+  devtools/立體牌/tiles-3d.js；動畫副本 deal-anim-3d.js 跟 src/deal-anim-3d.js 同步（使用者：「測試程式也要更新」）。v0.4 保留。
+
+  v0.4（2026-10-24）：立體版改用立體牌預覽（devtools/立體牌v0.1.html）定案的那組牌身，**牌桌也一起換成立體牌**
+  （注入 devtools/立體牌/tiles-3d.js）—— 使用者：「發牌動畫後，變回平面？」：v0.3 動畫是立體的，
+  結束後露出來的是遊戲原本的平面牌桌。v0.3 保留不刪。
+
+  v0.3（2026-10-24）：加入**立體版** devtools/發牌動畫/deal-anim-3d.js —— 牌牆與骰子換成寫實渲染的圖
+  （使用者：「發牌動畫的牌畫得有點醜，能畫成立體的嗎？」「參考一下小球貓電鐵的骰子」「先改發牌測試程式，不要接進遊戲」）。
+  圖在 devtools/發牌動畫/sprites/（Codex 生、透明背景）。流程、節奏照遊戲本體 src/deal-anim.js。v0.2 保留不刪。
+
+  發牌動畫的實驗台（2026-10-13 使用者：「發牌的動畫抽出來另一個程式，感覺需要修一下，不要影響到線上玩家」）。
+
+  v0.2（2026-10-14）：加入**新版**動畫 devtools/發牌動畫/deal-anim-wall.js —— 牌牆升起、莊家擲骰開門、
+  一家一次抓 4 張轉三圈再補 1 張、自己理牌（使用者：「先按照你的建議完整做出來，我們看結果再決定」）。
+  舊版（deal-anim-lab.js，v1.53 以前線上用的）保留，可以切換對照。v0.1 保留不刪。
+  ⚠️ v1.54 起新版已經搬進遊戲本體（src/deal-anim.js）。這一頁跑的仍是 devtools 裡的副本，
+     在這裡調好之後，要把 T_ 等改動抄回 src/deal-anim.js 才會上線。
+
+  ── 為什麼不直接改 src/deal-anim.js ──
+  所有版本的遊戲本體共用同一支 src/deal-anim.js（模組檔名沒有版號）。
+  改它再 push，等於立刻改了每一位線上玩家的發牌動畫 —— 改到一半的東西也一樣。
+  所以這一頁跑的是**副本** devtools/發牌動畫/deal-anim-lab.js，掛在 window.MJDealAnimLab，
+  跟遊戲本體的 MJDealAnim 是兩個名字，互不覆蓋。改好再搬回本體、照規矩另存新版。
+
+  ── 為什麼還是用 iframe 載遊戲 ──
+  動畫的座標是從**真的牌桌**量出來的（getBoundingClientRect），不是自己算版面。
+  自己畫一張假牌桌，量到的位置就會跟遊戲對不上（CLAUDE.md：「編輯器騙人比沒有編輯器更糟」）。
+  所以 iframe 載最新版遊戲的 #preview（假牌局、不讀寫存檔、遊戲自己的發牌動畫跳過），
+  再把副本注入那個 iframe、對著它的牌桌跑。
+
+  ⚠️ 要跨框操作，所以**一定要經開發伺服器開**（http://），雙擊 file:// 會讀不到 iframe 裡的東西。
+-->
+<style>
+:root{--bg:#0b120e;--panel:#141d17;--line:#2a3a2f;--ink:#e9e3cf;--quiet:#9fb3a6;--gold:#e8c46a;}
+*{box-sizing:border-box;}
+html,body{height:100%;margin:0;background:var(--bg);color:var(--ink);font:13px/1.5 -apple-system,'PingFang TC','Noto Sans TC',sans-serif;}
+body{display:grid;grid-template-columns:300px 1fr;}
+#panel{background:var(--panel);border-right:1px solid var(--line);padding:16px;overflow:auto;}
+h1{font-size:16px;margin:0 0 4px;color:var(--gold);}
+.sub{color:var(--quiet);font-size:12px;margin:0 0 16px;}
+.note{border:1px solid var(--line);border-radius:6px;padding:8px 10px;color:var(--quiet);font-size:12px;margin-bottom:16px;}
+.note b{color:var(--ink);}
+label{display:block;margin:10px 0 4px;color:var(--quiet);font-size:12px;}
+select,input[type=number]{width:100%;background:#0e1611;color:var(--ink);border:1px solid var(--line);border-radius:4px;padding:5px 6px;font:inherit;}
+.row{display:flex;gap:8px;align-items:center;}
+.row input[type=range]{flex:1;}
+button{background:#22301f;color:var(--ink);border:1px solid #3b5235;border-radius:6px;padding:7px 10px;font:inherit;cursor:pointer;}
+button.main{background:var(--gold);color:#20160a;border-color:var(--gold);font-weight:600;width:100%;padding:10px;font-size:14px;}
+button:disabled{opacity:.5;cursor:default;}
+.grid{display:grid;grid-template-columns:1fr 84px;gap:4px 8px;align-items:center;}
+.grid span{color:var(--quiet);font-size:12px;}
+.grid input{padding:3px 6px;}
+#status{margin-top:10px;font-size:12px;color:var(--quiet);min-height:3em;white-space:pre-wrap;}
+#status.err{color:#f0a08a;}
+pre{background:#0e1611;border:1px solid var(--line);border-radius:4px;padding:8px;font-size:11px;white-space:pre-wrap;color:var(--ink);}
+#stage{position:relative;overflow:hidden;display:flex;align-items:center;justify-content:center;}
+#frameWrap{position:absolute;transform-origin:0 0;box-shadow:0 0 0 1px var(--line);}
+#frameWrap iframe{border:0;display:block;background:#000;}
+#size{position:absolute;right:10px;bottom:8px;color:var(--quiet);font-size:11px;}
+</style>
+</head>
+<body>
+<div id="panel">
+  <h1>發牌動畫實驗台</h1>
+  <p class="sub" id="ver">載入中⋯</p>
+
+  <div class="note"><b>立體版</b> <code>deal-anim-3d.js</code>（寫實的牌與骰子，圖在 <code>sprites/</code>）、
+  現行版 <code>deal-anim-wall.js</code>、舊版 <code>deal-anim-lab.js</code> 都在 <code>devtools/發牌動畫/</code>，都是<b>副本</b>，
+  遊戲本體（<code>src/deal-anim.js</code>）完全沒動。改了程式碼不用重新整理，按「播放」就會重新載入。</div>
+
+  <button class="main" id="play" disabled>▶ 播放（R）</button>
+  <div id="status">等遊戲載入⋯</div>
+
+  <label>動畫版本</label>
+  <select id="which">
+    <option value="big" selected>方城放大（實驗中）</option>
+    <option value="sets">兩套牌＋別家手牌立著（實驗中）</option>
+    <option value="throw">立體版＋電鐵式擲骰（＝線上，v2.08 起）</option>
+    <option value="d3">立體版：原地滾骰（v2.07 以前）</option>
+    <option value="wall">現行版：牌牆＋擲骰（＝線上）</option>
+    <option value="lab">舊版：牌從中央噴出（v1.53 以前）</option>
+  </select>
+
+  <label>方城大小（只有「方城放大」那一版）</label>
+  <select id="wsize">
+    <option value="now">現在（中央區、牌寬最大 26）</option>
+    <option value="big" selected>大（四家手牌圍起來的整塊空間）</option>
+    <option value="huge">特大（整個牌桌，發牌時蓋過手牌的位置）</option>
+  </select>
+
+  <label>牌組（只有「兩套牌」那一版）</label>
+  <select id="tset">
+    <option value="maroon" selected>豬肝紅（預設）</option>
+    <option value="gold">金黃（征服四國起）</option>
+    <option value="qi-acrylic">齊・藍（壓克力）</option>
+    <option value="chu-acrylic">楚・綠（壓克力）</option>
+    <option value="yan-acrylic">燕・紫（壓克力）</option>
+    <option value="han-acrylic">韓・橙（壓克力）</option>
+    <option value="wei-acrylic">魏・朱紅（壓克力）</option>
+    <option value="zhao-acrylic">趙・青（壓克力）</option>
+    <option value="qin-acrylic">秦・深灰（壓克力）</option>
+    <option value="qi">齊・藍（亮面漆，對照）</option>
+    <option value="chu">楚・綠（亮面漆，對照）</option>
+    <option value="yan">燕・紫（亮面漆，對照）</option>
+    <option value="han">韓・橙（亮面漆，對照）</option>
+    <option value="wei">魏・朱紅（亮面漆，對照）</option>
+    <option value="zhao">趙・青（亮面漆，對照）</option>
+    <option value="qin">秦・黑（亮面漆，對照）</option>
+  </select>
+  <label class="row"><input type="checkbox" id="stand" checked> 別家的手牌立著</label>
+
+  <label>莊家</label>
+  <select id="dealer">
+    <option value="rand" selected>每次隨機</option>
+    <option value="0">自己</option><option value="1">下家（右）</option>
+    <option value="2">對家（上）</option><option value="3">上家（左）</option>
+  </select>
+
+  <label>本國</label>
+  <select id="kingdom">
+    <option value="qi">齊</option><option value="chu">楚</option><option value="yan">燕</option>
+    <option value="han">韓</option><option value="wei">魏</option><option value="zhao">趙</option>
+    <option value="qin" selected>秦</option>
+  </select>
+
+  <label>畫面尺寸</label>
+  <select id="vp">
+    <option value="1920x1080">桌機 1920×1080</option>
+    <option value="1280x720">筆電 1280×720</option>
+    <option value="932x430">手機橫放 932×430（大支）</option>
+    <option value="667x375">手機橫放 667×375（SE）</option>
+  </select>
+
+  <label class="row"><input type="checkbox" id="table3d" checked> 牌桌也用立體牌（動畫結束後不會變回平面）</label>
+  <label class="row"><input type="checkbox" id="sound" checked> 音效</label>
+
+  <label>速度倍率 <b id="speedVal">1.00×</b>（>1 變快）</label>
+  <div class="row"><input type="range" id="speed" min="0.25" max="3" step="0.05" value="1"></div>
+
+  <label>節奏（毫秒，T_；改了下一次播放生效）</label>
+  <div class="grid" id="tune"></div>
+
+  <p style="margin-top:12px"><button id="copy">複製目前數值</button> <button id="reset">回到檔案預設</button></p>
+  <pre id="out" hidden></pre>
+</div>
+
+<div id="stage"><div id="frameWrap"></div><div id="size"></div></div>
+
+<script src="../latest.js"></script>
+<script>
+'use strict';
+/* T_ 每一項的中文說明 —— 跟副本檔頭的註解同一套，順序也一樣 */
+const LABELS = {
+  // 舊版
+  flyStagger: '每張起飛間隔', flipStagger: '翻牌間隔', flipHalf: '翻牌單邊', flipTail: '翻完緩衝', flyTail: '落地後緩衝',
+  // 新版
+  riseStagger: '牌牆每墩間隔', riseDur: '牌牆升起', riseTail: '升起後停頓',
+  diceRoll: '骰子滾動／飛行', diceLand: '骰子落地回彈', diceHold: '骰子停住', markDur: '開門亮起',
+  grabGap: '每手間隔', landFlip: '落手立起（單邊）', wallFade: '牌牆淡出',
+  // 兩版都有
+  flyDur: '飛行時間', beforeSort: '理牌前停頓', sortDur: '理牌補間', sortTail: '理牌後緩衝',
+};
+/* 兩支動畫：路徑相對於 iframe 裡的遊戲（在專案根目錄）、各自掛在不同的全域名字 */
+const ANIMS = {
+  big:   { src: 'devtools/發牌動畫/deal-anim-3d-big.js', global: 'MJDealAnim3D' },
+  sets:  { src: 'devtools/發牌動畫/deal-anim-3d-sets.js', global: 'MJDealAnim3D' },
+  throw: { src: 'devtools/發牌動畫/deal-anim-3d-throw.js', global: 'MJDealAnim3D' },
+  d3:   { src: 'devtools/發牌動畫/deal-anim-3d.js',   global: 'MJDealAnim3D' },
+  wall: { src: 'devtools/發牌動畫/deal-anim-wall.js', global: 'MJDealAnimWall' },
+  lab:  { src: 'devtools/發牌動畫/deal-anim-lab.js',  global: 'MJDealAnimLab' },
+};
+const which = () => document.getElementById('which').value;
+const $ = id => document.getElementById(id);
+
+const file = window.MJ_LATEST && window.MJ_LATEST.file;
+let frame = null, busy = false;
+/* 兩版的節奏欄位不一樣，各記各的 */
+const store = { big: { base: null, defaults: null }, sets: { base: null, defaults: null }, throw: { base: null, defaults: null }, d3: { base: null, defaults: null }, wall: { base: null, defaults: null }, lab: { base: null, defaults: null } };
+let base = null, fileDefaults = null;
+function useStore() { base = store[which()].base; fileDefaults = store[which()].defaults; }
+
+function status(msg, err) { $('status').textContent = msg; $('status').className = err ? 'err' : ''; }
+
+/* ── iframe：載最新版遊戲的 #preview ── */
+function mount() {
+  if (!file) { status('讀不到 ../latest.js，不知道該載哪一版遊戲', true); return; }
+  if (location.protocol === 'file:') {
+    status('⚠ 要經開發伺服器開（http://），雙擊開的 file:// 讀不到 iframe 裡面。\n雙擊「啟動戰國麻將.command」再從啟動台點進來。', true);
+    return;
+  }
+  $('ver').textContent = '遊戲：' + file;
+  frame = document.createElement('iframe');
+  frame.allow = 'autoplay';
+  frame.src = '../' + encodeURI(file) + '#preview';
+  frame.addEventListener('load', waitReady);
+  $('frameWrap').appendChild(frame);
+  applyViewport();
+}
+
+/* #preview 的 MJDev 跟牌面模組要等腳本跑完才有 */
+function waitReady() {
+  const t0 = Date.now();
+  const tick = () => {
+    const w = frame.contentWindow;
+    if (w && w.MJDev && w.MJTiles) { $('play').disabled = false; status('就緒。按「播放」或 R。'); return; }
+    if (Date.now() - t0 > 15000) { status('15 秒內等不到遊戲的 MJDev（預覽模式沒啟動？）', true); return; }
+    setTimeout(tick, 150);
+  };
+  tick();
+}
+
+/* ── 畫面尺寸：iframe 開成指定大小，再整個縮放塞進右邊 ── */
+function applyViewport() {
+  if (!frame) return;
+  const [vw, vh] = $('vp').value.split('x').map(Number);
+  frame.style.width = vw + 'px'; frame.style.height = vh + 'px';
+  const st = $('stage').getBoundingClientRect();
+  const k = Math.min((st.width - 32) / vw, (st.height - 32) / vh, 1);
+  const wrap = $('frameWrap');
+  wrap.style.transform = `scale(${k})`;
+  wrap.style.left = ((st.width - vw * k) / 2) + 'px';
+  wrap.style.top = ((st.height - vh * k) / 2) + 'px';
+  $('size').textContent = `${vw}×${vh}　顯示 ${(k * 100).toFixed(0)}%`;
+}
+
+/* ── 每次播放都重新注入副本 —— 改了 lab.js 不必重新整理 ── */
+function injectLab() {
+  const w = frame.contentWindow, d = w.document, a = ANIMS[which()];
+  return new Promise((ok, bad) => {
+    const id = 'mj-deal-' + which();
+    const old = d.getElementById(id);
+    if (old) old.remove();
+    const s = d.createElement('script');
+    s.id = id;
+    s.src = a.src + '?t=' + Date.now();
+    s.onload = () => w[a.global] ? ok(w[a.global]) : bad(new Error('載入了，但沒有掛上 ' + a.global));
+    s.onerror = () => bad(new Error('載不到 ' + a.src));
+    d.head.appendChild(s);
+  });
+}
+
+/* ── 牌桌的立體牌（devtools/立體牌/tiles-3d.js）：注入一次，之後照勾選開關 ── */
+/* 牌組＋別家手牌立著（devtools/立體牌/tiles-sets.js，注入一次）。不是「兩套牌」那一版就關掉立著、換回豬肝紅 */
+function applySets() {
+  const w = frame.contentWindow, d = w.document;
+  w.MJDealWallSize = $('wsize').value;               // 方城大小（deal-anim-3d-big.js 讀）
+  // 不是「兩套牌」那一版：用遊戲自己的牌組（v2.16 起本國的壓克力），不注入 tiles-sets.js
+  if (which() !== 'sets') { if (w.MJTileSets) w.MJTileSets.standing = false; return Promise.resolve(); }
+  const go = () => {
+    const on = which() === 'sets';
+    w.MJTileSets.standing = on && $('stand').checked;
+    return w.MJTileSets.load(on ? $('tset').value : 'maroon');
+  };
+  if (w.MJTileSets) return go();
+  return new Promise((ok, bad) => {
+    const s = d.createElement('script');
+    s.src = 'devtools/立體牌/tiles-sets.js?t=' + Date.now();
+    s.onload = () => ok(go()); s.onerror = () => bad(new Error('載不到 tiles-sets.js'));
+    d.head.appendChild(s);
+  });
+}
+function setTable3d() {
+  const w = frame.contentWindow;
+  if (!w.MJTiles || !w.MJTiles.use3D) { status('這一版遊戲沒有內建立體牌（v1.95 以前）—— 用發牌實驗台 v0.4', true); return Promise.resolve(); }
+  w.MJTiles.use3D($('table3d').checked);
+  try { w.MJDev.redraw(); } catch (_) {}
+  return Promise.resolve();
+}
+
+/* ── 節奏欄位 ── */
+function buildTune(T) {
+  const st = store[which()];
+  if (!st.defaults) st.defaults = Object.assign({}, T);
+  if (!st.base) st.base = Object.assign({}, T);
+  base = st.base; fileDefaults = st.defaults;
+  const g = $('tune'); g.innerHTML = '';
+  Object.keys(T).forEach(k => {
+    const sp = document.createElement('span'); sp.textContent = (LABELS[k] || k) + '　' + k;
+    const inp = document.createElement('input'); inp.type = 'number'; inp.min = 0; inp.step = 10; inp.value = base[k];
+    inp.addEventListener('input', () => { base[k] = Math.max(0, Number(inp.value) || 0); });
+    g.appendChild(sp); g.appendChild(inp);
+  });
+}
+function effective() {
+  const sp = Number($('speed').value) || 1, e = {};
+  Object.keys(base).forEach(k => { e[k] = Math.round(base[k] / sp); });
+  return e;
+}
+
+async function play() {
+  if (busy || !frame) return;
+  busy = true; $('play').disabled = true;
+  const w = frame.contentWindow;
+  try {
+    /* 兩套牌（v0.7）：先換牌桌的牌組、別家手牌立不立 —— 動畫程式載入時讀 MJTileSetBase，所以要在它之前 */
+    await applySets();
+    /* 先載動畫程式 —— 它跟牌桌無關，放在擺牌之前，省掉擺好牌之後的空等 */
+    const lab = await injectLab();
+    await setTable3d();
+
+    status('擺牌⋯');
+    // 新的一手：#preview 的假牌局，四家 13 張、沒有副露也沒有牌河
+    w.MJDev.scenario('start', $('kingdom').value);
+    /* ⚠️ 擺好牌的**同一瞬間**就把中央的主公像藏起來。預覽牌局一擺好，主公就開始播
+       出場動作（三張動作圖輪播）；原本這裡固定等 0.45 秒再載動畫，那段空檔整個看得到他
+       （2026-10-14 使用者：「一開始的主公動畫不要顯示，直接開始浮出四道牆」）。
+       動畫本身開頭也會藏、結束時放回來 —— 這裡只是把那段空檔補上。 */
+    const lord = w.document.getElementById('center-lord');
+    if (lord) lord.style.visibility = 'hidden';
+    /* 等到手牌真的畫好就開始，不再固定等 0.45 秒（量座標只需要元素在 DOM 裡） */
+    for (let i = 0; i < 20; i++) {
+      const hb = w.document.getElementById('hand-bottom');
+      if (hb && hb.children.length >= 13) break;
+      await new Promise(r => setTimeout(r, 15));
+    }
+    const me = w.MJDev.me();
+    if (!me || !me.hand || !me.hand.length) throw new Error('預覽牌局沒有手牌');
+    /* ⚠️ MJDev.me().hand 是牌的**名字字串**（'1萬'、'東'），不是牌物件。
+       直接交給動畫的話 makeTile 畫不出牌面，整排都是空白的白牌，等動畫結束、
+       底下真正的手牌露出來才看得到牌面（2026-10-14 使用者：「為什麼發出來的牌是白色的，
+       最後才出現？」）。遊戲本體給的是真正的牌物件，沒有這個問題 —— 是實驗台餵錯。
+       用遊戲自己發牌用的 makeDeck() 按名字換回牌物件。 */
+    const deck = w.MJState.makeDeck();
+    const myTiles = me.hand.map(d => {
+      const i = deck.findIndex(t => t.display === d);
+      if (i < 0) throw new Error('認不得這張牌：' + d);
+      return deck.splice(i, 1)[0];
+    });
+
+    useStore();
+    if (!base || $('tune').dataset.which !== which()) { buildTune(lab.T_); $('tune').dataset.which = which(); }
+    Object.assign(lab.T_, effective());                // 副本的 T_ 是 const 物件，改屬性就生效
+
+    if ($('sound').checked) { try { w.MJAudio && w.MJAudio.resume && w.MJAudio.resume(); } catch (_) {} }
+
+    status('播放中⋯（在畫面上按任意鍵或點一下＝跳過）');
+    const t0 = performance.now();
+    /* 副本只讀「自己那一家的手牌」決定翻開哪幾張，別家的張數從畫面量 ——
+       所以 match 只需要這一點點，不必把整個牌局交出去 */
+    const dv = $('dealer').value;
+    const dealer = dv === 'rand' ? Math.floor(Math.random() * 4) : Number(dv);
+    const r = await lab.run({ match: { hand: { seats: [{ hand: myTiles }] } }, mySeat: 0, dealer,
+                              seed: Math.floor(Math.random() * 2 ** 31), preview: false });
+    const ms = Math.round(performance.now() - t0);
+    const SEAT = ['自己', '下家', '對家', '上家'];
+    let info = '';
+    if (which() !== 'lab' && lab.lastInfo) {
+      const L = lab.lastInfo;
+      info = `\n莊家：${SEAT[L.dealer]}　骰子 ${L.dice[0]}＋${L.dice[1]}＝${L.total}　開${SEAT[L.wallSeat]}的牆、從右數第 ${L.total + 1} 墩起`;
+    }
+    const warn = ms > 7000 ? '\n⚠ 超過 7 秒：遊戲本體有 8 秒保險，太長會被占卜蓋掉' : '';
+    status(`結果：${r || 'done'}　實際 ${(ms / 1000).toFixed(2)} 秒${info}${warn}`);
+  } catch (e) {
+    status('失敗：' + (e && e.message || e), true);
+  } finally {
+    busy = false; $('play').disabled = false;
+  }
+}
+
+/* ── 輸出數值：照副本檔裡 T_ 的寫法，貼回去就能用 ── */
+function copyOut() {
+  if (!base) { status('先播一次，才讀得到副本的 T_', true); return; }
+  const e = effective();
+  const txt = 'const T_ = {\n' + Object.keys(e).map(k =>
+    `  ${(k + ':').padEnd(13)}${String(e[k]).padStart(4)},   // ${LABELS[k] || ''}`).join('\n') + '\n};';
+  $('out').hidden = false; $('out').textContent = txt;
+  try { navigator.clipboard.writeText(txt); status('已複製（速度倍率已經算進去）'); } catch (_) { status('複製失敗，請手動選取下面的文字'); }
+}
+
+$('play').addEventListener('click', play);
+$('table3d').addEventListener('change', () => { if (frame) setTable3d(); });
+$('which').addEventListener('change', () => { useStore(); $('tune').innerHTML = ''; $('tune').dataset.which = '';
+  $('out').hidden = true; status('已切換版本，按「播放」載入。'); });
+$('vp').addEventListener('change', applyViewport);
+$('speed').addEventListener('input', () => { $('speedVal').textContent = Number($('speed').value).toFixed(2) + '×'; });
+$('copy').addEventListener('click', copyOut);
+$('reset').addEventListener('click', () => {
+  if (!fileDefaults) return;
+  store[which()].base = Object.assign({}, fileDefaults); base = store[which()].base;
+  $('speed').value = 1; $('speedVal').textContent = '1.00×';
+  buildTune(fileDefaults); status('已回到檔案裡的數值');
+});
+window.addEventListener('resize', applyViewport);
+/* R 重播 —— 只在焦點在這一頁（不在 iframe 裡）時有效；iframe 裡的按鍵是「跳過」 */
+document.addEventListener('keydown', e => { if ((e.key === 'r' || e.key === 'R') && !e.metaKey && !e.ctrlKey) play(); });
+
+mount();
+</script>
+</body>
+</html>
