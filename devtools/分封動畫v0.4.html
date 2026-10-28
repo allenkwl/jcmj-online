@@ -1,0 +1,156 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>分封動畫</title>
+<meta name="description" content="分封領地動畫＋配樂試聽稿（GarageBand 取樣演奏的行進曲），可跟沒配樂對照；修正版、現行版對照">
+<meta name="launcher-icon" content="🏯">
+<meta name="launcher-cat" content="動畫">
+<meta name="launcher-needs-server" content="1">
+<!--
+  v0.4（2026-10-28）：加配樂的試聽稿 —— 使用者：「分封動畫沒有相應的 BGM，是不是做一曲？一樣用 Garage band 來轉」
+  「先放在測試程式，不要接進遊戲」。曲子是 tools/build-enfeoff-bgm-midi.py（G 大調五聲行進曲，96 BPM，一輪 40 秒），
+  `/usr/bin/python3 tools/build-enfeoff-bgm-midi.py --render` 出的 assets/audio/試聽/enfeoff.mp3（兩輪 80 秒），
+  複製一份到 devtools/分封動畫/enfeoff-bgm.mp3（試聽資料夾不進 git；放這裡線上的啟動台也聽得到）。重出試聽稿後記得再複製一次。這一頁在 MJEnfeoff.play 外面包一層：開播就放配樂、播完（按確認）淡出 —— 遊戲本體、遊戲的配樂清單都沒動。
+  v0.3 保留。
+  v0.3（2026-10-26）：主公被地圖框切掉的修正版 —— 使用者：「我一直覺得分封領地的動畫主公被截到不太好，能改嗎？
+  先做測試程式，ok 再接進遊戲」「不能讓主公貼在標題上嗎？」。
+  做法照 v0.2：iframe 載最新版遊戲的 #enfeoff（情境按鈕是遊戲本體 animPreview() 的）；勾「修正版」時再把
+  devtools/分封動畫/enfeoff-lab.js 注入 iframe，換掉遊戲的 MJEnfeoff。遊戲本體（src/enfeoff.js）沒動。
+  ⚠️ 要經開發伺服器開（http://）：要跨進 iframe 注入、呼叫 MJEnfeoff。v0.2 保留。
+-->
+<style>
+html,body{height:100%;margin:0;background:#050c09;color:#e8dcc0;font:13px/1.5 -apple-system,'PingFang TC',sans-serif;}
+#stage{position:fixed;inset:0;display:flex;align-items:center;justify-content:center;}
+#wrap{position:relative;transform-origin:50% 50%;box-shadow:0 0 0 1px #2a3a2f;}
+iframe{border:0;display:block;background:#000;}
+#bar{position:fixed;top:8px;right:8px;z-index:10;display:flex;gap:6px;align-items:center;flex-wrap:wrap;justify-content:flex-end;
+  background:rgba(20,29,23,.92);border:1px solid #2a3a2f;border-radius:8px;padding:6px 8px;max-width:96vw;}
+#bar button,#bar select{font:inherit;color:#e9e3cf;background:#22301f;border:1px solid #3b5235;border-radius:6px;padding:5px 10px;cursor:pointer;}
+#bar button.on{background:#e8c46a;color:#20160a;border-color:#e8c46a;font-weight:600;}
+#msg{color:#9fb3a6;font-size:12px;}
+.err{position:fixed;inset:0;display:flex;align-items:center;justify-content:center;color:#e8c46a;}
+</style>
+</head>
+<body>
+<div id="stage"><div id="wrap"></div></div>
+<div id="bar">
+  <button id="fix" class="on">修正版</button><button id="cur">現行版（＝線上）</button>
+  <button id="north">▶ 打北邊（燕、趙）</button>
+  <button id="bgm" class="on">♪ 配樂（試聽稿）</button>
+  <select id="vp">
+    <option value="full" selected>整個視窗</option>
+    <option value="1280x720">筆電 1280×720</option>
+    <option value="932x430">手機橫放 932×430</option>
+    <option value="667x375">手機橫放 667×375（SE）</option>
+  </select>
+  <span id="msg"></span>
+</div>
+<script src="../latest.js"></script>
+<script>
+'use strict';
+const $ = id => document.getElementById(id);
+const file = window.MJ_LATEST && window.MJ_LATEST.file;
+let frame = null, wantFix = true;
+const msg = t => { $('msg').textContent = t || ''; };
+
+/* ── 配樂（試聽稿）：這一頁自己放（按鈕、遊戲裡的「▶ 播放」都是點擊 —— 點擊會讓上層這一頁也能出聲） ── */
+let wantBgm = true, music = null, fadeT = null;
+function musicStart() {
+  if (!wantBgm) return;
+  clearInterval(fadeT);
+  if (!music) {
+    music = new Audio('分封動畫/enfeoff-bgm.mp3');
+    music.addEventListener('error', () => msg('⚠ 載不到 devtools/分封動畫/enfeoff-bgm.mp3'));
+  }
+  music.loop = true; music.currentTime = 0; music.volume = 0.85;
+  music.play().catch(() => msg('⚠ 瀏覽器擋住配樂：先在畫面上點一下再播'));
+}
+function musicStop() {
+  if (!music || music.paused) return;
+  clearInterval(fadeT);
+  fadeT = setInterval(() => {                    // 1.2 秒淡出
+    music.volume = Math.max(0, music.volume - 0.07);
+    if (music.volume <= 0) { clearInterval(fadeT); music.pause(); }
+  }, 100);
+}
+/* 在 iframe 裡的 MJEnfeoff.play 外面包一層：開播放配樂、結束（玩家按確認）淡出。修正版注入後、現行版載好後都要包 */
+function wrapPlay() {
+  const w = frame && frame.contentWindow;
+  if (!w || !w.MJEnfeoff || w.MJEnfeoff.__wrapped) return;
+  const play0 = w.MJEnfeoff.play;
+  w.MJEnfeoff.play = function (o) {
+    musicStart();
+    const p = play0.apply(this, arguments);
+    Promise.resolve(p).then(musicStop, musicStop);
+    return p;
+  };
+  w.MJEnfeoff.__wrapped = true;
+}
+
+function mount() {
+  if (!file) { document.body.insertAdjacentHTML('beforeend', '<div class="err">⚠ 讀不到 ../latest.js</div>'); return; }
+  if (location.protocol === 'file:') { msg('⚠ 要經開發伺服器開（http://）'); }
+  $('wrap').innerHTML = '';
+  frame = document.createElement('iframe');
+  frame.src = '../' + encodeURI(file) + '#enfeoff';      // ⚠️ 不要帶 &mute：這一頁是要看、也要聽的（v0.3 第一版帶了，整段沒聲音）
+  frame.allow = 'autoplay; fullscreen';
+  frame.addEventListener('load', () => {
+    if (wantFix) inject();
+    else { const t0 = Date.now(); const go = () => { if (frame.contentWindow.MJEnfeoff) { wrapPlay(); msg('現行版'); } else if (Date.now() - t0 < 10000) setTimeout(go, 150); }; go(); }
+  });
+  $('wrap').appendChild(frame);
+  size();
+  document.title = '分封動畫（' + (file.match(/v\d+\.\d+/) || [''])[0] + '）';
+}
+/* 修正版：把 enfeoff-lab.js 注入 iframe（換掉遊戲的 MJEnfeoff）；現行版：重新載入 iframe（遊戲原本那一支） */
+function inject() {
+  const w = frame.contentWindow, d = w.document;
+  const t0 = Date.now();
+  const go = () => {
+    if (!w.MJEnfeoff) { if (Date.now() - t0 < 10000) return setTimeout(go, 150); msg('等不到遊戲的 MJEnfeoff'); return; }
+    const s = d.createElement('script');
+    s.src = 'devtools/分封動畫/enfeoff-lab.js?t=' + Date.now();
+    s.onload = () => { wrapPlay(); msg('修正版（主公蓋在標題上、不被切）'); };
+    s.onerror = () => msg('載不到 enfeoff-lab.js');
+    d.head.appendChild(s);
+  };
+  go();
+}
+function size() {
+  if (!frame) return;
+  const v = $('vp').value;
+  if (v === 'full') { frame.style.width = innerWidth + 'px'; frame.style.height = innerHeight + 'px'; $('wrap').style.transform = ''; return; }
+  const [w, h] = v.split('x').map(Number);
+  frame.style.width = w + 'px'; frame.style.height = h + 'px';
+  const k = Math.min((innerWidth - 24) / w, (innerHeight - 70) / h, 1);
+  $('wrap').style.transform = `scale(${k})`;
+}
+/* 最容易被切到的情境：打北邊的燕、趙（地圖上 y＝17%），再一位打中間的韓 */
+$('north').onclick = () => {
+  const w = frame && frame.contentWindow;
+  if (!w || !w.MJEnfeoff) { msg('遊戲還沒載好'); return; }
+  /* 聲音：按鈕在這一頁、不在遊戲那一頁，瀏覽器只准「被點過的那一頁」出聲 ——
+     趁這次點擊叫醒遊戲的聲音（MJAudio.resume），再在遊戲那一頁送一次點擊（分封動畫自己的音效是點擊時才叫醒，src/enfeoff.js 的 wake） */
+  try { if (w.MJAudio && w.MJAudio.resume) w.MJAudio.resume(); } catch (_) {}
+  try { w.document.dispatchEvent(new w.MouseEvent('click', { bubbles: true })); } catch (_) {}
+  // 遊戲的情境選單（#ip-gate）蓋在動畫上面：播的時候收起來、播完放回來（同遊戲自己的「▶ 播放」）
+  const gate = w.document.getElementById('ip-gate');
+  if (gate) gate.style.display = 'none';
+  Promise.resolve(w.MJEnfeoff.play({
+    lords: [{ name: '小球貓', home: 'qi', conquered: ['wei'] }, { name: '阿明', home: 'chu', conquered: [] },
+            { name: '小華', home: 'qin', conquered: [] }],
+    awards: [{ rank: 1, name: '小球貓', gained: 'yan' }, { rank: 2, name: '阿明', gained: 'zhao' },
+             { rank: 3, name: '小華', gained: 'han' }],
+  })).then(() => { if (gate) gate.style.display = 'flex'; }, () => { if (gate) gate.style.display = 'flex'; });
+};
+$('fix').onclick = () => { wantFix = true; $('fix').classList.add('on'); $('cur').classList.remove('on'); mount(); };
+$('cur').onclick = () => { wantFix = false; $('cur').classList.add('on'); $('fix').classList.remove('on'); mount(); };
+$('vp').onchange = size;
+$('bgm').onclick = () => { wantBgm = !wantBgm; $('bgm').classList.toggle('on', wantBgm); if (!wantBgm) musicStop(); };
+addEventListener('resize', size);
+mount();
+</script>
+</body>
+</html>
