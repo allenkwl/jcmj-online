@@ -11,7 +11,8 @@
      2 同一場打完、開下一場：乙那台照常占卜、牌局往前（v2.19：回座標記沒清，下一場第一局又跳過占卜、整桌停住）
    第二桌：丙（開桌）＋丁
      3 丁跳背景＋斷線，這段期間丙打完這一場、開了下一場（沒有丁）→ 丁回到前景：
-       回到房間、寫「這一場打完你就入座」、是待入座、沿用原本的國、不跳擇國畫面（v2.19：畫面停在上一場，下一場也排不進去）
+       轉成待入座、自動進蓋牌觀戰（v2.21；沒登入）→ 按離開回到房間、寫「這一場打完你就入座」、沿用原本的國、不跳擇國畫面
+       （v2.19：畫面停在上一場，下一場也排不進去）
        → 丙再打完一場 → 丁入座
    手機橫放（808×340，沒登入）
      4 大廳最上面（標題、改名字）捲得到、沒有被切在畫面外；改名字的輸入框跟「確定」排同一列
@@ -272,13 +273,22 @@ const member = p => p.page.evaluate(async () => {
     await sleep(1500);
     await D.page.evaluate(() => { firebase.database().goOnline(); __bg(false); });
     const dBack = await D.page.evaluate(async () => {
+      // v2.21：等入座的人自動去看這一桌（丁沒登入 → 蓋牌觀戰）；按離開觀戰回到房間
+      const watching = await __until(() => document.body.classList.contains('spectating') && window.__test.spect && window.__test.spect.match && window.__test.spect.match.hand, 15000);
+      const zone = id => { const t = [...document.querySelectorAll('#hand-' + id + ' .tile')]; return { n: t.length, back: t.filter(x => x.classList.contains('back')).length }; };
+      const spectInfo = { covered: !!(window.__test.spect && window.__test.spect.covered), label: document.getElementById('spect-label').textContent,
+                          bottom: zone('bottom'), top: zone('top'), toast: __toast() };
+      document.getElementById('spect-exit').click();
       const room = await __until(() => __vis(document.getElementById('net-room')) && /這一場打完你就入座/.test(document.getElementById('room-count').textContent), 15000);
       await new Promise(r => setTimeout(r, 800));
-      return { room, count: document.getElementById('room-count').textContent, net: MJDev.net,
+      return { watching, spectInfo, room, count: document.getElementById('room-count').textContent, net: MJDev.net,
                picking: !!document.querySelector('#sel-screen.show.online'), watch: __vis(document.getElementById('room-watch')),
                members: document.getElementById('room-members').textContent, toast: __toast() };
     });
-    ok(dBack.room && !dBack.net, '丁回到前景：這一場沒有他的座位 → 回到房間，寫「這一場打完你就入座」', JSON.stringify(dBack));
+    ok(dBack.watching && dBack.spectInfo.covered && /蓋牌/.test(dBack.spectInfo.label), '丁回到前景：這一場沒有他的座位 → 自動進蓋牌觀戰（沒登入）', JSON.stringify(dBack.spectInfo));
+    ok(dBack.spectInfo.bottom.n >= 13 && dBack.spectInfo.bottom.back === dBack.spectInfo.bottom.n && dBack.spectInfo.top.back === dBack.spectInfo.top.n,
+       '蓋牌觀戰：手牌都是牌背', JSON.stringify(dBack.spectInfo));
+    ok(dBack.room && !dBack.net, '按離開觀戰 → 回到房間，寫「這一場打完你就入座」', JSON.stringify(dBack));
     ok(!dBack.picking && /丁　韓國/.test(dBack.members), '沿用原本的韓國，不跳擇國畫面', JSON.stringify(dBack));
     const md = await member(D);
     ok(md && md.pending === true && md.picked === true && md.kingdom === 'han', '丁的成員資料：待入座、已選國（韓）', JSON.stringify(md));

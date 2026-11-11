@@ -3,7 +3,8 @@
    本機 Firebase 模擬器（**還沒部署的那份規則** database.rules.next.json —— 有 /spect、/watch）＋ 無頭 Chromium：
      甲：登入（Email＋密碼）→ 開桌、一個人帶三家電腦開打
      丙：登入、不在牌桌上 → 大廳看到「👀 觀戰」→ 四家的牌攤開、坐在電腦的位置、即時跟著牌局、◀ ▶ 換座位、離開回大廳
-     丁：沒登入（匿名）→ 按觀戰被擋（要先登入）
+     丁：沒登入（匿名）→ 按觀戰進**蓋牌觀戰**（v2.21：看公開的那一份，四家的手牌都是牌背；/spect 照樣讀不到）
+     丙加入這一桌等入座（v2.21）：選好國就自動進觀戰（四家攤開），按離開回房間、不會再被拉回去
      丙再看一次、改按左上 ↩ → 跟「離開觀戰」一樣回大廳、配樂換回來（v1.82）
    規則：牌桌上的甲（有登入）讀不到 /spect、匿名的丁讀不到；沒人觀戰時開桌的人不發觀戰資料。
    執行： node test/e2e-spectate.test.js                                                        */
@@ -144,12 +145,22 @@ async function register(p, email) {
     const dTry = await D.page.evaluate(async () => {
       await __until(() => document.querySelector('#lobby-groups .net-watch'), 15000);
       document.querySelector('#lobby-groups .net-watch').click();
-      await __until(() => document.getElementById('ask-ov').classList.contains('show'), 5000);
-      const msg = document.getElementById('ask-msg').textContent;
-      document.getElementById('ask-ok').click();
-      return { msg, spectating: document.body.classList.contains('spectating') };
+      const got = await __until(() => __test.spect && __test.spect.match && __test.spect.match.hand, 15000);
+      const zone = id => { const t = [...document.querySelectorAll('#hand-' + id + ' .tile')]; return { n: t.length, back: t.filter(x => x.classList.contains('back')).length }; };
+      const out = { got, spectating: document.body.classList.contains('spectating'), covered: !!(__test.spect && __test.spect.covered),
+                    label: document.getElementById('spect-label').textContent, toast: __toast(),
+                    zones: { top: zone('top'), left: zone('left'), right: zone('right'), bottom: zone('bottom') },
+                    river: document.querySelectorAll('[id^="river-"] .tile').length,
+                    selfinfo: document.getElementById('selfinfo').textContent };
+      document.getElementById('spect-exit').click();
+      out.back = await __until(() => __vis(document.getElementById('net-lobby')) && !document.body.classList.contains('spectating'), 10000);
+      return out;
     });
-    ok(/觀戰要先登入/.test(dTry.msg) && !dTry.spectating, '沒登入按觀戰：提示要先登入、不進觀戰', JSON.stringify(dTry));
+    ok(dTry.got && dTry.spectating && dTry.covered && /蓋牌/.test(dTry.label), '沒登入按觀戰：進蓋牌觀戰（v2.21）', JSON.stringify(dTry));
+    ok(['top', 'left', 'right', 'bottom'].every(p => dTry.zones[p].n >= 13 && dTry.zones[p].back === dTry.zones[p].n),
+       '蓋牌觀戰：四家的手牌都是牌背（下面這一家也是）', JSON.stringify(dTry.zones));
+    ok(/手牌是蓋著的/.test(dTry.toast), '蓋牌觀戰：提示「沒登入：手牌是蓋著的」', dTry.toast);
+    ok(dTry.back, '離開蓋牌觀戰：回到大廳', JSON.stringify(dTry));
     const wD = await D.page.evaluate(async k => { try { await Net.db.ref('watch/' + k + '/' + Net.uid).set(true); return 'written'; } catch (e) { return 'denied'; } }, key);
     ok(wD === 'denied', '匿名的人不能登記觀戰（規則擋）', wD);
 
@@ -186,6 +197,32 @@ async function register(p, email) {
     ok(back2.back && !back2.spect && !back2.bar && back2.watching === null, '觀戰按 ↩：回大廳、觀戰收掉、觀戰登記拿掉', JSON.stringify(back2));
     ok(back2.bgmIn !== 'title' && back2.bgm === 'title', '觀戰按 ↩：牌桌曲停掉、換回大廳的曲子', JSON.stringify(back2));
     ok(back2.backTitle === '回標題（B）', '離開觀戰後 ↩ 的提示換回「回標題（B）」', back2.backTitle);
+
+    // ── 丙加入這一桌等入座（v2.21）：選好國就自動去看這一桌 ──
+    const auto = await C.page.evaluate(async () => {
+      const r = [...document.querySelectorAll('#lobby-groups .net-row')].find(x => /觀戰測試桌/.test(x.textContent));
+      r.click();
+      await __until(() => document.querySelector('#sel-screen.show.online') && document.querySelectorAll('#kg-home .kcard').length === 7, 15000);
+      document.querySelector('#kg-home .kcard[data-id="chu"]').click();
+      await __until(() => !document.getElementById('btn-start').disabled, 5000);
+      document.getElementById('btn-start').click();
+      const got = await __until(() => document.body.classList.contains('spectating') && __test.spect && __test.spect.match && __test.spect.match.hand, 15000);
+      const zone = id => { const t = [...document.querySelectorAll('#hand-' + id + ' .tile')]; return { n: t.length, back: t.filter(x => x.classList.contains('back')).length }; };
+      const out = { got, fromRoom: !!(__test.spect && __test.spect.fromRoom), covered: !!(__test.spect && __test.spect.covered),
+                    top: zone('top'), toast: __toast() };
+      document.getElementById('spect-exit').click();
+      out.room = await __until(() => __vis(document.getElementById('net-room')) && !document.body.classList.contains('spectating'), 10000);
+      out.count = document.getElementById('room-count').textContent;
+      await new Promise(r2 => setTimeout(r2, 2500));
+      out.stay = __vis(document.getElementById('net-room')) && !document.body.classList.contains('spectating');
+      out.watchBtn = __vis(document.getElementById('room-watch'));
+      return out;
+    });
+    ok(auto.got && auto.fromRoom && !auto.covered, '登入的丙加入等入座：選好國就自動進觀戰（不用自己按）', JSON.stringify(auto));
+    ok(auto.top.n >= 13 && auto.top.back === 0, '登入的人看的是四家攤開的牌', JSON.stringify(auto.top));
+    ok(/這一場打完你就入座/.test(auto.toast), '自動觀戰時提示「這一場打完你就入座」', auto.toast);
+    ok(auto.room && /這一場打完你就入座/.test(auto.count), '按離開觀戰：回到房間（寫這一場打完你就入座）', JSON.stringify(auto));
+    ok(auto.stay && auto.watchBtn, '回房間之後不會再被拉回觀戰；房間裡的「觀戰」還在', JSON.stringify(auto));
 
     [A, C, D].forEach((p, i) => ok(p.errors.length === 0, '甲丙丁'[i] + '的頁面沒有 JavaScript 錯誤', p.errors.slice(0, 3).join(' | ')));
   } catch (e) {

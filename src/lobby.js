@@ -455,13 +455,17 @@ function mySeatCached(key) {
 function doSpectate(key, name, pendingIndex, fromRoom) {
   if (!cfg.onSpectate) return;
   const a = Net.account ? Net.account() : { loggedIn: false };
-  if (!a.loggedIn) {
+  /* 沒登入（v2.21，2026-11-11 使用者：等入座時「就等於觀戰，這樣也不會無聊」→ 兩種都做）：
+     看蓋牌的 —— 牌河、副露、分數都看得到，四家的手牌是蓋著的（公開的那一份，規則不用改）。
+     四家攤開照舊要登入。舊版頁面沒有蓋牌觀戰（沒給 spectateCovered）→ 照舊請他登入 */
+  const covered = !a.loggedIn;
+  if (covered && !cfg.spectateCovered) {
     notice('觀戰要先登入（Google 或 Email）。\n登入之後任何一桌都能看，四家的牌全部攤開。');
     return;
   }
   if (!fromRoom) Net.unwatchGroups();
   screen(null);
-  cfg.onSpectate({ key, name, pendingIndex, fromRoom: !!fromRoom });
+  cfg.onSpectate({ key, name, pendingIndex, fromRoom: !!fromRoom, covered });
 }
 function spectateFromRoom() {
   const g = cur && cur.last;
@@ -827,6 +831,14 @@ function pendingRoom(g) {
     }, ORPHAN_MS);
   } else cancelOrphanWatch();
   renderRoom(g);
+  /* 等入座的人選好國就直接去看這一桌（v2.21）—— 不用自己按「觀戰」，等的時候有東西看。
+     只自動帶一次：自己按離開觀戰回到房間之後不再拉回去（房間裡那顆「觀戰」還在）。
+     牌桌上的人都走了（上面的 orphan）就不帶，留在房間等這一桌交過來 */
+  if (cur && cur.pending && cur.picked && !cur.picking && !cur.autoWatched && cfg.onSpectate && cfg.autoSpectate
+      && !(members.length && members.every(m => m.pending))) {
+    cur.autoWatched = true;
+    spectateFromRoom();
+  }
 }
 
 function enterGame(g) {
@@ -960,6 +972,7 @@ function backToPending(g) {
   cur.ready = false;
   cur.rejoin = false;
   cur.pending = true;
+  cur.autoWatched = false;                        // 新的一段等待：再自動帶去觀戰一次（v2.21）
   cur.joinGameId = (g && g.gameId) || null;       // 這一場不算，換了一場才輪到我（pendingRoom）
   cur.campSynced = !!cur.picked;                  // 選過國的不再跳擇國畫面；進度快照下面重放一次
   Net.updateMyReady(false);

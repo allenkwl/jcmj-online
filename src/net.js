@@ -953,11 +953,22 @@ const Net = {
       .then(() => { sp.on('value', dataCb, denied); gr.on('value', groupCb); })
       .catch(denied);
   },
+  /* 蓋牌觀戰（v2.21）：沒登入的人看**公開的那一份**（/states：牌河、副露、分數、輪到誰；手牌只有張數）。
+     那一份本來就是登入與否都讀得到的（牌桌上每個人拿的也是它），所以不用登記 /watch、不碰 /spect，規則也不用改 */
+  startSpectatePublic(key, onData, onGroup) {
+    this.stopSpectate();
+    const sp = this.db.ref('states/' + key), gr = this.db.ref('groups/' + key);
+    const dataCb = s => onData(s.val()), groupCb = s => onGroup(s.val());
+    this._spect = { key, me: null, sp, gr, dataCb, groupCb };
+    sp.on('value', dataCb, () => {});
+    gr.on('value', groupCb);
+  },
   stopSpectate() {
     const s = this._spect;
     if (!s) return;
     this._spect = null;
     try { s.sp.off('value', s.dataCb); s.gr.off('value', s.groupCb); } catch (_) {}
+    if (!s.me) return;                 // 蓋牌觀戰沒有登記
     s.me.onDisconnect().cancel().catch(() => {});
     s.me.remove().catch(() => {});
   },

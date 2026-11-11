@@ -427,6 +427,8 @@ function renderSelfInfo(node, hand, seat) {
   clear(node);
   const me = hand.seats[seat];
   if (!me || hand.phase === 'over') { node.className = 'selfinfo'; return; }
+  // 手上不是真的牌（蓋牌觀戰的佔位牌、手牌還沒到的那一瞬間）：算向聽只會得到沒意義的答案（v2.21）
+  if (!handIsKnown(me)) { node.className = 'selfinfo'; return; }
 
   const tenpai = R_isTenpai(me);
   node.className = 'selfinfo' + (tenpai ? ' tenpai' : '');
@@ -755,7 +757,11 @@ function paint(dom, match, ui, mySeat) {
     if (pos === 'bottom') {
       renderMelds(z.melds, hand.seats[seat].melds, SIZE.ownMeld);
       const me = hand.seats[seat];
-      renderRow(z.hand, me.hand, {
+      /* ui.hideOwn（v2.21 蓋牌觀戰）：下面這一家也只畫牌背 —— 沒登入的人觀戰拿的是公開的那一份，四家都只有張數。
+         視角是「坐在這一家後面」，看到的本來就是他那排牌的背面 */
+      if (ui && ui.hideOwn) {
+        renderRow(z.hand, new Array(me.hand.length).fill(null), { w: SIZE.own.w, h: SIZE.own.h, faceDown: true });
+      } else renderRow(z.hand, me.hand, {
         w: SIZE.own.w, h: SIZE.own.h,
         selected: ui && ui.selected,
         onClick: ui && ui.onTileClick,
