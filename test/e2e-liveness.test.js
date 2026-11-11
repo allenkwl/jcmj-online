@@ -189,15 +189,16 @@ const discards = p => p.page.evaluate(() => { const h = window.__test.match && w
     ok(await P.page.evaluate(() => MJDev.netFrozen), '手機跳背景：凍住');
     await new Promise(r => setTimeout(r, 4600));
     /* 四位真人的桌（v1.94）：另外塞兩筆成員，名單湊滿 4 筆（手機只是在背景，它那一筆還在）——
-       大廳顯示「坐滿了」，但還是要點得進去回座 */
+       名單算起來坐滿了，但還是要點得進去回座（v2.20 起那一列直接寫「你的座位還在」） */
     await O.page.evaluate(() => Promise.all(['fake1', 'fake2'].map(id =>
       Net.db.ref('groups/' + Net.groupKey + '/members/' + id).set({ name: id, joinedAt: Date.now() }))));
     const fullRow = await C.page.evaluate(async () => {
-      await __until(() => [...document.querySelectorAll('#lobby-groups .net-row')].some(r => r.textContent.includes('活桌') && r.textContent.includes('坐滿了')), 8000);
+      // v2.20：這一桌有我的座位 → 那一列改寫「你的座位還在，點這裡回到牌桌」（查到之前先寫「坐滿了」，一樣點得下去）
+      await __until(() => [...document.querySelectorAll('#lobby-groups .net-row')].some(r => r.textContent.includes('活桌') && r.textContent.includes('你的座位還在')), 8000);
       const r = [...document.querySelectorAll('#lobby-groups .net-row')].find(x => x.textContent.includes('活桌'));
       return { text: r && r.textContent, disabled: r && r.disabled };
     });
-    ok(/坐滿了/.test(fullRow.text) && fullRow.disabled === false, '四人坐滿的桌：寫著坐滿了，但點得下去', JSON.stringify(fullRow));
+    ok(/你的座位還在/.test(fullRow.text) && fullRow.disabled === false, '四人坐滿的桌：有我的座位 → 寫「你的座位還在」，點得下去', JSON.stringify(fullRow));
     ok(await clickTable(C, '活桌'), '電腦在大廳點「活桌」');
     const cIn = await C.page.evaluate(async () => {
       const inGame = await __until(() => MJDev.net && MJDev.net.isHost, 12000);

@@ -417,15 +417,37 @@ function renderGroupList(list) {
       : `${n}/${SEATS} 人　電腦：${lv}${full ? '　（滿了）' : ''}`;
     /* 進行中、坐滿了也能點（v1.94）：可能是我的座位 —— 同一帳號換裝置時，手機只是在背景、成員節點還在，
        名單算起來是 4 筆。點下去查這一場有沒有我的座位：有就回座，沒有才說坐滿了 */
-    box.appendChild(row('net-row' + (full ? ' full' : '') + (mid ? ' playing' : ''),
+    const r = row('net-row' + (full ? ' full' : '') + (mid ? ' playing' : ''),
       `<b>${esc(g.name || g.key)}</b><span>${info}</span>`,
-      full ? (mid ? () => doJoinFull(g.key) : null) : () => doJoin(g.key, mid)));
+      full ? (mid ? () => doJoinFull(g.key) : null) : () => doJoin(g.key, mid));
+    box.appendChild(r);
     // 觀戰（v1.80）：進行中的桌，坐滿了也能看。舊版頁面沒有觀戰畫面（沒給 onSpectate）就不放
+    let w = null;
     if (mid && cfg.onSpectate) {
-      const w = row('net-watch', '👀 觀戰「' + esc(g.name || g.key) + '」', () => doSpectate(g.key, g.name || g.key, null, false));
+      w = row('net-watch', '👀 觀戰「' + esc(g.name || g.key) + '」', () => doSpectate(g.key, g.name || g.key, null, false));
       box.appendChild(w);
     }
+    /* 這一桌有我的座位（斷線、接電話、重新整理之後回來，v2.20）：標出來。
+       原本照樣寫「空 N 位，下一場入座」、底下一顆「觀戰」—— 看不出點那一列就能回座；按觀戰又被擋（牌桌上的人不能看四家的牌）。
+       觀戰那顆收掉：他要的是回座 */
+    if (mid) mySeatCached(g.key).then(mine => {
+      if (!mine || !r.isConnected) return;
+      r.classList.add('mine');
+      r.classList.remove('full');
+      const sp = r.querySelector('span');
+      if (sp) sp.textContent = `進行中${g.progress ? '（' + g.progress + '）' : ''}・你的座位還在，點這裡回到牌桌`;
+      if (w && w.isConnected) w.remove();
+      if (window.MJInput) setTimeout(() => window.MJInput.refresh(), 0);
+    });
   });
+}
+/* 列表每變一次都會重畫（別桌換局、有人進出）—— 5 秒內問過的不重問 */
+const seatSeen = {};
+function mySeatCached(key) {
+  if (!Net.mySeatIn) return Promise.resolve(false);
+  const c = seatSeen[key];
+  if (c && Date.now() - c.at < 5000) return Promise.resolve(c.mine);
+  return Net.mySeatIn(key).then(mine => { seatSeen[key] = { at: Date.now(), mine: !!mine }; return !!mine; });
 }
 
 /* ── 觀戰（v1.80）── 要登入（規則擋匿名）。從大廳來的看完回大廳；等入座的從房間來、看完回房間。
@@ -823,6 +845,7 @@ function enterGame(g) {
     campaign: null,                // v1.68：牌桌不再是一段戰役（進度跟著人走）
     myClientId: Net.clientId,
   };
+  cur.rejoin = false;              // 只算這一次（v2.20）：之後回房間再開的是新的一場，不是回座
   if (cfg.onEnterGame) cfg.onEnterGame(ctx);
 }
 
@@ -927,6 +950,34 @@ function backToRoom() {
   if (cur.last) renderRoom(cur.last);
 }
 
+/* 牌局中發現新的一場沒有我的座位（v2.20，遊戲那邊的 netNotSeated）：我不在的時候上一場打完、開了下一場。
+   轉成待入座、回房間，這一場打完由開桌的人排進下一場（跟中途加入的人同一套）。
+   沿用原本選的國（房間裡「擇國而立」可以改；選別國就帶那一國自己的進度）。
+   g：遊戲那邊最近一次拿到的牌桌資料（牌局中大廳不更新 cur.last） */
+function backToPending(g) {
+  if (!cur) return;
+  cur.entered = false;
+  cur.ready = false;
+  cur.rejoin = false;
+  cur.pending = true;
+  cur.joinGameId = (g && g.gameId) || null;       // 這一場不算，換了一場才輪到我（pendingRoom）
+  cur.campSynced = !!cur.picked;                  // 選過國的不再跳擇國畫面；進度快照下面重放一次
+  Net.updateMyReady(false);
+  Net.updateMyPending(true);
+  if (cur.picked) syncMyProgress();
+  screen('net-room');
+  if (g) pendingRoom(g); else if (cur.last) renderRoom(cur.last);
+}
+/* 回座之後（重新載入的那一台）：成員資料上沒有國家、進度快照 → 照座位上的國補回去（v2.20） */
+function restorePick(k) {
+  if (!cur || !k) return;
+  cur.picked = true;
+  cur.campSynced = true;
+  Net.updateMyKingdom(k);
+  if (Net.updateMyPicked) Net.updateMyPicked(true);
+  syncMyProgress();
+}
+
 /* 連線擇國而立選完（或取消）：回到房間畫面 */
 function showRoom() {
   if (!cur) return;
@@ -934,6 +985,6 @@ function showRoom() {
   if (cur.last) renderRoom(cur.last);
 }
 
-return { init, open, close, hide, leave: quit, backToRoom, superseded, get tab() { return TAB; }, showRoom, afterSpectate, slots, slotsSave, rosterOf, syncMyProgress, lockKingdom, pushProgress,
+return { init, open, close, hide, leave: quit, backToRoom, backToPending, restorePick, superseded, get tab() { return TAB; }, showRoom, afterSpectate, slots, slotsSave, rosterOf, syncMyProgress, lockKingdom, pushProgress,
          get myName() { return myName; }, get current() { return cur; } };
 });
